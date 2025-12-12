@@ -1,0 +1,83 @@
+# Configuration exemple ESPHome pour Daikin Madoka
+#
+# Ce fichier montre comment configurer un ESP32 (ex: M5Stack Atom Lite)
+# pour contrôler des thermostats Madoka BRC1H via Bluetooth
+
+substitutions:
+  name: m5stack-atom-lite-madoka
+  friendly_name: Madoka BLE Proxy
+
+# Configuration de base pour M5Stack Atom Lite
+# Ajustez selon votre matériel ESP32
+packages:
+  esphome.bluetooth-proxy: github://esphome/bluetooth-proxies/m5stack/m5stack-atom-lite.yaml@main
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Optionnel: logs détaillés pour le débogage
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+
+# IMPORTANT: Utiliser les composants locaux corrigés pour ESPHome 2025.10.0+
+external_components:
+  - source:
+      type: local
+      path: esphome_components  # Chemin relatif depuis le dossier de config ESPHome
+    components: [ madoka, ble_client ]
+
+# Configuration Bluetooth ESP32
+esp32_ble_tracker:
+  max_connections: 2  # Limite matérielle de l'ESP32
+
+# IMPORTANT: Désactiver le proxy Bluetooth classique
+# car nous utilisons ble_client directement
+bluetooth_proxy:
+  active: false
+
+# Configuration des clients BLE pour chaque thermostat
+ble_client:
+  # Premier thermostat
+  - mac_address: "F0:B3:1E:87:AF:FE"  # Remplacez par votre adresse MAC
+    id: madoka_salon
+    on_disconnect:
+      then:
+        # Reconnexion automatique en cas de déconnexion
+        - ble_client.connect: madoka_salon
+  
+  # Deuxième thermostat (optionnel)
+  - mac_address: "1C:54:9E:90:E3:0E"  # Remplacez par votre adresse MAC
+    id: madoka_chambre
+    on_disconnect:
+      then:
+        - ble_client.connect: madoka_chambre
+
+# Entités climate pour chaque thermostat
+climate:
+  - platform: madoka
+    name: "Madoka Salon"
+    ble_client_id: madoka_salon
+    update_interval: 15s  # Fréquence de mise à jour (en secondes)
+  
+  - platform: madoka
+    name: "Madoka Chambre"
+    ble_client_id: madoka_chambre
+    update_interval: 15s
+
+# Notes importantes:
+# 1. Les thermostats doivent être appairés avec l'ESP32 avant utilisation
+# 2. Vérifiez que les adresses MAC sont correctes avec 'bluetoothctl scan on'
+# 3. N'oubliez pas de copier le dossier esphome_components dans votre config ESPHome
+# 4. Le chemin 'path: esphome_components' doit être ajusté selon votre structure
