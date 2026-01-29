@@ -53,6 +53,8 @@ static const espbt::ESPBTUUID WWR_CHARACTERISTIC_UUID =
 class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNode, public PollingComponent {
  protected:
   bool should_update_ = false;
+  bool encryption_established_ = false;
+  bool services_discovered_ = false;
   std::queue<std::vector<uint8_t>> received_chunks_ = {};
   std::map<uint8_t, std::vector<uint8_t>> pending_chunks_ = {};
   uint16_t notify_handle_;
@@ -65,6 +67,7 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
   void query_(uint16_t cmd, std::vector<uint8_t> args, int t_d);
   void parse_cb_(std::vector<uint8_t> msg);
   void process_incoming_chunk_(std::vector<uint8_t> chk);
+  void proceed_with_service_setup_();
 
   void control(const climate::ClimateCall &call) override;
 

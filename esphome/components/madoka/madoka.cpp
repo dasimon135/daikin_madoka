@@ -41,6 +41,24 @@ void Madoka::setup() {
   ESP_LOGI(TAG, "BLE security configured (Just Works bonding)");
 }
 
+void Madoka::proceed_with_service_setup_() {
+  // Cette méthode est appelée quand BOTH encryption est établie ET services découverts
+  if (!this->encryption_established_ || !this->services_discovered_) {
+    ESP_LOGD(TAG, "Not ready yet: encryption=%d, services=%d", 
+             this->encryption_established_, this->services_discovered_);
+    return;
+  }
+  
+  ESP_LOGI(TAG, "Encryption established, registering for notifications...");
+  auto status = esp_ble_gattc_register_for_notify(
+      this->parent_->get_gattc_if(), 
+      this->parent_->get_remote_bda(),
+      this->notify_handle_);
+  if (status) {
+    ESP_LOGW(TAG, "esp_ble_gattc_register_for_notify failed, status=%d", status);
+  }
+}
+
 void Madoka::loop() {
   std::vector<uint8_t> chk = {};
   if (xSemaphoreTake(this->receive_semaphore_, 0L)) {
@@ -161,7 +179,12 @@ void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_para
         // Ne pas supprimer le bond, juste logger
         break;
       }
-      ESP_LOGI(TAG, "Authentication SUCCESS, mode: 0x%x", param->ble_security.auth_cmpl.auth_mode);
+      ESP_LOGI(TAG, "Authentication SUCCESS, mode: 0x%x, dev_type: %d", 
+               param->ble_security.auth_cmpl.auth_mode,
+               param->ble_security.auth_cmpl.dev_type);
+      this->encryption_established_ = true;
+      // Maintenant qu'on est encrypté, on peut procéder à l'enregistrement des notifications
+      this->proceed_with_service_setup_();
       break;
     }
     default:
@@ -174,6 +197,11 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
         ESP_LOGI(TAG, "Connection opened, MTU=%d", param->open.mtu);
+        // Demander l'encryption IMMEDIATEMENT après la connexion
+        // Cela doit être fait avant la découverte de services
+        ESP_LOGI(TAG, "Requesting BLE encryption...");
+        this->encryption_established_ = false;
+        esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
       } else {
         ESP_LOGE(TAG, "Connection failed, status=0x%x", param->open.status);
       }
@@ -182,6 +210,7 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
     case ESP_GATTC_DISCONNECT_EVT: {
       ESP_LOGW(TAG, "Disconnected, reason=0x%x", param->disconnect.reason);
       this->node_state = espbt::ClientState::IDLE;
+      this->encryption_established_ = false;
       this->current_temperature = NAN;
       this->target_temperature = NAN;
       this->publish_state();
@@ -189,19 +218,17 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
     }
     case ESP_GATTC_WRITE_DESCR_EVT:
       if (param->write.status != ESP_GATT_OK) {
+        ESP_LOGE(TAG, "Failed writing descriptor, status=0x%x", param->write.status);
         if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION) {
-          ESP_LOGE(TAG, "Insufficient auth - retrying with simple encryption");
-          esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
-        } else {
-          ESP_LOGE(TAG, "Failed writing descriptor, status=0x%x", param->write.status);
+          ESP_LOGE(TAG, "Encryption may have failed - check bonding");
         }
+      } else {
+        ESP_LOGI(TAG, "Descriptor written successfully");
       }
       break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       ESP_LOGI(TAG, "Service search complete");
       
-      // Essayer de s'enregistrer directement sans encryption
-      // Le Madoka pourrait accepter les connexions non chiffrées
       auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
       auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
       
@@ -212,14 +239,16 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       
       this->notify_handle_ = nfy->handle;
       this->wwr_handle_ = wwr->handle;
+      this->services_discovered_ = true;
       
-      ESP_LOGI(TAG, "Found Madoka service, registering for notifications...");
-      auto status = esp_ble_gattc_register_for_notify(
-          this->parent_->get_gattc_if(), 
-          this->parent_->get_remote_bda(),
-          nfy->handle);
-      if (status) {
-        ESP_LOGW(TAG, "esp_ble_gattc_register_for_notify failed, status=%d", status);
+      ESP_LOGI(TAG, "Found Madoka service (notify=0x%04x, wwr=0x%04x)", nfy->handle, wwr->handle);
+      
+      // Si l'encryption est déjà établie, procéder maintenant
+      // Sinon, on attend l'événement AUTH_CMPL
+      if (this->encryption_established_) {
+        this->proceed_with_service_setup_();
+      } else {
+        ESP_LOGI(TAG, "Waiting for encryption to complete before registering notifications...");
       }
       break;
     }
