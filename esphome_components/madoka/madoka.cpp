@@ -189,8 +189,7 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
-        ESP_LOGI(TAG, "Connection opened, requesting encryption...");
-        esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        ESP_LOGI(TAG, "Connection opened, MTU=%d", param->open.mtu);
       } else {
         ESP_LOGE(TAG, "Connection failed, status=0x%x", param->open.status);
       }
@@ -215,8 +214,8 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       }
       break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      ESP_LOGI(TAG, "Service search complete");
-      // Encryption demandée dans OPEN_EVT, attente AUTH_CMPL_EVT
+      ESP_LOGI(TAG, "Service search complete, requesting encryption...");
+      esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
