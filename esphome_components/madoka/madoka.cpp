@@ -143,24 +143,10 @@ void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_para
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
       if (!param->ble_security.auth_cmpl.success) {
         ESP_LOGE(TAG, "Authentication FAILED, reason: 0x%02x", param->ble_security.auth_cmpl.fail_reason);
-        esp_ble_remove_bond_device(param->ble_security.auth_cmpl.bd_addr);
+        // Ne pas supprimer le bond, juste logger
         break;
       }
       ESP_LOGI(TAG, "Authentication SUCCESS, mode: 0x%x", param->ble_security.auth_cmpl.auth_mode);
-      auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
-      auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
-      if (nfy == nullptr || wwr == nullptr) {
-        ESP_LOGW(TAG, "[%s] No control service found at device, not a Daikin Madoka..?", this->get_name().c_str());
-        break;
-      }
-      this->notify_handle_ = nfy->handle;
-      this->wwr_handle_ = wwr->handle;
-
-      auto status = esp_ble_gattc_register_for_notify(this->parent_->get_gattc_if(), this->parent_->get_remote_bda(),
-                                                      nfy->handle);
-      if (status) {
-        ESP_LOGW(TAG, "[%s] esp_ble_gattc_register_for_notify failed, status=%d", this->get_name().c_str(), status);
-      }
       break;
     }
     default:
@@ -197,25 +183,29 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       }
       break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      ESP_LOGI(TAG, "Service search complete, configuring security...");
+      ESP_LOGI(TAG, "Service search complete");
       
-      // Configuration des paramètres de sécurité BLE juste avant encryption
-      esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
-      esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
-      uint8_t key_size = 16;
-      uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-      uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
-      uint8_t oob_support = ESP_BLE_OOB_DISABLE;
+      // Essayer de s'enregistrer directement sans encryption
+      // Le Madoka pourrait accepter les connexions non chiffrées
+      auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
+      auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
       
-      esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
-      esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
-      esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
-      esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
-      esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
-      esp_ble_gap_set_security_param(ESP_BLE_SM_OOB_SUPPORT, &oob_support, sizeof(uint8_t));
+      if (nfy == nullptr || wwr == nullptr) {
+        ESP_LOGW(TAG, "No control service found, not a Daikin Madoka?");
+        break;
+      }
       
-      ESP_LOGI(TAG, "Requesting encryption with MITM...");
-      esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+      this->notify_handle_ = nfy->handle;
+      this->wwr_handle_ = wwr->handle;
+      
+      ESP_LOGI(TAG, "Found Madoka service, registering for notifications...");
+      auto status = esp_ble_gattc_register_for_notify(
+          this->parent_->get_gattc_if(), 
+          this->parent_->get_remote_bda(),
+          nfy->handle);
+      if (status) {
+        ESP_LOGW(TAG, "esp_ble_gattc_register_for_notify failed, status=%d", status);
+      }
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
