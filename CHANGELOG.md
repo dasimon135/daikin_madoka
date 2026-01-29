@@ -1,4 +1,35 @@
-# Changelog - Support ESPHome 2025.10.0+
+# Changelog - Support ESPHome 2026.1.0+
+
+## Version 2.1.0 - 21 janvier 2026
+
+### Compatibilité ESPHome 2026.1.0
+
+- ✅ **Testé et compatible avec ESPHome 2026.1.0**
+- 🚀 **Framework recommandé changé : ESP-IDF par défaut**
+  - Firmware jusqu'à 40% plus petit
+  - Compilation 2-3x plus rapide
+  - Meilleures performances runtime
+  - Moins de consommation mémoire (importantes optimisations dans 2026.1.0)
+
+### Modifications
+
+- Mise à jour `example-config.yaml` : framework ESP-IDF par défaut avec fallback Arduino documenté
+- Mise à jour `DEPLOYMENT.md` : recommandations ESP-IDF avec instructions de retour à Arduino
+- Documentation des bénéfices d'ESPHome 2026.1.0 (optimisations mémoire, heap churn reduction)
+
+### Notes de migration
+
+- **ESP-IDF est maintenant recommandé** pour profiter des optimisations d'ESPHome 2026.1.0
+- Si vous rencontrez des problèmes avec ESP-IDF, vous pouvez revenir à Arduino :
+  ```yaml
+  esp32:
+    framework:
+      type: arduino
+  ```
+- Tous les composants BLE fonctionnent parfaitement avec ESP-IDF
+- Aucun changement de code requis, seulement la configuration YAML
+
+---
 
 ## Version 2.0.0 - 15 octobre 2025
 

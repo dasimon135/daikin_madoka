@@ -22,7 +22,26 @@ static const uint16_t CMD_GET_SENSOR_INFORMATION = 0x0110;
 
 void Madoka::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka Climate Controller", this); }
 
-void Madoka::setup() { this->receive_semaphore_ = xSemaphoreCreateMutex(); }
+void Madoka::setup() {
+  this->receive_semaphore_ = xSemaphoreCreateMutex();
+
+  // Configuration des paramètres de sécurité BLE (requis AVANT connexion)
+  esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;
+  esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
+  uint8_t key_size = 16;
+  uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+  uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+  uint8_t oob_support = ESP_BLE_OOB_DISABLE;
+
+  esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_OOB_SUPPORT, &oob_support, sizeof(uint8_t));
+
+  ESP_LOGI(TAG, "BLE security parameters configured");
+}
 
 void Madoka::loop() {
   std::vector<uint8_t> chk = {};
@@ -121,17 +140,30 @@ void Madoka::control(const ClimateCall &call) {
 void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
     case ESP_GAP_BLE_SEC_REQ_EVT:
+      ESP_LOGI(TAG, "Security request from peer");
       esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
       break;
     case ESP_GAP_BLE_NC_REQ_EVT:
+      ESP_LOGI(TAG, "Numeric comparison passkey: %06d", (int)param->ble_security.key_notif.passkey);
       esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
-      ESP_LOGI(TAG, "ESP_GAP_BLE_NC_REQ_EVT, the passkey Notify number:%d", param->ble_security.key_notif.passkey);
+      break;
+    case ESP_GAP_BLE_PASSKEY_REQ_EVT:
+      ESP_LOGI(TAG, "Passkey request - using 0");
+      esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, 0);
+      break;
+    case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
+      ESP_LOGI(TAG, "Passkey to display: %06d", (int)param->ble_security.key_notif.passkey);
+      break;
+    case ESP_GAP_BLE_KEY_EVT:
+      ESP_LOGD(TAG, "Key exchange, type: %d", param->ble_security.ble_key.key_type);
       break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
       if (!param->ble_security.auth_cmpl.success) {
-        ESP_LOGE(TAG, "Authentication failed, status: 0x%x", param->ble_security.auth_cmpl.fail_reason);
+        ESP_LOGE(TAG, "Authentication FAILED, reason: 0x%02x", param->ble_security.auth_cmpl.fail_reason);
+        esp_ble_remove_bond_device(param->ble_security.auth_cmpl.bd_addr);
         break;
       }
+      ESP_LOGI(TAG, "Authentication SUCCESS, mode: 0x%x", param->ble_security.auth_cmpl.auth_mode);
       auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
       auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
       if (nfy == nullptr || wwr == nullptr) {
@@ -155,8 +187,18 @@ void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_para
 
 void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) {
   switch (event) {
+    case ESP_GATTC_OPEN_EVT: {
+      if (param->open.status == ESP_GATT_OK) {
+        ESP_LOGI(TAG, "Connection opened, requesting encryption...");
+        esp_ble_set_encryption(param->open.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+      } else {
+        ESP_LOGE(TAG, "Connection failed, status=0x%x", param->open.status);
+      }
+      break;
+    }
     case ESP_GATTC_DISCONNECT_EVT: {
-      this->node_state = espbt::ClientState::IDLE;  // ??
+      ESP_LOGW(TAG, "Disconnected, reason=0x%x", param->disconnect.reason);
+      this->node_state = espbt::ClientState::IDLE;
       this->current_temperature = NAN;
       this->target_temperature = NAN;
       this->publish_state();
@@ -165,14 +207,16 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
     case ESP_GATTC_WRITE_DESCR_EVT:
       if (param->write.status != ESP_GATT_OK) {
         if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION) {
-          ESP_LOGE(TAG, "Insufficient authentication");
+          ESP_LOGE(TAG, "Insufficient auth - retrying encryption");
+          esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
         } else {
-          ESP_LOGE(TAG, "Failed writing characteristic descriptor, status = 0x%x", param->write.status);
+          ESP_LOGE(TAG, "Failed writing descriptor, status=0x%x", param->write.status);
         }
       }
       break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+      ESP_LOGI(TAG, "Service search complete");
+      // Encryption demandée dans OPEN_EVT, attente AUTH_CMPL_EVT
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {

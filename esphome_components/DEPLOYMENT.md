@@ -2,7 +2,7 @@
 
 ## Prérequis
 
-- ESPHome 2024.x ou 2025.x installé
+- ESPHome 2026.1.0+ (testé avec 2026.1.0)
 - Un ESP32 (recommandé: M5Stack Atom Lite)
 - Thermostats Daikin Madoka BRC1H appairés
 
@@ -37,11 +37,12 @@ esphome:
   name: ${name}
   friendly_name: ${friendly_name}
 
-# Ajoutez votre plateforme ESP32
+# Plateforme ESP32 avec ESP-IDF (recommandé depuis ESPHome 2026.1.0)
 esp32:
   board: m5stack-atom  # Ajustez selon votre matériel
   framework:
-    type: arduino
+    type: esp-idf  # Recommandé: firmware 40% plus petit, 2-3x plus rapide
+    # Si problèmes, revenez à Arduino: type: arduino
 
 wifi:
   ssid: !secret wifi_ssid

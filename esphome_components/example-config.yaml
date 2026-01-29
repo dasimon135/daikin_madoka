@@ -17,6 +17,13 @@ esphome:
   name_add_mac_suffix: false
   friendly_name: ${friendly_name}
 
+# ESP32 Framework - ESP-IDF est recommandé pour ESPHome 2026.1.0+
+# Avantages: firmware 40% plus petit, compilation 2-3x plus rapide, meilleures performances
+# Si vous rencontrez des problèmes, revenez à Arduino avec: type: arduino
+esp32:
+  framework:
+    type: esp-idf  # Valeur par défaut depuis ESPHome 2026.1.0
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
