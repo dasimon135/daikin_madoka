@@ -54,6 +54,10 @@ external_components:
       path: esphome_components
     components: [madoka, ble_client]
 
+# Configuration BLE globale - CRITICAL pour le pairing MITM
+esp32_ble:
+  io_capability: display_yes_no  # Permet le Numeric Comparison pairing
+
 esp32_ble_tracker:
   scan_parameters:
     interval: 320ms
