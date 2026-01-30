@@ -197,11 +197,12 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
     case ESP_GATTC_OPEN_EVT: {
       if (param->open.status == ESP_GATT_OK) {
         ESP_LOGI(TAG, "Connection opened, MTU=%d", param->open.mtu);
-        // Demander l'encryption IMMEDIATEMENT après la connexion
-        // Cela doit être fait avant la découverte de services
-        ESP_LOGI(TAG, "Requesting BLE encryption...");
+        // Ne pas demander l'encryption ici - attendre la découverte de services
+        // et essayer de s'enregistrer directement. Si le thermostat exige
+        // l'encryption, il refusera avec INSUF_AUTH et on la demandera alors.
         this->encryption_established_ = false;
-        esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+        this->services_discovered_ = false;
+        this->auth_retry_count_ = 0;
       } else {
         ESP_LOGE(TAG, "Connection failed, status=0x%x", param->open.status);
       }
@@ -211,6 +212,7 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       ESP_LOGW(TAG, "Disconnected, reason=0x%x", param->disconnect.reason);
       this->node_state = espbt::ClientState::IDLE;
       this->encryption_established_ = false;
+      this->services_discovered_ = false;
       this->current_temperature = NAN;
       this->target_temperature = NAN;
       this->publish_state();
@@ -220,7 +222,14 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       if (param->write.status != ESP_GATT_OK) {
         ESP_LOGE(TAG, "Failed writing descriptor, status=0x%x", param->write.status);
         if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION) {
-          ESP_LOGE(TAG, "Encryption may have failed - check bonding");
+          if (this->auth_retry_count_ < 3) {
+            this->auth_retry_count_++;
+            ESP_LOGW(TAG, "Insufficient auth - requesting encryption (attempt %d/3)", this->auth_retry_count_);
+            // Demander l'encryption - le thermostat devrait initier le pairing
+            esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT);
+          } else {
+            ESP_LOGE(TAG, "Max auth retries reached - device may need manual pairing first");
+          }
         }
       } else {
         ESP_LOGI(TAG, "Descriptor written successfully");
@@ -243,12 +252,15 @@ void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
       
       ESP_LOGI(TAG, "Found Madoka service (notify=0x%04x, wwr=0x%04x)", nfy->handle, wwr->handle);
       
-      // Si l'encryption est déjà établie, procéder maintenant
-      // Sinon, on attend l'événement AUTH_CMPL
-      if (this->encryption_established_) {
-        this->proceed_with_service_setup_();
-      } else {
-        ESP_LOGI(TAG, "Waiting for encryption to complete before registering notifications...");
+      // Essayer de s'enregistrer directement pour les notifications
+      // Si le thermostat exige l'encryption, on recevra INSUF_AUTH dans WRITE_DESCR_EVT
+      ESP_LOGI(TAG, "Attempting to register for notifications...");
+      auto status = esp_ble_gattc_register_for_notify(
+          this->parent_->get_gattc_if(), 
+          this->parent_->get_remote_bda(),
+          nfy->handle);
+      if (status) {
+        ESP_LOGW(TAG, "esp_ble_gattc_register_for_notify failed, status=%d", status);
       }
       break;
     }

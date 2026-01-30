@@ -55,6 +55,7 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
   bool should_update_ = false;
   bool encryption_established_ = false;
   bool services_discovered_ = false;
+  uint8_t auth_retry_count_ = 0;
   std::queue<std::vector<uint8_t>> received_chunks_ = {};
   std::map<uint8_t, std::vector<uint8_t>> pending_chunks_ = {};
   uint16_t notify_handle_;
