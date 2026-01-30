@@ -25,20 +25,24 @@ void Madoka::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka Climate Controller"
 void Madoka::setup() {
   this->receive_semaphore_ = xSemaphoreCreateMutex();
   
-  // Configuration de la sécurité BLE - mode "Just Works" (pas de PIN)
-  esp_ble_auth_req_t auth_req = ESP_LE_AUTH_BOND;  // Bonding sans MITM
-  esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;        // No IO capability
+  // Configuration de la sécurité BLE pour Numeric Comparison (MITM)
+  // Le Madoka affiche un code et attend confirmation des 2 côtés
+  esp_ble_auth_req_t auth_req = ESP_LE_AUTH_REQ_SC_MITM_BOND;  // Secure Connections + MITM + Bonding
+  esp_ble_io_cap_t iocap = ESP_IO_CAP_IO;  // Display Yes/No - permet Numeric Comparison
   uint8_t key_size = 16;
   uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
   uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
+  uint8_t oob_support = ESP_BLE_OOB_DISABLE;
   
   esp_ble_gap_set_security_param(ESP_BLE_SM_AUTHEN_REQ_MODE, &auth_req, sizeof(uint8_t));
   esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(uint8_t));
   esp_ble_gap_set_security_param(ESP_BLE_SM_MAX_KEY_SIZE, &key_size, sizeof(uint8_t));
   esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
   esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
+  esp_ble_gap_set_security_param(ESP_BLE_SM_OOB_SUPPORT, &oob_support, sizeof(uint8_t));
   
-  ESP_LOGI(TAG, "BLE security configured (Just Works bonding)");
+  ESP_LOGI(TAG, "BLE security configured for Numeric Comparison (MITM + Bonding)");
+  ESP_LOGW(TAG, "*** PAIRING: Watch the logs for the 6-digit code and confirm on the Madoka! ***");
 }
 
 void Madoka::proceed_with_service_setup_() {
@@ -156,22 +160,34 @@ void Madoka::control(const ClimateCall &call) {
 void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
     case ESP_GAP_BLE_SEC_REQ_EVT:
-      ESP_LOGI(TAG, "Security request from peer");
+      ESP_LOGI(TAG, "Security request from Madoka - accepting");
       esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
       break;
     case ESP_GAP_BLE_NC_REQ_EVT:
-      ESP_LOGI(TAG, "Numeric comparison passkey: %06d", (int)param->ble_security.key_notif.passkey);
+      // NUMERIC COMPARISON - Le code s'affiche aussi sur le Madoka
+      // L'utilisateur doit vérifier que les codes correspondent et confirmer sur le Madoka
+      ESP_LOGW(TAG, "╔══════════════════════════════════════════════════════════╗");
+      ESP_LOGW(TAG, "║  PAIRING CODE: %06d                                   ║", (unsigned int)param->ble_security.key_notif.passkey);
+      ESP_LOGW(TAG, "║  Vérifiez que ce code correspond à celui sur le Madoka    ║");
+      ESP_LOGW(TAG, "║  et CONFIRMEZ sur le thermostat!                         ║");
+      ESP_LOGW(TAG, "╚══════════════════════════════════════════════════════════╝");
+      // L'ESP32 confirme automatiquement de son côté
       esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
       break;
     case ESP_GAP_BLE_PASSKEY_REQ_EVT:
-      ESP_LOGI(TAG, "Passkey request - using 0");
+      // Si le Madoka demande un passkey (peu probable avec NC)
+      ESP_LOGI(TAG, "Passkey request - entering 000000");
       esp_ble_passkey_reply(param->ble_security.ble_req.bd_addr, true, 0);
       break;
     case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:
-      ESP_LOGI(TAG, "Passkey to display: %06d", (int)param->ble_security.key_notif.passkey);
+      // Passkey à afficher (mode Display Only)
+      ESP_LOGW(TAG, "╔══════════════════════════════════════════════════════════╗");
+      ESP_LOGW(TAG, "║  PASSKEY: %06d                                        ║", (unsigned int)param->ble_security.key_notif.passkey);
+      ESP_LOGW(TAG, "║  Entrez ce code sur le Madoka si demandé                 ║");
+      ESP_LOGW(TAG, "╚══════════════════════════════════════════════════════════╝");
       break;
     case ESP_GAP_BLE_KEY_EVT:
-      ESP_LOGD(TAG, "Key exchange, type: %d", param->ble_security.ble_key.key_type);
+      ESP_LOGD(TAG, "BLE key exchange, type: %d", param->ble_security.ble_key.key_type);
       break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
       if (!param->ble_security.auth_cmpl.success) {
