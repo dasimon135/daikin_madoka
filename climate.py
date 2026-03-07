@@ -18,7 +18,6 @@ from homeassistant.components.climate.const import (
     FAN_HIGH,
     FAN_LOW,
     FAN_MEDIUM,
-    FAN_OFF,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 
@@ -169,19 +168,23 @@ class DaikinMadokaClimate(ClimateEntity):
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
+        target_temperature = kwargs.get(ATTR_TEMPERATURE)
+        if target_temperature is None or self.controller.set_point.status is None:
+            return
+
         try:
             new_cooling_set_point = self.controller.set_point.status.cooling_set_point
-            new_heating_set_point = self.controller.set_point.status.cooling_set_point
+            new_heating_set_point = self.controller.set_point.status.heating_set_point
             if (
                 self.controller.operation_mode.status.operation_mode
                 != OperationModeEnum.HEAT
             ):
-                new_cooling_set_point = round(kwargs.get(ATTR_TEMPERATURE))
+                new_cooling_set_point = round(target_temperature)
             if (
                 self.controller.operation_mode.status.operation_mode
                 != OperationModeEnum.COOL
             ):
-                new_heating_set_point = round(kwargs.get(ATTR_TEMPERATURE))
+                new_heating_set_point = round(target_temperature)
 
             await self.controller.set_point.update(
                 SetPointStatus(new_cooling_set_point, new_heating_set_point)
@@ -229,15 +232,16 @@ class DaikinMadokaClimate(ClimateEntity):
             self.controller.operation_mode.status.operation_mode
             == OperationModeEnum.AUTO
         ):
-            # pylint: disable=no-else-return
+            if self.target_temperature is None or self.current_temperature is None:
+                return HVACAction.IDLE
             if self.target_temperature >= self.current_temperature:
                 return HVACAction.HEATING
-            else:
-                return HVACAction.COOLING
-        else:
-            return DAIKIN_TO_HA_CURRENT_HVAC_MODE.get(
-                self.controller.operation_mode.status.operation_mode
-            )
+
+            return HVACAction.COOLING
+
+        return DAIKIN_TO_HA_CURRENT_HVAC_MODE.get(
+            self.controller.operation_mode.status.operation_mode
+        )
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set HVAC mode."""
@@ -306,7 +310,8 @@ class DaikinMadokaClimate(ClimateEntity):
         """Retrieve latest state."""
 
         try:
-            self.dev_info = await self.controller.read_info()
+            if self.dev_info is None:
+                self.dev_info = await self.controller.read_info()
             await self.controller.update()
 
         except ConnectionAbortedError:
@@ -351,14 +356,16 @@ class DaikinMadokaClimate(ClimateEntity):
     def device_info(self):
         """Return a device description for device registry."""
 
+        dev_info = self.dev_info or {}
+
         model = (
-            ("BRC1H" + self.dev_info["Model Number String"])
-            if "Model Number String" in self.dev_info
+            ("BRC1H" + dev_info["Model Number String"])
+            if "Model Number String" in dev_info
             else ""
         )
         sw_version = (
-            self.dev_info["Software Revision String"]
-            if "Software Revision String" in self.dev_info
+            dev_info["Software Revision String"]
+            if "Software Revision String" in dev_info
             else ""
         )
         return {
@@ -370,5 +377,4 @@ class DaikinMadokaClimate(ClimateEntity):
             "manufacturer": "DAIKIN",
             "model": model,
             "sw_version": sw_version,
-            "via_device": (DOMAIN, self.unique_id),
         }

@@ -143,3 +143,5 @@ cython_debug/
 Atome*.yaml
 **/Atome*.yaml
 .claude/settings.local.json
+POST_HA_FORUM.md
+POST_HACF.md

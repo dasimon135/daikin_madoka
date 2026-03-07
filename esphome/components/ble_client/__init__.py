@@ -69,6 +69,13 @@ CONF_AUTO_CONNECT = "auto_connect"
 
 MULTI_CONF = True
 
+
+def safe_consume_connection_slots(slots, component_name):
+    """Compatibility wrapper for ESPHome versions where this helper moved/was removed."""
+    if hasattr(esp32_ble_tracker, "consume_connection_slots"):
+        return esp32_ble_tracker.consume_connection_slots(slots, component_name)
+    return lambda config: config
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -117,7 +124,7 @@ CONFIG_SCHEMA = cv.All(
     )
     .extend(cv.COMPONENT_SCHEMA)
     .extend(esp32_ble_tracker.ESP_BLE_DEVICE_SCHEMA),
-    esp32_ble.consume_connection_slots(1, "ble_client"),
+    safe_consume_connection_slots(1, "ble_client"),
 )
 
 CONF_BLE_CLIENT_ID = "ble_client_id"

@@ -17,6 +17,8 @@ import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, TITLE, UNIQUE_ID
 
+MAC_REGEX = re.compile(r"[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$")
+
 
 @config_entries.HANDLERS.register(DOMAIN)
 class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -43,18 +45,23 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _create_entry(
-        self, devices, scan_interval=None, force_update=None, device=None
+        self,
+        devices,
+        scan_interval=None,
+        force_update=None,
+        device=None,
+        discovery=None,
     ):
         """Register new entry."""
 
         return self.async_create_entry(
             title=TITLE,
             data={
-                CONF_DEVICES: list(map(lambda x: x.strip(), devices.split(","))),
+                CONF_DEVICES: [mac.strip() for mac in devices.split(",")],
                 CONF_DEVICE: device,
                 CONF_SCAN_INTERVAL: scan_interval,
                 CONF_FORCE_UPDATE: force_update,
-                CONF_DISCOVERY: False,
+                CONF_DISCOVERY: discovery,
             },
         )
 
@@ -62,16 +69,14 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     def validate_macs(self, macs):
         """Validate all the macs have a valid format."""
         for mac in macs:
-            if not re.match(
-                "[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac.lower()
-            ):
+            if not MAC_REGEX.match(mac.lower()):
                 return False
         return True
 
     async def is_valid_adapter(self, adapter):
         """Check the adapter configuration using hcitool."""
         try:
-            await discover_devices(1, adapter)
+            await discover_devices(timeout=1, adapter=adapter)
             return True
         # pylint: disable=broad-except
         except Exception:
@@ -125,6 +130,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         user_input.get(CONF_SCAN_INTERVAL),
                         user_input.get(CONF_FORCE_UPDATE),
                         user_input.get(CONF_DEVICE),
+                        user_input.get(CONF_DISCOVERY),
                     )
         if user_input is None or len(errors) > 0:
             return self.async_show_form(

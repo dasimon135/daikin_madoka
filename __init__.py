@@ -22,7 +22,7 @@ from .const import CONTROLLERS, DOMAIN
 PARALLEL_UPDATES = 0
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=60)
 
-COMPONENT_TYPES = ["climate"]
+COMPONENT_TYPES = ["climate", "sensor"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,22 +79,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {CONTROLLERS: controllers}
-    for component in COMPONENT_TYPES:
-        coroutine = hass.config_entries.async_forward_entry_setups(entry, [component])
-        hass.async_create_task(coroutine)
-
+    await hass.config_entries.async_forward_entry_setups(entry, COMPONENT_TYPES)
 
     return True
 
 
 async def async_unload_entry(hass, config_entry):
     """Unload a config entry."""
-    await asyncio.wait(
-        [
-            hass.async_create_task(hass.config_entries.async_forward_entry_unload(config_entry, component))
-            for component in COMPONENT_TYPES
-        ]
-    )
+    await hass.config_entries.async_unload_platforms(config_entry, COMPONENT_TYPES)
     hass.data[DOMAIN].pop(config_entry.entry_id)
 
     return True
