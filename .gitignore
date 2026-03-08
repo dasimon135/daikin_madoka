@@ -138,3 +138,6 @@ dmypy.json
 cython_debug/
 
 .vscode/
+
+# Private publication drafts - never commit publicly
+POST_HA*
