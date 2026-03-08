@@ -37,6 +37,10 @@ See installation instructions below.
 
 See `esphome_components/README.md` for details.
 
+## Development Workflow
+
+This public repository uses GitHub Actions for CI validation on pushes and pull requests.
+
 ---
 
 ## Home Assistant Integration Installation
