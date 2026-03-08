@@ -95,8 +95,8 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
     traits.set_visual_min_temperature(16);
     traits.set_visual_max_temperature(32);
     traits.set_visual_temperature_step(1);
-    traits.add_supported_feature(climate::ClimateFeature::CLIMATE_FEATURE_TARGET_TEMPERATURE_RANGE);
-    traits.add_supported_feature(climate::ClimateFeature::CLIMATE_FEATURE_CURRENT_TEMPERATURE);
+    traits.add_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE |
+                             climate::CLIMATE_SUPPORTS_CURRENT_TEMPERATURE);
     return traits;
   }
 };
