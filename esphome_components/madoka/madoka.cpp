@@ -8,6 +8,8 @@
 namespace esphome {
 namespace madoka {
 
+static const char *const TAG = "madoka";
+
 using namespace esphome::climate;
 
 static const uint16_t CMD_GET_SETTING_STATUS = 0x0020;
@@ -295,7 +297,7 @@ void Madoka::query_(uint16_t cmd, std::vector<uint8_t> args, int t_d) {
       return;
     }
   }
-  delay(t_d);
+  esphome::delay(t_d);
 }
 
 void Madoka::parse_cb_(std::vector<uint8_t> msg) {

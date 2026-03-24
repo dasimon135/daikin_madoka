@@ -40,6 +40,7 @@ external_components:
 
 # Configuration Bluetooth ESP32
 esp32_ble_tracker:
+  id: ble_tracker       # Requis pour le switch de ré-appairage (voir ci-dessous)
   max_connections: 2  # Limite matérielle de l'ESP32
 
 # IMPORTANT: Désactiver le proxy Bluetooth classique
@@ -75,6 +76,40 @@ climate:
     name: "Madoka Chambre"
     ble_client_id: madoka_chambre
     update_interval: 15s
+
+# ---------------------------------------------------------------------------
+# Switch pour désactiver temporairement le BLE (ré-appairage téléphone)
+#
+# Problème : quand on supprime tous les appairages sur le Madoka pour reprendre
+# la main avec l'appli téléphone, l'ESP32 se reconnecte en boucle et bloque
+# le nouvel appairage du téléphone.
+#
+# Solution : désactiver le scan BLE depuis HA, faire les manipulations avec
+# le téléphone, puis réactiver.
+# ---------------------------------------------------------------------------
+switch:
+  - platform: template
+    name: "Proxy Madoka Actif"
+    id: proxy_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - script.execute: start_ble
+    turn_off_action:
+      - script.execute: stop_ble
+
+script:
+  - id: stop_ble
+    then:
+      - logger.log: "Arret BLE - prise de main telephone possible"
+      - lambda: |-
+          id(ble_tracker).stop_scan();
+
+  - id: start_ble
+    then:
+      - logger.log: "Demarrage BLE - reconnexion ESP32"
+      - lambda: |-
+          id(ble_tracker).start_scan();
 
 # Notes importantes:
 # 1. Les thermostats doivent être appairés avec l'ESP32 avant utilisation

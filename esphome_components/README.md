@@ -112,6 +112,55 @@ esphome_components/
     └── madoka.h
 ```
 
+## Ré-appairage avec le téléphone
+
+Lorsque l'ESP32 est actif, il tente de se connecter en boucle au Madoka. Si vous supprimez tous les appairages Bluetooth sur le thermostat pour reprendre la main avec l'application téléphone, l'ESP32 monopolise la connexion et empêche le téléphone de s'appairer à nouveau.
+
+**Solution** : ajouter un switch dans ESPHome pour couper temporairement le scan BLE depuis Home Assistant.
+
+**Étape 1** — Ajoutez un `id` au bloc `esp32_ble_tracker` :
+
+```yaml
+esp32_ble_tracker:
+  id: ble_tracker
+  max_connections: 2
+```
+
+**Étape 2** — Ajoutez le switch et les scripts :
+
+```yaml
+switch:
+  - platform: template
+    name: "Proxy Madoka Actif"
+    id: proxy_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - script.execute: start_ble
+    turn_off_action:
+      - script.execute: stop_ble
+
+script:
+  - id: stop_ble
+    then:
+      - logger.log: "Arret BLE"
+      - lambda: |-
+          id(ble_tracker).stop_scan();
+
+  - id: start_ble
+    then:
+      - logger.log: "Demarrage BLE"
+      - lambda: |-
+          id(ble_tracker).start_scan();
+```
+
+**Procédure de ré-appairage :**
+1. Dans Home Assistant, passez le switch **"Proxy Madoka Actif"** sur **OFF**
+2. Appairez votre téléphone avec le Madoka et effectuez vos modifications
+3. Repassez le switch sur **ON** — l'ESP32 se reconnecte automatiquement
+
+> Le switch est déjà inclus dans le fichier `example-config.yaml`.
+
 ## Dépannage
 
 ### Erreur `AttributeError: module 'esphome.components.esp32_ble_tracker' has no attribute 'consume_connection_slots'`
