@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.1 - Avril 2026
+
+### Fixes
+
+- **ble_client**: declare `synchronous=True/False` on all 6 `register_action()` calls — removes ESPHome 2026.4 warnings about missing `synchronous=` parameter
+- **madoka**: both `esphome/components/` and `esphome_components/` copies now use `add_feature_flags()` consistently — removes remaining `-Wdeprecated-declarations` compiler warnings
+
+No behaviour change. Thanks to [@Dvorf](https://github.com/Dvorf) for identifying both issues.
+
+---
+
 ## v2.1.0 - Avril 2026
 
 ### ESPHome
