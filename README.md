@@ -3,7 +3,7 @@
 This repository provides **two ways** to control Daikin Madoka BRC1H Bluetooth thermostats:
 
 1. **Home Assistant Custom Integration** (this directory) - Direct Bluetooth control
-2. **ESPHome Components** (`esphome_components/`) - ESP32 proxy for remote control
+2. **ESPHome Components** (`esphome/`) - ESP32 proxy for remote control
 
 ![](images/madoka.png)
 
@@ -35,7 +35,7 @@ See installation instructions below.
 - Requires ESP32 hardware (e.g., M5Stack Atom Lite)
 - Additional device to maintain
 
-See `esphome_components/README.md` for details.
+See `esphome/README.md` for details.
 
 ## Development Workflow
 
