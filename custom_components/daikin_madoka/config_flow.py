@@ -11,7 +11,7 @@ from homeassistant.const import (
 )
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, CONF_MAC
+from .const import DOMAIN, CONF_MAC, CONF_FRIENDLY_NAME
 
 
 @config_entries.HANDLERS.register(DOMAIN)
@@ -27,17 +27,20 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return vol.Schema(
             {
                 vol.Required(CONF_MAC): cv.string,
+                vol.Optional(CONF_FRIENDLY_NAME, default=""): cv.string,
                 vol.Optional(CONF_FORCE_UPDATE, default=True): bool,
                 vol.Optional(CONF_DEVICE, default="hci0"): cv.string,
             }
         )
 
-    async def _create_entry(self, mac, force_update, device):
+    async def _create_entry(self, mac, friendly_name, force_update, device):
         """Register new entry."""
+        title = friendly_name.strip() if friendly_name.strip() else f"BRC1H {mac}"
         return self.async_create_entry(
-            title=f"BRC1H {mac}",
+            title=title,
             data={
                 CONF_MAC: mac,
+                CONF_FRIENDLY_NAME: friendly_name.strip(),
                 CONF_DEVICE: device,
                 CONF_FORCE_UPDATE: force_update,
             },
@@ -65,6 +68,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return await self._create_entry(
                     mac,
+                    user_input.get(CONF_FRIENDLY_NAME, ""),
                     user_input.get(CONF_FORCE_UPDATE, True),
                     user_input.get(CONF_DEVICE, "hci0"),
                 )
