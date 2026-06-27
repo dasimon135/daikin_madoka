@@ -22,7 +22,7 @@ from .const import CONTROLLERS, DOMAIN
 PARALLEL_UPDATES = 0
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=60)
 
-COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button"]
+COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
 _LOGGER = logging.getLogger(__name__)
 
