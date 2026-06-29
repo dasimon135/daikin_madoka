@@ -16,7 +16,7 @@
 
 ## Option 1 : Intégration custom Home Assistant (Bluetooth direct)
 
-> ⚠️ **Problème connu** : la bibliothèque `pymadoka` utilise `from bleak import discover`, supprimé dans bleak 0.20. Les versions récentes de HA embarquent une version incompatible. Si vous obtenez `cannot import name 'discover' from 'bleak'`, passez directement à l'**Option 2**.
+> ✅ **Corrigé en v2.3.0** : les versions antérieures échouaient sur les HA récents avec `cannot import name 'discover' from 'bleak'` (bleak ≥ 0.20 a supprimé `discover`). La v2.3.0 embarque un fork [pymadoka](https://github.com/dasimon135/pymadoka) corrigé et passe par la pile Bluetooth de HA — l'Option 1 fonctionne donc sur les HA actuels. Si vous rencontrez cette erreur, mettez à jour vers **v2.3.0**.
 
 **Prérequis** : Home Assistant avec accès Bluetooth, thermostat à moins de ~10m.
 
@@ -58,6 +58,7 @@ Renseigner :
 | `sensor.*_outdoor_temperature` | Sensor | Température extérieure |
 | `binary_sensor.*_clean_filter` | Binary sensor | Alerte nettoyage filtre |
 | `button.*_reset_filter` | Button | Acquittement alerte filtre |
+| `number.*_eye_brightness` | Number | Luminosité LED façade (0–19) |
 
 ### Docker / VM
 
@@ -333,7 +334,7 @@ script:
 
 | Erreur | Cause | Solution |
 |---|---|---|
-| `cannot import name 'discover' from 'bleak'` | pymadoka incompatible avec bleak récent | Utiliser Option 2 (ESPHome) |
+| `cannot import name 'discover' from 'bleak'` | Ancienne version (< v2.3.0) | Mettre à jour vers v2.3.0+ (fork pymadoka corrigé) — ou utiliser l'Option 2 |
 | `Invalid handler specified` | Mauvais chemin d'installation ou HA non redémarré | Vérifier `/config/custom_components/daikin_madoka/`, redémarrer HA |
 | Thermostat non trouvé | Connecté à l'appli mobile ou non appairé | Supprimer l'appairage sur le Madoka, re-scanner |
 | Connexion instable | Signal BLE faible | Rapprocher l'ESP32 du thermostat |
