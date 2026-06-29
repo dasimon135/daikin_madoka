@@ -3,7 +3,7 @@ import asyncio
 from datetime import timedelta
 import logging
 
-from pymadoka import Controller, discover_devices, force_device_disconnect
+from pymadoka import Controller, force_device_disconnect
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -11,18 +11,17 @@ from homeassistant.const import (
     CONF_DEVICE,
     CONF_DEVICES,
     CONF_FORCE_UPDATE,
-    CONF_SCAN_INTERVAL,
 )
 import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
 
 from . import config_flow  # noqa: F401
-from .const import CONTROLLERS, DOMAIN
+from .const import CONTROLLERS, DOMAIN, CONF_MAC, CONF_FRIENDLY_NAME
 
 PARALLEL_UPDATES = 0
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=60)
 
-COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button"]
+COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,12 +31,10 @@ CONFIG_SCHEMA = vol.Schema(
         {
             DOMAIN: vol.Schema(
                 {
-                    vol.Required(CONF_DEVICES, default=[]): vol.All(
-                        cv.ensure_list, [cv.string]
-                    ),
+                    vol.Required(CONF_MAC): cv.string,
+                    vol.Optional(CONF_FRIENDLY_NAME, default=""): cv.string,
                     vol.Optional(CONF_FORCE_UPDATE, default=True): bool,
                     vol.Optional(CONF_DEVICE, default="hci0"): cv.string,
-                    vol.Optional(CONF_SCAN_INTERVAL, default=5): cv.positive_int,
                 }
             )
         },
@@ -48,54 +45,71 @@ CONFIG_SCHEMA = vol.Schema(
 
 async def async_setup(hass, config):
     """Set up the component."""
-
     hass.data.setdefault(DOMAIN, {})
-
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Pass conf to all the components."""
+    """Set up Madoka thermostat(s) from a config entry.
+
+    New-style entries carry a single MAC (``CONF_MAC``); legacy entries created
+    before the per-device config flow carry a list of MACs (``CONF_DEVICES``).
+    Both shapes are supported so existing installs keep working without a forced
+    re-add.
+    """
+    adapter = entry.data.get(CONF_DEVICE, "hci0")
+    force_update = entry.data.get(CONF_FORCE_UPDATE, True)
+
+    if CONF_MAC in entry.data:
+        devices = [(entry.data[CONF_MAC], entry.data.get(CONF_FRIENDLY_NAME) or None)]
+    else:
+        devices = [(mac, None) for mac in entry.data.get(CONF_DEVICES, [])]
 
     controllers = {}
-    for device in entry.data[CONF_DEVICES]:
-        if entry.data[CONF_FORCE_UPDATE]:
-            await force_device_disconnect(device)
-        controllers[device] = Controller(device, adapter=entry.data[CONF_DEVICE])
+    for mac, friendly_name in devices:
+        if force_update:
+            try:
+                await force_device_disconnect(mac)
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Forced disconnect failed for %s, skipping...", mac)
 
-    await discover_devices(
-        adapter=entry.data[CONF_DEVICE], timeout=entry.data[CONF_SCAN_INTERVAL]
-    )
+        controller = Controller(mac, adapter=adapter, hass=hass, name=friendly_name)
 
-    for device, controller in controllers.items():
         try:
-            await asyncio.wait_for(controller.start(), timeout=10)
-        except ConnectionAbortedError as connection_aborted_error:
+            _LOGGER.info("Connecting to Madoka device: %s", mac)
+            await asyncio.wait_for(controller.start(), timeout=15)
+        except Exception as connection_error:  # noqa: BLE001
             _LOGGER.error(
                 "Could not connect to device %s: %s",
-                device,
-                str(connection_aborted_error),
+                mac,
+                str(connection_error),
             )
+
+        controllers[mac] = controller
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {CONTROLLERS: controllers}
-    for component in COMPONENT_TYPES:
-        coroutine = hass.config_entries.async_forward_entry_setups(entry, [component])
-        hass.async_create_task(coroutine)
+
+    await hass.config_entries.async_forward_entry_setups(entry, COMPONENT_TYPES)
 
     return True
 
 
 async def async_unload_entry(hass, config_entry):
     """Unload a config entry."""
-    await asyncio.wait(
-        [
-            hass.async_create_task(
-                hass.config_entries.async_forward_entry_unload(config_entry, component)
-            )
-            for component in COMPONENT_TYPES
-        ]
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        config_entry, COMPONENT_TYPES
     )
-    hass.data[DOMAIN].pop(config_entry.entry_id)
 
-    return True
+    if unload_ok:
+        data = hass.data[DOMAIN].pop(config_entry.entry_id, None)
+        if data:
+            for controller in data[CONTROLLERS].values():
+                try:
+                    await controller.stop()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Error stopping controller during unload", exc_info=True
+                    )
+
+    return unload_ok

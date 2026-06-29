@@ -2,9 +2,10 @@
   "domain": "daikin_madoka",
   "name": "Daikin Madoka",
   "config_flow": true,
+  "dependencies": ["bluetooth"],
   "documentation": "https://github.com/dasimon135/daikin_madoka",
-  "requirements": ["pymadoka @ git+https://github.com/dasimon135/pymadoka.git@773fce64bb6d63a8c8aec940fef24bc41aec18ac"],
-  "codeowners": ["@dasimon135"],
+  "requirements": ["pymadoka @ git+https://github.com/dasimon135/pymadoka.git@dc8663253c8f6883511de8081406760248c87574"],
+  "codeowners": ["@dasimon135", "@andreaippo"],
   "iot_class": "local_polling",
-  "version": "2.2.0"
+  "version": "2.3.0"
 }

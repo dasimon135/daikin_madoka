@@ -1,8 +1,8 @@
 """Daikin Madoka consts."""
 
 DOMAIN = "daikin_madoka"
-TITLE = "BRC1H"
-UNIQUE_ID = "BRC1H-id"
+CONF_MAC = "address"
+CONF_FRIENDLY_NAME = "friendly_name"
 
 CONTROLLERS = "controllers"
 

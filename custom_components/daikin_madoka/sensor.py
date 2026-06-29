@@ -67,7 +67,7 @@ class MadokaSensor(SensorEntity):
         return None
 
     @property
-    def unit_of_measurement(self):
+    def native_unit_of_measurement(self):
         """Return the unit of measurement."""
         return UnitOfTemperature.CELSIUS
 

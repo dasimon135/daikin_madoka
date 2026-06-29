@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.3.0 - Juin 2026
+
+### HA Integration
+
+- **Correctif `bleak`** : la lib `pymadoka` n'importe plus `discover` (supprimé dans bleak 0.20). L'intégration HA native fonctionne désormais sur les versions récentes de Home Assistant — l'option ESPHome n'est plus un contournement obligatoire. Merci à [@andreaippo](https://github.com/andreaippo) (PR #13 + pymadoka #30).
+- **Chemin Bluetooth HA** : connexion via la pile Bluetooth de Home Assistant (`bleak_retry_connector`) avec reconnexion à backoff exponentiel ; ajout de `dependencies: ["bluetooth"]`. Le chemin standalone/CLI de pymadoka reste fonctionnel (`hass=None`).
+- **Robustesse** : verrou par opération + timeout de 10 s sur chaque commande, garde anti-réentrance sur `start()`, `cleanup()` plus sûr.
+- **Config flow par appareil** : un thermostat par entrée (`address` + `friendly_name`), `unique_id` = MAC. Corrige le blocage du flow avec plusieurs adresses MAC. Les entrées existantes (liste `devices`) restent prises en charge (rétro-compatibilité, pas de re-création nécessaire).
+- **Nouvelle entité** : `number` pour la luminosité de la LED (eye brightness), 0–19 — parité avec le composant ESPHome.
+- **Correctifs** : `async_unload_entry` libère désormais correctement les ressources (`stop()` des controllers, retour de l'état) ; `sensor` utilise `native_unit_of_measurement` ; `hacs.json` corrigé.
+- Version bumped to 2.3.0 ; pymadoka 0.2.16.
+
+No ESPHome changes. ESPHome users should keep `ref: v2.1.1`.
+
+---
+
 ## v2.2.0 - Juin 2026
 
 ### HA Integration
