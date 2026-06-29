@@ -21,9 +21,9 @@ Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provi
 
 ## Option 1 — Home Assistant Integration (Direct Bluetooth)
 
-> ⚠️ **Known issue**: the `pymadoka` library uses `from bleak import discover`, removed in bleak 0.20. Recent HA versions bundle a newer bleak — if you get `cannot import name 'discover' from 'bleak'`, use **Option 2** instead.
+> ✅ **Fixed in v2.3.0**: earlier versions failed on recent Home Assistant with `cannot import name 'discover' from 'bleak'` (bleak ≥ 0.20 removed `discover`). v2.3.0 ships a patched [pymadoka](https://github.com/dasimon135/pymadoka) fork and connects through HA's own Bluetooth stack, so Option 1 now works on current HA. If you hit this error, update to **v2.3.0** or later.
 
-The integration connects to the Madoka thermostat directly from the HA host via Bluetooth, using the [pymadoka](https://github.com/dasim135/pymadoka) library.
+The integration connects to the Madoka thermostat directly from the HA host via Bluetooth, using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
 
 ### Installation
 
@@ -43,6 +43,7 @@ Each thermostat creates:
 - `sensor.*_outdoor_temperature` — outdoor temperature
 - `binary_sensor.*_clean_filter` — filter alert (device_class: problem)
 - `button.*_reset_filter` — reset filter timer
+- `number.*_eye_brightness` — display LED brightness 0–19
 
 ### Requirements
 
