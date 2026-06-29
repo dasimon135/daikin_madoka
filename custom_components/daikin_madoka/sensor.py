@@ -30,6 +30,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class MadokaSensor(SensorEntity):
     """Base representation of a Madoka temperature sensor."""
 
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+
     def __init__(self, controller: Controller, suffix: str, name: str) -> None:
         """Initialize the sensor."""
         self.controller = controller
@@ -55,21 +58,6 @@ class MadokaSensor(SensorEntity):
             else self.controller.connection.address
         )
         return f"{base_name} {self._name}"
-
-    @property
-    def device_class(self):
-        """Return the class of this device."""
-        return SensorDeviceClass.TEMPERATURE
-
-    @property
-    def icon(self):
-        """Return the icon of this device."""
-        return None
-
-    @property
-    def native_unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return UnitOfTemperature.CELSIUS
 
     @property
     def device_info(self):
