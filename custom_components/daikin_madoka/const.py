@@ -5,6 +5,7 @@ CONF_MAC = "address"
 CONF_FRIENDLY_NAME = "friendly_name"
 
 CONTROLLERS = "controllers"
+COORDINATORS = "coordinators"
 
 ATTR_TARGET_TEMPERATURE = "target_temperature"
 ATTR_INSIDE_TEMPERATURE = "inside_temperature"
@@ -15,3 +16,5 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 TIMEOUT = 60
+
+DEFAULT_SCAN_INTERVAL = 60

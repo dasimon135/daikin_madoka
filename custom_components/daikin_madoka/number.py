@@ -1,82 +1,55 @@
 """Support for Daikin Madoka numbers."""
 
+import logging
+
+from pymadoka import ConnectionException
+from pymadoka.features.eye_brightness import EyeBrightnessStatus
+
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.const import EntityCategory
 
-from . import DOMAIN
-from .const import CONTROLLERS
+from .const import COORDINATORS, DOMAIN
+from .coordinator import MadokaCoordinator
+from .entity import MadokaEntity
 
-from pymadoka import Controller
-from pymadoka.feature import ConnectionException, ConnectionStatus
-from pymadoka.features.eye_brightness import EyeBrightnessStatus
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Daikin Madoka numbers based on config_entry."""
-    entities = []
-    for controller in hass.data[DOMAIN][entry.entry_id][CONTROLLERS].values():
-        entities.append(MadokaEyeBrightnessNumber(controller))
-    async_add_entities(entities)
+    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
+    async_add_entities(
+        MadokaEyeBrightnessNumber(coordinator) for coordinator in coordinators.values()
+    )
 
 
-class MadokaEyeBrightnessNumber(NumberEntity):
+class MadokaEyeBrightnessNumber(MadokaEntity, NumberEntity):
     """Number to control the controller eye (LED) brightness."""
 
+    _attr_translation_key = "eye_brightness"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 0
     _attr_native_max_value = 19
     _attr_native_step = 1
     _attr_mode = NumberMode.SLIDER
 
-    def __init__(self, controller: Controller) -> None:
-        self.controller = controller
-
-    @property
-    def available(self):
-        return self.controller.connection.connection_status is ConnectionStatus.CONNECTED
-
-    @property
-    def unique_id(self):
-        return f"{self.controller.connection.address}_eye_brightness"
-
-    @property
-    def name(self):
-        base_name = (
-            self.controller.connection.name
-            if self.controller.connection.name is not None
-            else self.controller.connection.address
-        )
-        return f"{base_name} Eye Brightness"
-
-    @property
-    def icon(self):
-        return "mdi:brightness-6"
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "eye_brightness")
 
     @property
     def native_value(self):
+        """Return the current LED brightness."""
         if self.controller.eye_brightness.status is None:
             return None
         return self.controller.eye_brightness.status.brightness
 
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.controller.connection.address)},
-            "name": (
-                self.controller.connection.name
-                if self.controller.connection.name is not None
-                else self.controller.connection.address
-            ),
-            "manufacturer": "DAIKIN",
-            "model": "BRC1H",
-        }
-
     async def async_set_native_value(self, value: float) -> None:
+        """Set the LED brightness on the device."""
         try:
-            await self.controller.eye_brightness.update(
-                EyeBrightnessStatus(int(value))
+            await self.controller.eye_brightness.update(EyeBrightnessStatus(int(value)))
+        except (ConnectionAbortedError, ConnectionException):
+            _LOGGER.warning(
+                "Could not set eye brightness on %s: connection not available",
+                self.coordinator.device_name,
             )
-        except ConnectionAbortedError:
-            pass
-        except ConnectionException:
-            pass
+        await self.coordinator.async_request_refresh()

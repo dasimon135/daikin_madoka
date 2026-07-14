@@ -1,9 +1,9 @@
-"""Platform for the Daikin AC."""
+"""Platform for the Daikin BRC1H (Madoka) thermostat."""
 import asyncio
-from datetime import timedelta
 import logging
 
-from pymadoka import Controller, force_device_disconnect
+from pymadoka import Controller
+from pymadoka.connection import ConnectionStatus
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -11,15 +11,23 @@ from homeassistant.const import (
     CONF_DEVICE,
     CONF_DEVICES,
     CONF_FORCE_UPDATE,
+    CONF_SCAN_INTERVAL,
 )
-import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+import homeassistant.helpers.config_validation as cv
 
-from . import config_flow  # noqa: F401
-from .const import CONTROLLERS, DOMAIN, CONF_MAC, CONF_FRIENDLY_NAME
+from .const import (
+    CONF_FRIENDLY_NAME,
+    CONF_MAC,
+    CONTROLLERS,
+    COORDINATORS,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+)
+from .coordinator import MadokaCoordinator
 
-PARALLEL_UPDATES = 0
-MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=60)
+CONNECT_TIMEOUT = 15
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -56,43 +64,77 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     before the per-device config flow carry a list of MACs (``CONF_DEVICES``).
     Both shapes are supported so existing installs keep working without a forced
     re-add.
-    """
-    adapter = entry.data.get(CONF_DEVICE, "hci0")
-    force_update = entry.data.get(CONF_FORCE_UPDATE, True)
 
+    Connections go through Home Assistant's Bluetooth stack (local adapter or
+    ESPHome Bluetooth proxies); the legacy ``adapter``/``force_update`` entry
+    options are ignored.
+    """
     if CONF_MAC in entry.data:
         devices = [(entry.data[CONF_MAC], entry.data.get(CONF_FRIENDLY_NAME) or None)]
     else:
         devices = [(mac, None) for mac in entry.data.get(CONF_DEVICES, [])]
 
-    controllers = {}
-    for mac, friendly_name in devices:
-        if force_update:
-            try:
-                await force_device_disconnect(mac)
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug("Forced disconnect failed for %s, skipping...", mac)
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
 
-        controller = Controller(mac, adapter=adapter, hass=hass, name=friendly_name)
+    controllers = {}
+    coordinators = {}
+    for mac, friendly_name in devices:
+        controller = Controller(mac, hass=hass, name=friendly_name)
 
         try:
-            _LOGGER.info("Connecting to Madoka device: %s", mac)
-            await asyncio.wait_for(controller.start(), timeout=15)
+            _LOGGER.debug("Connecting to Madoka device: %s", mac)
+            await asyncio.wait_for(controller.start(), timeout=CONNECT_TIMEOUT)
         except Exception as connection_error:  # noqa: BLE001
-            _LOGGER.error(
-                "Could not connect to device %s: %s",
-                mac,
-                str(connection_error),
-            )
+            await _safe_stop(controller)
+            raise ConfigEntryNotReady(
+                f"Could not connect to device {mac}: {connection_error}"
+            ) from connection_error
+
+        if controller.connection.connection_status is not ConnectionStatus.CONNECTED:
+            await _safe_stop(controller)
+            raise ConfigEntryNotReady(f"Device {mac} is not reachable")
+
+        try:
+            await controller.read_info()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Could not read device info for %s", mac, exc_info=True)
+
+        coordinator = MadokaCoordinator(hass, controller, scan_interval)
+        try:
+            await coordinator.async_config_entry_first_refresh()
+        except ConfigEntryNotReady:
+            await _safe_stop(controller)
+            for started in controllers.values():
+                await _safe_stop(started)
+            raise
 
         controllers[mac] = controller
+        coordinators[mac] = coordinator
 
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {CONTROLLERS: controllers}
+    hass.data[DOMAIN][entry.entry_id] = {
+        CONTROLLERS: controllers,
+        COORDINATORS: coordinators,
+    }
+
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, COMPONENT_TYPES)
 
     return True
+
+
+async def _safe_stop(controller: Controller) -> None:
+    """Stop a controller, ignoring shutdown errors."""
+    try:
+        await controller.stop()
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Error stopping controller", exc_info=True)
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry when options (e.g. scan interval) change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass, config_entry):
@@ -105,11 +147,6 @@ async def async_unload_entry(hass, config_entry):
         data = hass.data[DOMAIN].pop(config_entry.entry_id, None)
         if data:
             for controller in data[CONTROLLERS].values():
-                try:
-                    await controller.stop()
-                except Exception:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "Error stopping controller during unload", exc_info=True
-                    )
+                await _safe_stop(controller)
 
     return unload_ok
