@@ -14,7 +14,11 @@
 - **Diagnostics**: downloadable config-entry diagnostics with MAC redaction.
 - **Device registry**: model, hardware and software versions from the device info characteristics.
 - **Modern entity naming** (`has_entity_name` + translation keys) and a **French translation** (en/es/fr). Entity IDs and unique IDs are unchanged; displayed names may differ slightly.
-- **pymadoka 0.3.0**: modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, fix for a hang when the device was out of range at setup (swallowed task cancellation).
+- **Self-healing polling**: every poll cycle re-establishes the BLE connection if it dropped (or aborted), so a transient failure no longer requires reloading the integration.
+- **Errors surface in the UI**: failed commands (set temperature, mode, fan, etc.) now raise a visible Home Assistant error instead of silently reverting on the next poll.
+- **Setpoint writes no longer clobber device settings**: updates echo the thermostat's own range mode and configured limits back instead of resetting them (long-standing pymadoka behavior, fixed in 0.3.0).
+- **MAC normalization**: manually entered addresses are normalized to the canonical form, fixing "device not found" loops for `aa-bb-...` style input and preventing duplicate entries from discovery.
+- **pymadoka 0.3.0**: modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, fix for a hang when the device was out of range at setup (swallowed task cancellation), proper cancellation propagation in the send path, and orphan-reconnect prevention on unload.
 - Version bumped to 2.4.0; requires pymadoka 0.3.0.
 
 No ESPHome changes. ESPHome users should keep `ref: v2.1.1`.

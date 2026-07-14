@@ -1,8 +1,8 @@
 """Support for the Daikin Madoka HVAC."""
+import copy
 import logging
 
 from pymadoka import (
-    ConnectionException,
     FanSpeedEnum,
     FanSpeedStatus,
     OperationModeEnum,
@@ -181,35 +181,30 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         if self._set_point is None or self.controller.operation_mode.status is None:
             return
 
-        new_cooling_set_point = self._set_point.cooling_set_point
-        new_heating_set_point = self._set_point.heating_set_point
+        # Copy the parsed status so the write echoes the device's own range
+        # mode and limits instead of resetting them.
+        new_status: SetPointStatus = copy.copy(self._set_point)
 
         target_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         target_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
         target = kwargs.get(ATTR_TEMPERATURE)
 
         if target_low is not None:
-            new_heating_set_point = round(target_low)
+            new_status.heating_set_point = round(target_low)
         if target_high is not None:
-            new_cooling_set_point = round(target_high)
+            new_status.cooling_set_point = round(target_high)
 
         if target is not None:
             operation_mode = self.controller.operation_mode.status.operation_mode
             if operation_mode != OperationModeEnum.HEAT:
-                new_cooling_set_point = round(target)
+                new_status.cooling_set_point = round(target)
             if operation_mode != OperationModeEnum.COOL:
-                new_heating_set_point = round(target)
+                new_status.heating_set_point = round(target)
 
-        try:
-            await self.controller.set_point.update(
-                SetPointStatus(new_cooling_set_point, new_heating_set_point)
-            )
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not set target temperature on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+        await self._async_execute(
+            "set target temperature",
+            lambda: self.controller.set_point.update(new_status),
+        )
 
     @property
     def hvac_mode(self):
@@ -241,14 +236,22 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             self.controller.operation_mode.status.operation_mode
             == OperationModeEnum.AUTO
         ):
-            reference = (
-                self.target_temperature
-                if not self._range_active
-                else self.target_temperature_high
-            )
-            if reference is None or self.current_temperature is None:
+            current = self.current_temperature
+            if current is None:
                 return None
-            if reference >= self.current_temperature:
+            if self._range_active:
+                low = self.target_temperature_low
+                high = self.target_temperature_high
+                if low is None or high is None:
+                    return None
+                if current < low:
+                    return HVACAction.HEATING
+                if current > high:
+                    return HVACAction.COOLING
+                return HVACAction.IDLE
+            if self.target_temperature is None:
+                return None
+            if self.target_temperature >= current:
                 return HVACAction.HEATING
             return HVACAction.COOLING
 
@@ -258,20 +261,19 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set HVAC mode."""
-        try:
-            if hvac_mode != HVACMode.OFF:
-                await self.controller.operation_mode.update(
+        calls = []
+        if hvac_mode != HVACMode.OFF:
+            calls.append(
+                lambda: self.controller.operation_mode.update(
                     OperationModeStatus(HA_MODE_TO_DAIKIN.get(hvac_mode))
                 )
-            await self.controller.power_state.update(
+            )
+        calls.append(
+            lambda: self.controller.power_state.update(
                 PowerStateStatus(hvac_mode != HVACMode.OFF)
             )
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not set HVAC mode on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+        )
+        await self._async_execute("set HVAC mode", *calls)
 
     @property
     def fan_mode(self):
@@ -288,38 +290,25 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
 
     async def async_set_fan_mode(self, fan_mode):
         """Set fan mode."""
-        try:
-            await self.controller.fan_speed.update(
+        await self._async_execute(
+            "set fan mode",
+            lambda: self.controller.fan_speed.update(
                 FanSpeedStatus(
                     HA_FAN_MODE_TO_DAIKIN.get(fan_mode),
                     HA_FAN_MODE_TO_DAIKIN.get(fan_mode),
                 )
-            )
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not set fan mode on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+            ),
+        )
 
     async def async_turn_on(self):
         """Turn device on."""
-        try:
-            await self.controller.power_state.update(PowerStateStatus(True))
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not turn on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+        await self._async_execute(
+            "turn on", lambda: self.controller.power_state.update(PowerStateStatus(True))
+        )
 
     async def async_turn_off(self):
         """Turn device off."""
-        try:
-            await self.controller.power_state.update(PowerStateStatus(False))
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not turn off %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+        await self._async_execute(
+            "turn off",
+            lambda: self.controller.power_state.update(PowerStateStatus(False)),
+        )

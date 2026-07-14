@@ -1,8 +1,5 @@
 """Support for Daikin Madoka buttons."""
 
-import logging
-
-from pymadoka import ConnectionException
 from pymadoka.features.clean_filter import ResetCleanFilterTimerStatus
 
 from homeassistant.components.button import ButtonEntity
@@ -11,8 +8,6 @@ from homeassistant.const import EntityCategory
 from .const import COORDINATORS, DOMAIN
 from .coordinator import MadokaCoordinator
 from .entity import MadokaEntity
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -34,13 +29,9 @@ class MadokaResetFilterButton(MadokaEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Reset the filter timer on the device."""
-        try:
-            await self.controller.reset_clean_filter_timer.update(
+        await self._async_execute(
+            "reset the filter timer",
+            lambda: self.controller.reset_clean_filter_timer.update(
                 ResetCleanFilterTimerStatus()
-            )
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not reset filter timer on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+            ),
+        )

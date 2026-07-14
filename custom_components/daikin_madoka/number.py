@@ -1,8 +1,5 @@
 """Support for Daikin Madoka numbers."""
 
-import logging
-
-from pymadoka import ConnectionException
 from pymadoka.features.eye_brightness import EyeBrightnessStatus
 
 from homeassistant.components.number import NumberEntity, NumberMode
@@ -11,8 +8,6 @@ from homeassistant.const import EntityCategory
 from .const import COORDINATORS, DOMAIN
 from .coordinator import MadokaCoordinator
 from .entity import MadokaEntity
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -45,11 +40,7 @@ class MadokaEyeBrightnessNumber(MadokaEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the LED brightness on the device."""
-        try:
-            await self.controller.eye_brightness.update(EyeBrightnessStatus(int(value)))
-        except (ConnectionAbortedError, ConnectionException):
-            _LOGGER.warning(
-                "Could not set eye brightness on %s: connection not available",
-                self.coordinator.device_name,
-            )
-        await self.coordinator.async_request_refresh()
+        await self._async_execute(
+            "set eye brightness",
+            lambda: self.controller.eye_brightness.update(EyeBrightnessStatus(int(value))),
+        )

@@ -1,7 +1,8 @@
 """Base entity for Daikin Madoka."""
 
-from pymadoka.connection import ConnectionStatus
+from pymadoka import ConnectionException, Controller
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -20,20 +21,27 @@ class MadokaEntity(CoordinatorEntity[MadokaCoordinator]):
         self._attr_unique_id = address if suffix is None else f"{address}_{suffix}"
 
     @property
-    def controller(self):
+    def controller(self) -> Controller:
         """Return the pymadoka controller."""
         return self.coordinator.controller
-
-    @property
-    def available(self) -> bool:
-        """Entity is available when polling works and the BLE link is up."""
-        return (
-            super().available
-            and self.controller.connection.connection_status
-            is ConnectionStatus.CONNECTED
-        )
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device registry information."""
         return self.coordinator.device_info
+
+    async def _async_execute(self, action: str, *calls) -> None:
+        """Run device write commands, surface failures, refresh shared state.
+
+        Each call is a zero-arg callable returning an awaitable, so a failure
+        in an earlier command never leaves an unawaited coroutine behind.
+        """
+        try:
+            for call in calls:
+                await call()
+        except (ConnectionAbortedError, ConnectionException) as err:
+            raise HomeAssistantError(
+                f"Could not {action} on {self.coordinator.device_name}: "
+                "connection not available"
+            ) from err
+        await self.coordinator.async_request_refresh()

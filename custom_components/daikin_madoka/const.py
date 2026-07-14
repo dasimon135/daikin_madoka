@@ -4,17 +4,12 @@ DOMAIN = "daikin_madoka"
 CONF_MAC = "address"
 CONF_FRIENDLY_NAME = "friendly_name"
 
-CONTROLLERS = "controllers"
 COORDINATORS = "coordinators"
 
-ATTR_TARGET_TEMPERATURE = "target_temperature"
-ATTR_INSIDE_TEMPERATURE = "inside_temperature"
-ATTR_OUTSIDE_TEMPERATURE = "outside_temperature"
-SENSOR_TYPE_TEMPERATURE = "temperature"
+BRC1H_NAME_PREFIX = "BRC1H"
 
 MIN_TEMP = 16
 MAX_TEMP = 32
 
-TIMEOUT = 60
-
 DEFAULT_SCAN_INTERVAL = 60
+CONNECT_TIMEOUT = 15

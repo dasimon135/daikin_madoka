@@ -9,8 +9,9 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -21,14 +22,27 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from .const import CONF_FRIENDLY_NAME, CONF_MAC, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    BRC1H_NAME_PREFIX,
+    CONF_FRIENDLY_NAME,
+    CONF_MAC,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+)
 
-MAC_REGEX = "[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$"
+MAC_REGEX = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
 
 
-def validate_mac(mac: str) -> bool:
-    """Validate the MAC address format."""
-    return bool(re.match(MAC_REGEX, mac.lower()))
+def normalize_mac(mac: str) -> str | None:
+    """Normalize any accepted MAC spelling to the canonical AA:BB:CC:DD:EE:FF.
+
+    HA's BLE registry keys devices by the uppercase colon form; storing
+    anything else makes the device permanently unreachable.
+    """
+    normalized = format_mac(mac.strip()).upper()
+    if not MAC_REGEX.match(normalized):
+        return None
+    return normalized
 
 
 class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -40,8 +54,22 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
 
+    def _configured_addresses(self) -> set[str]:
+        """Normalized MACs of all existing entries, legacy shapes included."""
+        addresses: set[str] = set()
+        for entry in self._async_current_entries(include_ignore=True):
+            macs = []
+            if CONF_MAC in entry.data:
+                macs.append(entry.data[CONF_MAC])
+            macs.extend(entry.data.get(CONF_DEVICES, []))
+            for mac in macs:
+                if (normalized := normalize_mac(mac)) is not None:
+                    addresses.add(normalized)
+        return addresses
+
     def _user_schema(self) -> vol.Schema:
         """Schema for manual/assisted setup: discovered devices + free MAC entry."""
+        configured = self._configured_addresses()
         options = [
             SelectOptionDict(
                 value=service_info.address,
@@ -50,7 +78,8 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             for service_info in async_discovered_service_info(
                 self.hass, connectable=True
             )
-            if (service_info.name or "").upper().startswith("BRC1H")
+            if (service_info.name or "").upper().startswith(BRC1H_NAME_PREFIX)
+            and service_info.address.upper() not in configured
         ]
         return vol.Schema(
             {
@@ -67,7 +96,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _create_entry(self, mac: str, friendly_name: str):
         """Register new entry."""
-        title = friendly_name.strip() or f"BRC1H {mac}"
+        title = friendly_name.strip() or f"{BRC1H_NAME_PREFIX} {mac}"
         return self.async_create_entry(
             title=title,
             data={
@@ -78,8 +107,13 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak):
         """Handle a thermostat discovered by Home Assistant's Bluetooth stack."""
-        await self.async_set_unique_id(discovery_info.address.upper())
+        address = discovery_info.address.upper()
+        await self.async_set_unique_id(address)
         self._abort_if_unique_id_configured()
+        # Legacy entries (multi-MAC, or manually typed MACs) may not carry a
+        # matching unique_id — check entry data too.
+        if address in self._configured_addresses():
+            return self.async_abort(reason="already_configured")
         self._discovery_info = discovery_info
         self.context["title_placeholders"] = {
             "name": discovery_info.name or discovery_info.address
@@ -92,7 +126,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             return await self._create_entry(
-                self._discovery_info.address,
+                self._discovery_info.address.upper(),
                 user_input.get(CONF_FRIENDLY_NAME, ""),
             )
 
@@ -109,13 +143,15 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            mac = user_input[CONF_MAC].strip()
-            if not validate_mac(mac):
+            mac = normalize_mac(user_input[CONF_MAC])
+            if mac is None:
                 errors[CONF_MAC] = "not_a_mac"
 
             if not errors:
-                await self.async_set_unique_id(mac.upper())
+                await self.async_set_unique_id(mac)
                 self._abort_if_unique_id_configured()
+                if mac in self._configured_addresses():
+                    return self.async_abort(reason="already_configured")
                 return await self._create_entry(
                     mac,
                     user_input.get(CONF_FRIENDLY_NAME, ""),
