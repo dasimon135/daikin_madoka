@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.4.0 - July 2026
+
+### HA Integration — "Modern Bluetooth" release
+
+- **ESPHome Bluetooth proxy support**: connections now go exclusively through Home Assistant's Bluetooth stack (`bleak-retry-connector`), so the thermostat can be reached through any ESPHome Bluetooth proxy — the HA server no longer needs to be within BLE range. The Linux-only `bluetoothctl` shell-out at setup is gone (`force_update` entry option is now ignored).
+- **Automatic discovery**: BRC1H thermostats advertised near HA are discovered and offered in the UI (`local_name: BRC1H*` matcher). The manual flow now shows a dropdown of discovered devices with a free-MAC fallback.
+- **DataUpdateCoordinator**: one shared BLE poll per device instead of independent per-entity updates; entities become unavailable when polling fails; setup raises "not ready" (with automatic retry) when the device is unreachable.
+- **Dual setpoint in AUTO mode**: when the device reports `range_enabled`, the climate entity exposes separate heating/cooling target temperatures (`TARGET_TEMPERATURE_RANGE`).
+- **Device-reported temperature limits**: `min_temp`/`max_temp` are read from the thermostat's own setpoint limits when available (fallback 16–32 °C).
+- **New entity**: Bluetooth signal strength (RSSI) diagnostic sensor, disabled by default.
+- **Options flow**: configurable poll interval (10–600 s, default 60 s).
+- **Diagnostics**: downloadable config-entry diagnostics with MAC redaction.
+- **Device registry**: model, hardware and software versions from the device info characteristics.
+- **Modern entity naming** (`has_entity_name` + translation keys) and a **French translation** (en/es/fr). Entity IDs and unique IDs are unchanged; displayed names may differ slightly.
+- **pymadoka 0.3.0**: modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, fix for a hang when the device was out of range at setup (swallowed task cancellation).
+- Version bumped to 2.4.0; requires pymadoka 0.3.0.
+
+No ESPHome changes. ESPHome users should keep `ref: v2.1.1`.
+
+---
+
 ## v2.3.0 - Juin 2026
 
 ### HA Integration

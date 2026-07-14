@@ -10,20 +10,20 @@ Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provi
 
 | | Option 1: HA Integration | Option 2: ESPHome |
 |---|---|---|
-| **Hardware needed** | None (BLE from HA host) | ESP32 (e.g. M5Stack Atom) |
-| **HA server location** | Must be within BLE range | Anywhere on your network |
-| **Docker/VM** | Requires DBUS config | Works out of the box |
+| **Hardware needed** | None (BLE from HA host or any ESPHome Bluetooth proxy) | ESP32 (e.g. M5Stack Atom) |
+| **HA server location** | Anywhere (since v2.4.0, works through Bluetooth proxies) | Anywhere on your network |
+| **Docker/VM** | Works via Bluetooth proxy; local adapter needs DBUS config | Works out of the box |
 | **Install via** | HACS | ESPHome dashboard |
 
-**If you have an ESP32 device, use Option 2.** It's simpler, more reliable, and works regardless of how HA is hosted.
+Both options are now equally capable. Option 1 keeps everything inside Home Assistant (discovery, options, diagnostics); Option 2 gives the thermostat its own dedicated ESP32 bridge.
 
 ---
 
 ## Option 1 — Home Assistant Integration (Direct Bluetooth)
 
-> ✅ **Fixed in v2.3.0**: earlier versions failed on recent Home Assistant with `cannot import name 'discover' from 'bleak'` (bleak ≥ 0.20 removed `discover`). v2.3.0 ships a patched [pymadoka](https://github.com/dasimon135/pymadoka) fork and connects through HA's own Bluetooth stack, so Option 1 now works on current HA. If you hit this error, update to **v2.3.0** or later.
+> ✨ **New in v2.4.0**: connections go through Home Assistant's Bluetooth stack, so the integration works through **ESPHome Bluetooth proxies** — your HA server no longer needs to be within BLE range. Thermostats in range are **discovered automatically**, the poll interval is configurable, and diagnostics can be downloaded from the device page.
 
-The integration connects to the Madoka thermostat directly from the HA host via Bluetooth, using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
+The integration connects to the Madoka thermostat via Bluetooth (local adapter or ESPHome Bluetooth proxy), using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
 
 ### Installation
 
@@ -35,19 +35,26 @@ The integration connects to the Madoka thermostat directly from the HA host via 
 **Manual:**
 Copy `custom_components/daikin_madoka/` into your HA `custom_components/` directory, then restart.
 
+### Setup
+
+If a thermostat is advertising nearby (directly or via a Bluetooth proxy), Home Assistant will discover it and offer to add it — just confirm and optionally give it a name. Otherwise go to **Settings → Devices & Services → Add Integration → Daikin Madoka** and pick it from the dropdown (or type its MAC address).
+
+The poll interval (default 60 s) can be changed from the integration's **Configure** dialog.
+
 ### Entities exposed
 
 Each thermostat creates:
-- `climate.*` — thermostat (mode, setpoint, fan speed, current temperature)
+- `climate.*` — thermostat (mode, setpoint, fan speed, current temperature; separate heating/cooling setpoints in AUTO mode when the device has range mode enabled)
 - `sensor.*_indoor_temperature` — indoor temperature
 - `sensor.*_outdoor_temperature` — outdoor temperature
+- `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
 - `binary_sensor.*_clean_filter` — filter alert (device_class: problem)
 - `button.*_reset_filter` — reset filter timer
 - `number.*_eye_brightness` — display LED brightness 0–19
 
 ### Requirements
 
-The Madoka uses Bluetooth pairing. You must pair the device once from the HA host:
+The Madoka uses Bluetooth pairing (you confirm on the thermostat's display the first time). When connecting through an **ESPHome Bluetooth proxy**, accept the pairing prompt on the thermostat when the first connection is made — if your unit refuses the connection, please open an issue with debug logs, as proxy pairing is the newest part of this release. If you use the **HA host's own adapter**, pair the device once from the host:
 
 ```bash
 bluetoothctl
