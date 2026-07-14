@@ -1,0 +1,55 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "abort": {
+      "already_configured": "Ce thermostat est déjà configuré",
+      "already_in_progress": "Une configuration est déjà en cours"
+    },
+    "error": {
+      "not_a_mac": "Format d'adresse MAC incorrect (ex. AA:BB:CC:DD:EE:FF)"
+    },
+    "step": {
+      "user": {
+        "title": "Configurer Daikin Madoka",
+        "description": "Choisissez un thermostat BRC1H détecté ou saisissez son adresse MAC Bluetooth. Relancez ce flux pour ajouter d'autres thermostats.\n\nL'appareil doit être appairé avec l'hôte Home Assistant (ou accessible via un proxy Bluetooth ESPHome). Consultez la documentation pour l'appairage.",
+        "data": {
+          "address": "Thermostat BRC1H",
+          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Thermostat Daikin Madoka détecté",
+        "description": "Ajouter {name} à Home Assistant ?",
+        "data": {
+          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Daikin Madoka",
+        "data": {
+          "scan_interval": "Intervalle d'interrogation (secondes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "indoor_temperature": { "name": "Température intérieure" },
+      "outdoor_temperature": { "name": "Température extérieure" },
+      "rssi": { "name": "Puissance du signal" }
+    },
+    "binary_sensor": {
+      "clean_filter": { "name": "Nettoyage du filtre" }
+    },
+    "button": {
+      "reset_filter": { "name": "Réinitialiser le compteur de filtre" }
+    },
+    "number": {
+      "eye_brightness": { "name": "Luminosité du voyant" }
+    }
+  }
+}

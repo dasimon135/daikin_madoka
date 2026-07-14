@@ -1,11 +1,19 @@
 {
   "domain": "daikin_madoka",
   "name": "Daikin Madoka",
+  "bluetooth": [
+    {
+      "local_name": "BRC1H*",
+      "connectable": true
+    }
+  ],
+  "codeowners": ["@dasimon135", "@andreaippo"],
   "config_flow": true,
   "dependencies": ["bluetooth"],
   "documentation": "https://github.com/dasimon135/daikin_madoka",
-  "requirements": ["pymadoka @ git+https://github.com/dasimon135/pymadoka.git@dc8663253c8f6883511de8081406760248c87574"],
-  "codeowners": ["@dasimon135", "@andreaippo"],
+  "integration_type": "device",
   "iot_class": "local_polling",
-  "version": "2.3.0"
+  "loggers": ["pymadoka"],
+  "requirements": ["pymadoka @ git+https://github.com/dasimon135/pymadoka.git@v0.3.0"],
+  "version": "2.4.0"
 }
