@@ -28,6 +28,7 @@ from .const import (
     CONF_MAC,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    MADOKA_SERVICE_UUID,
 )
 
 MAC_REGEX = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
@@ -78,7 +79,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             for service_info in async_discovered_service_info(
                 self.hass, connectable=True
             )
-            if (service_info.name or "").upper().startswith(BRC1H_NAME_PREFIX)
+            if MADOKA_SERVICE_UUID in service_info.service_uuids
             and service_info.address.upper() not in configured
         ]
         return vol.Schema(

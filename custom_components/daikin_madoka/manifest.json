@@ -3,7 +3,7 @@
   "name": "Daikin Madoka",
   "bluetooth": [
     {
-      "local_name": "BRC1H*",
+      "service_uuid": "2141e110-213a-11e6-b67b-9e71128cae77",
       "connectable": true
     }
   ],

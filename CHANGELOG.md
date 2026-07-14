@@ -5,7 +5,7 @@
 ### HA Integration — "Modern Bluetooth" release
 
 - **ESPHome Bluetooth proxy support**: connections now go exclusively through Home Assistant's Bluetooth stack (`bleak-retry-connector`), so the thermostat can be reached through any ESPHome Bluetooth proxy — the HA server no longer needs to be within BLE range. The Linux-only `bluetoothctl` shell-out at setup is gone (`force_update` entry option is now ignored).
-- **Automatic discovery**: BRC1H thermostats advertised near HA are discovered and offered in the UI (`local_name: BRC1H*` matcher). The manual flow now shows a dropdown of discovered devices with a free-MAC fallback.
+- **Automatic discovery**: BRC1H thermostats advertised near HA are discovered and offered in the UI (matched on the Madoka BLE service UUID — the units advertise the local name "Daikin", verified on hardware). The manual flow now shows a dropdown of discovered devices with a free-MAC fallback.
 - **DataUpdateCoordinator**: one shared BLE poll per device instead of independent per-entity updates; entities become unavailable when polling fails; setup raises "not ready" (with automatic retry) when the device is unreachable.
 - **Dual setpoint in AUTO mode**: when the device reports `range_enabled`, the climate entity exposes separate heating/cooling target temperatures (`TARGET_TEMPERATURE_RANGE`).
 - **Device-reported temperature limits**: `min_temp`/`max_temp` are read from the thermostat's own setpoint limits when available (fallback 16–32 °C).
