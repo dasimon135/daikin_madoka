@@ -1,51 +1,25 @@
-# deploy.ps1 — Déploie l'intégration HA vers custom_components/daikin_madoka
-# Usage : .\deploy.ps1
-# Fonctionne depuis n'importe quelle branche git.
+# deploy.ps1 — Deploy the HA integration to custom_components/daikin_madoka
+# Usage: .\deploy.ps1
+# Works from any git branch; copies the whole integration folder.
 
-$src = $PSScriptRoot
+$src = Join-Path $PSScriptRoot "custom_components\daikin_madoka"
 $dst = "H:\custom_components\daikin_madoka"
 
-Write-Host "Branche active : $(git -C $src rev-parse --abbrev-ref HEAD)" -ForegroundColor Cyan
+Write-Host "Active branch: $(git -C $PSScriptRoot rev-parse --abbrev-ref HEAD)" -ForegroundColor Cyan
+
+if (-not (Test-Path $src)) {
+    Write-Error "Source not found: $src"
+    exit 1
+}
 
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 
-# Fichiers Python + config de l'intégration HA
-$files = @(
-    "__init__.py",
-    "climate.py",
-    "config_flow.py",
-    "const.py",
-    "sensor.py",
-    "strings.json",
-    "manifest.json"
-)
+# Mirror the integration folder (removes files deleted on the branch)
+Copy-Item "$src\*" $dst -Recurse -Force
 
-# Fichiers optionnels présents sur feature/v2-native-ble
-$optionalFiles = @(
-    "madoka_protocol.py",
-    "bluetooth.py",
-    "coordinator.py",
-    "binary_sensor.py",
-    "button.py",
-    "number.py"
-)
-
-foreach ($f in $files) {
-    Copy-Item "$src\$f" "$dst\$f" -Force
-    Write-Host "  OK  $f"
-}
-
-foreach ($f in $optionalFiles) {
-    if (Test-Path "$src\$f") {
-        Copy-Item "$src\$f" "$dst\$f" -Force
-        Write-Host "  OK  $f (v2)"
-    }
-}
-
-# Dossier translations
-Copy-Item "$src\translations" "$dst\translations" -Recurse -Force
-Write-Host "  OK  translations/"
+Get-ChildItem $dst -File | ForEach-Object { Write-Host "  OK  $($_.Name)" }
+Get-ChildItem "$dst\translations" -File | ForEach-Object { Write-Host "  OK  translations/$($_.Name)" }
 
 Write-Host ""
-Write-Host "Deploye dans : $dst" -ForegroundColor Green
-Write-Host "=> Redemarrer Home Assistant pour prendre en compte les changements." -ForegroundColor Yellow
+Write-Host "Deployed to: $dst" -ForegroundColor Green
+Write-Host "=> Restart Home Assistant to pick up the changes." -ForegroundColor Yellow
