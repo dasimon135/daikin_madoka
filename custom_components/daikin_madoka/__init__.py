@@ -75,7 +75,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             except Exception:  # noqa: BLE001
                 _LOGGER.debug("Could not read device info for %s", mac, exc_info=True)
 
-            coordinator = MadokaCoordinator(hass, controller, scan_interval)
+            coordinator = MadokaCoordinator(
+                hass, controller, scan_interval, friendly_name=friendly_name
+            )
             await coordinator.async_config_entry_first_refresh()
         except Exception as connection_error:  # noqa: BLE001
             await _safe_stop(controller)

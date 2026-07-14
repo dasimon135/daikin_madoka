@@ -20,10 +20,17 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     """Poll one BRC1H controller and share the result with all its entities."""
 
     def __init__(
-        self, hass: HomeAssistant, controller: Controller, scan_interval: int
+        self,
+        hass: HomeAssistant,
+        controller: Controller,
+        scan_interval: int,
+        friendly_name: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         self.controller = controller
+        # The BLE stack overwrites controller.connection.name with the
+        # advertised local name ("Daikin"), so keep the user's chosen name here.
+        self._friendly_name = friendly_name
         super().__init__(
             hass,
             _LOGGER,
@@ -56,10 +63,20 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.
-        return {
-            feature: dict(status)
-            for feature, status in self.controller.refresh_status().items()
+        status = {
+            feature: dict(feature_status)
+            for feature, feature_status in self.controller.refresh_status().items()
         }
+
+        # pymadoka's Controller.update() swallows per-feature query timeouts, so
+        # a connected-but-unresponsive device (e.g. an authenticated link that
+        # never completes a GATT exchange) would otherwise look like a
+        # successful poll of empty data. Treat "no feature answered" as failure
+        # so the entry stays not-ready instead of exposing phantom entities.
+        if not status:
+            raise UpdateFailed(f"Device {self.address} did not answer any query")
+
+        return status
 
     @property
     def address(self) -> str:
@@ -69,7 +86,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     @property
     def device_name(self) -> str:
         """Return the display name of the device."""
-        return self.controller.connection.name or self.address
+        return self._friendly_name or self.controller.connection.name or self.address
 
     @property
     def device_info(self) -> DeviceInfo:
