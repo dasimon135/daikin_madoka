@@ -63,6 +63,7 @@ The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_c
 ```yaml
 esp32:
   framework:
+    type: esp-idf   # sdkconfig_options requires the esp-idf framework
     sdkconfig_options:
       CONFIG_BT_BLE_SMP_ENABLE: y
       CONFIG_BLE_SM_SC: y

@@ -36,6 +36,11 @@
       }
     }
   },
+  "exceptions": {
+    "command_failed": {
+      "message": "Fallo del comando « {action} » en {device}: conexión Bluetooth no disponible"
+    }
+  },
   "entity": {
     "sensor": {
       "indoor_temperature": { "name": "Temperatura interior" },

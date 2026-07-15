@@ -7,11 +7,12 @@ import logging
 from pymadoka import ConnectionException, Controller
 from pymadoka.connection import ConnectionStatus
 
+from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import BRC1H_NAME_PREFIX, CONNECT_TIMEOUT, DOMAIN
+from .const import BRC1H_NAME_PREFIX, CONNECT_TIMEOUT, DOMAIN, POLL_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +47,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         before querying, so entities recover without a manual reload.
         """
         if self.controller.connection.connection_status is not ConnectionStatus.CONNECTED:
+            # Fail fast when the device is not even advertising: HA's BLE
+            # tracker already knows, so don't burn 30s of connect attempts
+            # (and a proxy connection slot) every poll for an absent device.
+            if not bluetooth.async_address_present(
+                self.hass, self.address, connectable=True
+            ):
+                raise UpdateFailed(f"Device {self.address} is not advertising")
             try:
                 await asyncio.wait_for(self.controller.start(), timeout=CONNECT_TIMEOUT)
             except Exception as err:  # noqa: BLE001
@@ -57,9 +65,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 raise UpdateFailed(f"Device {self.address} is not reachable")
 
         try:
-            await self.controller.update()
+            async with asyncio.timeout(POLL_TIMEOUT):
+                await self.controller.update()
         except (ConnectionAbortedError, ConnectionException) as err:
             raise UpdateFailed(f"Could not update {self.address}: {err}") from err
+        except TimeoutError as err:
+            raise UpdateFailed(
+                f"Polling {self.address} exceeded {POLL_TIMEOUT}s"
+            ) from err
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.

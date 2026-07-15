@@ -16,4 +16,8 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
-CONNECT_TIMEOUT = 15
+# Must exceed the connect path's internal budget (establish_connection retries
+# + pairing + settle), or reconnects get cancelled mid-handshake.
+CONNECT_TIMEOUT = 30
+# Hard ceiling on one full-feature poll (queries retry individually).
+POLL_TIMEOUT = 45

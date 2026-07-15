@@ -36,6 +36,11 @@
       }
     }
   },
+  "exceptions": {
+    "command_failed": {
+      "message": "Could not {action} on {device}: Bluetooth connection not available"
+    }
+  },
   "entity": {
     "sensor": {
       "indoor_temperature": { "name": "Indoor temperature" },

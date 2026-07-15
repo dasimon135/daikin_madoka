@@ -14,7 +14,9 @@ if (-not (Test-Path $src)) {
 
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 
-# Mirror the integration folder (removes files deleted on the branch)
+# Mirror the integration folder: clear the destination first so files deleted
+# on the branch do not linger on the HA side (Copy-Item alone only overlays).
+Get-ChildItem $dst | Remove-Item -Recurse -Force
 Copy-Item "$src\*" $dst -Recurse -Force
 
 Get-ChildItem $dst -File | ForEach-Object { Write-Host "  OK  $($_.Name)" }

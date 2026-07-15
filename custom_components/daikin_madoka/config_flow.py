@@ -1,6 +1,6 @@
 """Config flow for the Daikin Madoka platform."""
 
-import re
+from typing import Any
 
 import voluptuous as vol
 
@@ -9,9 +9,9 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
-from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -30,20 +30,7 @@ from .const import (
     DOMAIN,
     MADOKA_SERVICE_UUID,
 )
-
-MAC_REGEX = re.compile(r"^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
-
-
-def normalize_mac(mac: str) -> str | None:
-    """Normalize any accepted MAC spelling to the canonical AA:BB:CC:DD:EE:FF.
-
-    HA's BLE registry keys devices by the uppercase colon form; storing
-    anything else makes the device permanently unreachable.
-    """
-    normalized = format_mac(mac.strip()).upper()
-    if not MAC_REGEX.match(normalized):
-        return None
-    return normalized
+from .util import normalize_mac
 
 
 class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -95,7 +82,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def _create_entry(self, mac: str, friendly_name: str):
+    async def _create_entry(self, mac: str, friendly_name: str) -> ConfigFlowResult:
         """Register new entry."""
         title = friendly_name.strip() or f"{BRC1H_NAME_PREFIX} {mac}"
         return self.async_create_entry(
@@ -106,7 +93,9 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak):
+    async def async_step_bluetooth(
+        self, discovery_info: BluetoothServiceInfoBleak
+    ) -> ConfigFlowResult:
         """Handle a thermostat discovered by Home Assistant's Bluetooth stack."""
         address = discovery_info.address.upper()
         await self.async_set_unique_id(address)
@@ -121,7 +110,9 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         }
         return await self.async_step_bluetooth_confirm()
 
-    async def async_step_bluetooth_confirm(self, user_input=None):
+    async def async_step_bluetooth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Confirm the discovered thermostat and pick a name."""
         assert self._discovery_info is not None
 
@@ -139,7 +130,9 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """User initiated config flow."""
         errors = {}
 
@@ -164,7 +157,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: ConfigEntry) -> "OptionsFlowHandler":
         """Return the options flow handler."""
         return OptionsFlowHandler()
 
@@ -172,7 +165,9 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle the options flow (poll interval)."""
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

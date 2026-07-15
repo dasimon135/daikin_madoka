@@ -1,6 +1,5 @@
 """Support for the Daikin Madoka HVAC."""
 import copy
-import logging
 
 from pymadoka import (
     FanSpeedEnum,
@@ -28,8 +27,6 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 
 from .const import COORDINATORS, DOMAIN, MAX_TEMP, MIN_TEMP
 from .entity import MadokaEntity
-
-_LOGGER = logging.getLogger(__name__)
 
 HA_MODE_TO_DAIKIN = {
     HVACMode.FAN_ONLY: OperationModeEnum.FAN,

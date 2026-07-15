@@ -1,10 +1,8 @@
 """Platform for the Daikin BRC1H (Madoka) thermostat."""
-import asyncio
 from datetime import timedelta
 import logging
 
 from pymadoka import Controller
-from pymadoka.connection import ConnectionStatus
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
@@ -15,12 +13,12 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     CONF_FRIENDLY_NAME,
     CONF_MAC,
-    CONNECT_TIMEOUT,
     COORDINATORS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 from .coordinator import MadokaCoordinator
+from .util import normalize_mac
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -30,23 +28,19 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup(hass, config):
-    """Set up the component."""
-    hass.data.setdefault(DOMAIN, {})
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Madoka thermostat(s) from a config entry.
 
     New-style entries carry a single MAC (``CONF_MAC``); legacy entries created
     before the per-device config flow carry a list of MACs (``CONF_DEVICES``).
     Both shapes are supported so existing installs keep working without a forced
-    re-add.
+    re-add, and legacy MACs (typed with dashes or lowercase) are normalized to
+    the canonical form HA's BLE registry uses.
 
     Connections go through Home Assistant's Bluetooth stack (local adapter or
-    ESPHome Bluetooth proxies); the legacy ``adapter``/``force_update`` entry
-    options are ignored.
+    ESPHome Bluetooth proxies) and are owned by the coordinator: its first
+    refresh connects, and every later poll doubles as a reconnect attempt. The
+    legacy ``adapter``/``force_update`` entry options are ignored.
     """
     if CONF_MAC in entry.data:
         devices = [(entry.data[CONF_MAC], entry.data.get(CONF_FRIENDLY_NAME) or None)]
@@ -58,39 +52,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
 
     coordinators: dict[str, MadokaCoordinator] = {}
-    for mac, friendly_name in devices:
-        controller = Controller(mac, hass=hass, name=friendly_name)
+    for raw_mac, friendly_name in devices:
+        mac = normalize_mac(raw_mac) or raw_mac
+
+        # reconnect=False: the coordinator is the single reconnect owner; a
+        # library-side background reconnect task would race it.
+        controller = Controller(mac, hass=hass, name=friendly_name, reconnect=False)
+        coordinator = MadokaCoordinator(
+            hass, controller, scan_interval, friendly_name=friendly_name
+        )
 
         try:
-            _LOGGER.debug("Connecting to Madoka device: %s", mac)
-            await asyncio.wait_for(controller.start(), timeout=CONNECT_TIMEOUT)
-            if (
-                controller.connection.connection_status
-                is not ConnectionStatus.CONNECTED
-            ):
-                raise ConfigEntryNotReady(f"Device {mac} is not reachable")
-
-            try:
-                await controller.read_info()
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug("Could not read device info for %s", mac, exc_info=True)
-
-            coordinator = MadokaCoordinator(
-                hass, controller, scan_interval, friendly_name=friendly_name
-            )
             await coordinator.async_config_entry_first_refresh()
-        except Exception as connection_error:  # noqa: BLE001
+        except ConfigEntryNotReady as connection_error:
             await _safe_stop(controller)
             if single_device:
-                raise ConfigEntryNotReady(
-                    f"Could not connect to device {mac}: {connection_error}"
-                ) from connection_error
+                raise
             # Legacy multi-device entries keep the reachable thermostats
             # working instead of failing the whole entry.
             _LOGGER.warning(
                 "Skipping unreachable device %s: %s", mac, connection_error
             )
             continue
+
+        try:
+            await controller.read_info()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Could not read device info for %s", mac, exc_info=True)
 
         coordinators[mac] = coordinator
 
@@ -122,7 +110,7 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
         coordinator.update_interval = timedelta(seconds=scan_interval)
 
 
-async def async_unload_entry(hass, config_entry):
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry, COMPONENT_TYPES
