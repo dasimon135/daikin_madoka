@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.4.0 - July 2026
+
+### HA Integration — "Modern Bluetooth" release
+
+- **ESPHome Bluetooth proxy support**: connections now go exclusively through Home Assistant's Bluetooth stack (`bleak-retry-connector`), so the thermostat can be reached through any ESPHome Bluetooth proxy — the HA server no longer needs to be within BLE range. The Linux-only `bluetoothctl` shell-out at setup is gone (`force_update` entry option is now ignored).
+- **Automatic discovery**: BRC1H thermostats advertised near HA are discovered and offered in the UI (matched on the Madoka BLE service UUID — the units advertise the local name "Daikin", verified on hardware). The manual flow now shows a dropdown of discovered devices with a free-MAC fallback.
+- **DataUpdateCoordinator**: one shared BLE poll per device instead of independent per-entity updates; entities become unavailable when polling fails; setup raises "not ready" (with automatic retry) when the device is unreachable.
+- **Dual setpoint in AUTO mode**: when the device reports `range_enabled`, the climate entity exposes separate heating/cooling target temperatures (`TARGET_TEMPERATURE_RANGE`).
+- **Device-reported temperature limits**: `min_temp`/`max_temp` are read from the thermostat's own setpoint limits when available (fallback 16–32 °C).
+- **New entity**: Bluetooth signal strength (RSSI) diagnostic sensor, disabled by default.
+- **Options flow**: configurable poll interval (10–600 s, default 60 s).
+- **Diagnostics**: downloadable config-entry diagnostics with MAC redaction.
+- **Device registry**: model, hardware and software versions from the device info characteristics.
+- **Modern entity naming** (`has_entity_name` + translation keys) and a **French translation** (en/es/fr). Entity IDs and unique IDs are unchanged; displayed names may differ slightly.
+- **Brand icon**: a BRC1H-inspired icon ships inside the integration (`brand/` folder, displayed on HA ≥ 2026.3) — no more "icon not available" placeholder on discovery cards; entity icons move to `icons.json` with a state-aware filter alert.
+- **Self-healing polling**: every poll cycle re-establishes the BLE connection if it dropped (or aborted), so a transient failure no longer requires reloading the integration.
+- **Errors surface in the UI**: failed commands (set temperature, mode, fan, etc.) now raise a visible Home Assistant error instead of silently reverting on the next poll.
+- **Setpoint writes no longer clobber device settings**: updates echo the thermostat's own range mode and configured limits back instead of resetting them (long-standing pymadoka behavior, fixed in 0.3.0).
+- **MAC normalization**: manually entered addresses are normalized to the canonical form, fixing "device not found" loops for `aa-bb-...` style input and preventing duplicate entries from discovery.
+- **Proxy pairing (validated on hardware)**: pymadoka now pairs explicitly (MITM) before subscribing to notifications — the BRC1H silently ignores unauthenticated clients, which is why proxied connections used to hang with no response. The proxy itself needs a small YAML addition (io_capability + a numeric-comparison responder); see the README's Requirements section.
+- **pymadoka-ng 0.3.2** (dist renamed; import stays `pymadoka`): modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, explicit `pair()` + settle delay before the first command, per-feature query retry, fix for a hang when the device was out of range at setup (swallowed task cancellation), proper cancellation propagation in the send path, and orphan-reconnect prevention on unload. The dist rename also works around HA never re-installing a git requirement whose package is already present.
+- Version bumped to 2.4.0; requires pymadoka-ng 0.3.3.
+- **Upgrading from ≤ v2.3.x**: the old `pymadoka` Python dist may remain installed alongside `pymadoka-ng` (they share files). Harmless day to day, but avoid `pip uninstall pymadoka` inside the HA container — it would delete shared files. The situation resolves itself at the next HA Core update (fresh container), and definitively once pymadoka-ng is published on PyPI.
+
+No ESPHome changes. ESPHome users should keep `ref: v2.1.1`.
+
+---
+
 ## v2.3.0 - Juin 2026
 
 ### HA Integration

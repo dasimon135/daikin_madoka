@@ -10,20 +10,20 @@ Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provi
 
 | | Option 1: HA Integration | Option 2: ESPHome |
 |---|---|---|
-| **Hardware needed** | None (BLE from HA host) | ESP32 (e.g. M5Stack Atom) |
-| **HA server location** | Must be within BLE range | Anywhere on your network |
-| **Docker/VM** | Requires DBUS config | Works out of the box |
+| **Hardware needed** | None (BLE from HA host or any ESPHome Bluetooth proxy) | ESP32 (e.g. M5Stack Atom) |
+| **HA server location** | Anywhere (since v2.4.0, works through Bluetooth proxies) | Anywhere on your network |
+| **Docker/VM** | Works via Bluetooth proxy; local adapter needs DBUS config | Works out of the box |
 | **Install via** | HACS | ESPHome dashboard |
 
-**If you have an ESP32 device, use Option 2.** It's simpler, more reliable, and works regardless of how HA is hosted.
+Both options are now equally capable. Option 1 keeps everything inside Home Assistant (discovery, options, diagnostics); Option 2 gives the thermostat its own dedicated ESP32 bridge.
 
 ---
 
 ## Option 1 — Home Assistant Integration (Direct Bluetooth)
 
-> ✅ **Fixed in v2.3.0**: earlier versions failed on recent Home Assistant with `cannot import name 'discover' from 'bleak'` (bleak ≥ 0.20 removed `discover`). v2.3.0 ships a patched [pymadoka](https://github.com/dasimon135/pymadoka) fork and connects through HA's own Bluetooth stack, so Option 1 now works on current HA. If you hit this error, update to **v2.3.0** or later.
+> ✨ **New in v2.4.0**: connections go through Home Assistant's Bluetooth stack, so the integration works through **ESPHome Bluetooth proxies** — your HA server no longer needs to be within BLE range. Thermostats in range are **discovered automatically**, the poll interval is configurable, and diagnostics can be downloaded from the device page.
 
-The integration connects to the Madoka thermostat directly from the HA host via Bluetooth, using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
+The integration connects to the Madoka thermostat via Bluetooth (local adapter or ESPHome Bluetooth proxy), using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
 
 ### Installation
 
@@ -35,19 +35,63 @@ The integration connects to the Madoka thermostat directly from the HA host via 
 **Manual:**
 Copy `custom_components/daikin_madoka/` into your HA `custom_components/` directory, then restart.
 
+### Setup
+
+If a thermostat is advertising nearby (directly or via a Bluetooth proxy), Home Assistant will discover it and offer to add it — just confirm and optionally give it a name. Otherwise go to **Settings → Devices & Services → Add Integration → Daikin Madoka** and pick it from the dropdown (or type its MAC address).
+
+The poll interval (default 60 s) can be changed from the integration's **Configure** dialog.
+
 ### Entities exposed
 
 Each thermostat creates:
-- `climate.*` — thermostat (mode, setpoint, fan speed, current temperature)
+- `climate.*` — thermostat (mode, setpoint, fan speed, current temperature; separate heating/cooling setpoints in AUTO mode when the device has range mode enabled)
 - `sensor.*_indoor_temperature` — indoor temperature
 - `sensor.*_outdoor_temperature` — outdoor temperature
+- `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
 - `binary_sensor.*_clean_filter` — filter alert (device_class: problem)
 - `button.*_reset_filter` — reset filter timer
 - `number.*_eye_brightness` — display LED brightness 0–19
 
 ### Requirements
 
-The Madoka uses Bluetooth pairing. You must pair the device once from the HA host:
+The BRC1H requires an **authenticated (MITM) pairing** — it silently ignores every command, and even notification subscriptions, on an unauthenticated link. How you satisfy that depends on your Bluetooth path:
+
+#### Via an ESPHome Bluetooth proxy (validated on hardware)
+
+The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_capability: none` and nothing answers the numeric-comparison confirmation). Add this to the proxy's YAML and reflash:
+
+```yaml
+esp32:
+  framework:
+    type: esp-idf   # sdkconfig_options requires the esp-idf framework
+    sdkconfig_options:
+      CONFIG_BT_BLE_SMP_ENABLE: y
+      CONFIG_BLE_SM_SC: y
+      CONFIG_BLE_SM_LEGACY: y
+
+esp32_ble:
+  io_capability: display_yes_no
+
+# Pairing responder: never connects (auto_connect: false), only auto-confirms
+# the numeric-comparison pairing for the thermostat's address.
+ble_client:
+  - mac_address: "AA:BB:CC:DD:EE:FF"   # your BRC1H MAC
+    id: madoka_pairing
+    auto_connect: false
+    on_numeric_comparison_request:
+      then:
+        - ble_client.numeric_comparison_reply:
+            id: madoka_pairing
+            accept: true
+```
+
+Then add the integration: on the first connection the thermostat shows a pairing prompt on its display — **accept it within a few seconds**. Notes:
+- The bond is stored **per proxy**: if several proxies can reach the thermostat, each one triggers its own (one-time) pairing prompt, and each needs the YAML above.
+- If pairing loops (prompt appears, then fails, then re-appears), un-pair on the thermostat (Bluetooth menu → forget) and retry.
+
+#### Via the HA host's own adapter
+
+Pair the device once from the host:
 
 ```bash
 bluetoothctl

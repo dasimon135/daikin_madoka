@@ -1,22 +1,60 @@
 {
   "config": {
+    "flow_title": "{name}",
     "abort": {
-      "already_configured": "Este termostato ya está configurado"
+      "already_configured": "Este termostato ya está configurado",
+      "already_in_progress": "Ya hay un flujo de configuración en curso"
     },
     "error": {
-      "not_a_mac": "Formato de dirección MAC incorrecto (ej. AA:BB:CC:DD:EE:FF)"
+      "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)"
     },
     "step": {
       "user": {
+        "title": "Configurar Daikin Madoka",
+        "description": "Elige un termostato BRC1H descubierto o introduce su dirección MAC Bluetooth. Ejecuta este flujo de nuevo para añadir más termostatos.\n\nEl dispositivo debe estar emparejado con el host de Home Assistant (o accesible a través de un proxy Bluetooth ESPHome). Consulta la documentación para los pasos de emparejamiento.",
         "data": {
-          "address": "Dirección MAC Bluetooth del BRC1H",
-          "friendly_name": "Nombre descriptivo (opcional, ej. 'Salón')",
-          "device": "Nombre del adaptador Bluetooth (ejecute 'hcitool dev' para listarlos)",
-          "force_update": "Forzar desconexión del BRC1H antes de conectar (recomendado)"
-        },
-        "description": "Introduzca la dirección MAC Bluetooth de un termostato BRC1H. Vuelva a ejecutar este flujo para añadir más termostatos.\n\nAsegúrese de haber emparejado el dispositivo:\n\n1. Olvidar conexión bluetooth en BRC1H\n2. bluetoothctl scan on\n3. bluetoothctl scan off\n4. bluetoothctl pair [BRC1H MAC]\n5. Confirmar cuando se solicite\n6. Confirmar conexión en la pantalla del BRC1H",
-        "title": "Configurar Daikin Madoka"
+          "address": "Termostato BRC1H",
+          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Termostato Daikin Madoka encontrado",
+        "description": "¿Añadir {name} a Home Assistant?",
+        "data": {
+          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
+        }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de Daikin Madoka",
+        "data": {
+          "scan_interval": "Intervalo de sondeo (segundos)"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Fallo del comando « {action} » en {device}: conexión Bluetooth no disponible"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "indoor_temperature": { "name": "Temperatura interior" },
+      "outdoor_temperature": { "name": "Temperatura exterior" },
+      "rssi": { "name": "Intensidad de señal" }
+    },
+    "binary_sensor": {
+      "clean_filter": { "name": "Limpiar filtro" }
+    },
+    "button": {
+      "reset_filter": { "name": "Reiniciar temporizador del filtro" }
+    },
+    "number": {
+      "eye_brightness": { "name": "Brillo del LED" }
     }
   }
 }

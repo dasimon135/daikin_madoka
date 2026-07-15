@@ -1,22 +1,60 @@
 {
   "config": {
+    "flow_title": "{name}",
     "abort": {
-      "already_configured": "This thermostat is already configured"
+      "already_configured": "This thermostat is already configured",
+      "already_in_progress": "Configuration flow is already in progress"
     },
     "error": {
       "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)"
     },
     "step": {
       "user": {
+        "title": "Configure Daikin Madoka",
+        "description": "Pick a discovered BRC1H thermostat or enter its Bluetooth MAC address. Run this flow again to add additional thermostats.\n\nThe device must be paired with the Home Assistant host (or reachable through an ESPHome Bluetooth proxy). See the documentation for pairing steps.",
         "data": {
-          "address": "BRC1H Bluetooth MAC address",
-          "friendly_name": "Friendly name (optional, e.g. 'Living room')",
-          "device": "Bluetooth adapter name (run 'hcitool dev' to list adapters)",
-          "force_update": "Force disconnect from BRC1H before connecting (recommended)"
-        },
-        "description": "Enter the Bluetooth MAC address of one BRC1H thermostat. Run this flow again to add additional thermostats.\n\nMake sure the device has been paired:\n\n1. Forget Bluetooth connection on BRC1H\n2. bluetoothctl scan on\n3. bluetoothctl scan off\n4. bluetoothctl pair [BRC1H MAC]\n5. Confirm when prompted\n6. Confirm connection on BRC1H display",
-        "title": "Configure Daikin Madoka"
+          "address": "BRC1H thermostat",
+          "friendly_name": "Friendly name (optional, e.g. 'Living room')"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Daikin Madoka thermostat found",
+        "description": "Add {name} to Home Assistant?",
+        "data": {
+          "friendly_name": "Friendly name (optional, e.g. 'Living room')"
+        }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Daikin Madoka options",
+        "data": {
+          "scan_interval": "Poll interval (seconds)"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Could not {action} on {device}: Bluetooth connection not available"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "indoor_temperature": { "name": "Indoor temperature" },
+      "outdoor_temperature": { "name": "Outdoor temperature" },
+      "rssi": { "name": "Signal strength" }
+    },
+    "binary_sensor": {
+      "clean_filter": { "name": "Clean filter" }
+    },
+    "button": {
+      "reset_filter": { "name": "Reset filter timer" }
+    },
+    "number": {
+      "eye_brightness": { "name": "Eye brightness" }
     }
   }
 }
