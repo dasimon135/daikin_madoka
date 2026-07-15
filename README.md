@@ -54,7 +54,43 @@ Each thermostat creates:
 
 ### Requirements
 
-The Madoka uses Bluetooth pairing (you confirm on the thermostat's display the first time). When connecting through an **ESPHome Bluetooth proxy**, accept the pairing prompt on the thermostat when the first connection is made — if your unit refuses the connection, please open an issue with debug logs, as proxy pairing is the newest part of this release. If you use the **HA host's own adapter**, pair the device once from the host:
+The BRC1H requires an **authenticated (MITM) pairing** — it silently ignores every command, and even notification subscriptions, on an unauthenticated link. How you satisfy that depends on your Bluetooth path:
+
+#### Via an ESPHome Bluetooth proxy (validated on hardware)
+
+The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_capability: none` and nothing answers the numeric-comparison confirmation). Add this to the proxy's YAML and reflash:
+
+```yaml
+esp32:
+  framework:
+    sdkconfig_options:
+      CONFIG_BT_BLE_SMP_ENABLE: y
+      CONFIG_BLE_SM_SC: y
+      CONFIG_BLE_SM_LEGACY: y
+
+esp32_ble:
+  io_capability: display_yes_no
+
+# Pairing responder: never connects (auto_connect: false), only auto-confirms
+# the numeric-comparison pairing for the thermostat's address.
+ble_client:
+  - mac_address: "AA:BB:CC:DD:EE:FF"   # your BRC1H MAC
+    id: madoka_pairing
+    auto_connect: false
+    on_numeric_comparison_request:
+      then:
+        - ble_client.numeric_comparison_reply:
+            id: madoka_pairing
+            accept: true
+```
+
+Then add the integration: on the first connection the thermostat shows a pairing prompt on its display — **accept it within a few seconds**. Notes:
+- The bond is stored **per proxy**: if several proxies can reach the thermostat, each one triggers its own (one-time) pairing prompt, and each needs the YAML above.
+- If pairing loops (prompt appears, then fails, then re-appears), un-pair on the thermostat (Bluetooth menu → forget) and retry.
+
+#### Via the HA host's own adapter
+
+Pair the device once from the host:
 
 ```bash
 bluetoothctl

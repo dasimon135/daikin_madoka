@@ -18,8 +18,9 @@
 - **Errors surface in the UI**: failed commands (set temperature, mode, fan, etc.) now raise a visible Home Assistant error instead of silently reverting on the next poll.
 - **Setpoint writes no longer clobber device settings**: updates echo the thermostat's own range mode and configured limits back instead of resetting them (long-standing pymadoka behavior, fixed in 0.3.0).
 - **MAC normalization**: manually entered addresses are normalized to the canonical form, fixing "device not found" loops for `aa-bb-...` style input and preventing duplicate entries from discovery.
-- **pymadoka 0.3.0**: modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, fix for a hang when the device was out of range at setup (swallowed task cancellation), proper cancellation propagation in the send path, and orphan-reconnect prevention on unload.
-- Version bumped to 2.4.0; requires pymadoka 0.3.0.
+- **Proxy pairing (validated on hardware)**: pymadoka now pairs explicitly (MITM) before subscribing to notifications — the BRC1H silently ignores unauthenticated clients, which is why proxied connections used to hang with no response. The proxy itself needs a small YAML addition (io_capability + a numeric-comparison responder); see the README's Requirements section.
+- **pymadoka-ng 0.3.2** (dist renamed; import stays `pymadoka`): modern pyproject packaging (lean core: `bleak` + `bleak-retry-connector`; CLI/MQTT moved to extras), unit tests + CI, explicit `pair()` + settle delay before the first command, per-feature query retry, fix for a hang when the device was out of range at setup (swallowed task cancellation), proper cancellation propagation in the send path, and orphan-reconnect prevention on unload. The dist rename also works around HA never re-installing a git requirement whose package is already present.
+- Version bumped to 2.4.0; requires pymadoka-ng 0.3.2.
 
 No ESPHome changes. ESPHome users should keep `ref: v2.1.1`.
 
