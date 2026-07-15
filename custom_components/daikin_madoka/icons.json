@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "sensor": {
+      "indoor_temperature": {
+        "default": "mdi:home-thermometer"
+      },
+      "outdoor_temperature": {
+        "default": "mdi:sun-thermometer-outline"
+      },
+      "rssi": {
+        "default": "mdi:bluetooth-audio"
+      }
+    },
+    "binary_sensor": {
+      "clean_filter": {
+        "default": "mdi:air-filter",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      }
+    },
+    "button": {
+      "reset_filter": {
+        "default": "mdi:restore"
+      }
+    },
+    "number": {
+      "eye_brightness": {
+        "default": "mdi:brightness-6"
+      }
+    }
+  }
+}
