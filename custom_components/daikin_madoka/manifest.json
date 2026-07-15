@@ -14,6 +14,6 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "loggers": ["pymadoka"],
-  "requirements": ["pymadoka @ git+https://github.com/dasimon135/pymadoka.git@v0.3.1"],
+  "requirements": ["pymadoka-ng @ git+https://github.com/dasimon135/pymadoka.git@v0.3.2"],
   "version": "2.4.0"
 }
