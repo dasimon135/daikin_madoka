@@ -1,7 +1,6 @@
 {
   "name": "Daikin Madoka",
   "content_in_root": false,
-  "domains": ["daikin_madoka"],
   "homeassistant": "2025.1.0",
   "render_readme": true
 }
