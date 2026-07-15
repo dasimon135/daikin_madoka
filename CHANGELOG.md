@@ -14,6 +14,7 @@
 - **Diagnostics**: downloadable config-entry diagnostics with MAC redaction.
 - **Device registry**: model, hardware and software versions from the device info characteristics.
 - **Modern entity naming** (`has_entity_name` + translation keys) and a **French translation** (en/es/fr). Entity IDs and unique IDs are unchanged; displayed names may differ slightly.
+- **Brand icon**: a BRC1H-inspired icon ships inside the integration (`brand/` folder, displayed on HA ≥ 2026.3) — no more "icon not available" placeholder on discovery cards; entity icons move to `icons.json` with a state-aware filter alert.
 - **Self-healing polling**: every poll cycle re-establishes the BLE connection if it dropped (or aborted), so a transient failure no longer requires reloading the integration.
 - **Errors surface in the UI**: failed commands (set temperature, mode, fan, etc.) now raise a visible Home Assistant error instead of silently reverting on the next poll.
 - **Setpoint writes no longer clobber device settings**: updates echo the thermostat's own range mode and configured limits back instead of resetting them (long-standing pymadoka behavior, fixed in 0.3.0).
