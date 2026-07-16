@@ -123,6 +123,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         data = hass.data[DOMAIN].pop(config_entry.entry_id, None)
         if data:
             for coordinator in data[COORDINATORS].values():
+                coordinator.async_shutdown_extras()
                 await _safe_stop(coordinator.controller)
 
     return unload_ok

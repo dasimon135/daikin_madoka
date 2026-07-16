@@ -9,6 +9,9 @@
       },
       "rssi": {
         "default": "mdi:bluetooth-audio"
+      },
+      "operating_time": {
+        "default": "mdi:timer-play-outline"
       }
     },
     "binary_sensor": {
@@ -22,6 +25,9 @@
     "button": {
       "reset_filter": {
         "default": "mdi:restore"
+      },
+      "reconnect": {
+        "default": "mdi:bluetooth-connect"
       }
     },
     "number": {

@@ -43,18 +43,42 @@
   },
   "entity": {
     "sensor": {
-      "indoor_temperature": { "name": "Indoor temperature" },
-      "outdoor_temperature": { "name": "Outdoor temperature" },
-      "rssi": { "name": "Signal strength" }
+      "indoor_temperature": {
+        "name": "Indoor temperature"
+      },
+      "outdoor_temperature": {
+        "name": "Outdoor temperature"
+      },
+      "rssi": {
+        "name": "Signal strength"
+      },
+      "operating_time": {
+        "name": "Operating time"
+      }
     },
     "binary_sensor": {
-      "clean_filter": { "name": "Clean filter" }
+      "clean_filter": {
+        "name": "Clean filter"
+      }
     },
     "button": {
-      "reset_filter": { "name": "Reset filter timer" }
+      "reset_filter": {
+        "name": "Reset filter timer"
+      },
+      "reconnect": {
+        "name": "Reconnect"
+      }
     },
     "number": {
-      "eye_brightness": { "name": "Eye brightness" }
+      "eye_brightness": {
+        "name": "Eye brightness"
+      }
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "{device} is unreachable",
+      "description": "Home Assistant hasn't been able to reach the {device} thermostat for a while. Check that it is powered and within Bluetooth range. If you connect through an ESPHome Bluetooth proxy, the proxy must be flashed with pairing support and the thermostat paired to it — see the documentation. You can also try the device's Reconnect button."
     }
   }
 }
