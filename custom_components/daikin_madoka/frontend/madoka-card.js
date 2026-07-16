@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.5.1";
+const MADOKA_CARD_VERSION = "0.5.2";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -498,7 +498,10 @@ class MadokaCard extends HTMLElement {
     if (unavailable) {
       sub = this._unavailLabel(st);
     } else if (!on) {
-      sub = this._modeLabel("off");
+      // Keep the ambient temperature visible even when the unit is off.
+      sub = a.current_temperature != null
+        ? `${cur}° · ${this._modeLabel("off")}`
+        : this._modeLabel("off");
     } else if (a.target_temp_low != null && a.target_temp_high != null) {
       sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(a.target_temp_high)}° · ${this._modeLabel(hvac)}`;
     } else if (meaningful && a.temperature != null) {
