@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.1.0 - July 2026
+
+### Madoka Card
+
+- **Tap-to-open on the tile layout**: tapping a `tile` row now opens the **full dial card in a popup** — a self-contained modal overlay (close on ✕, scrim click, or Escape), with no external dependency (browser_mod not required). It stays theme-aware and localized, and updates live. Set `tile_tap: more-info` to open Home Assistant's native more-info dialog instead. Keyboard accessible (Enter/Space, focus ring).
+- Bundled card bumped to 0.6.1 — hard-refresh the browser once after updating.
+
 ## v3.0.1 - July 2026
 
 - **Madoka Card**: the **tile** layout now keeps the ambient temperature visible when the unit is off (e.g. `23° · Off`) instead of showing only the "Off" label, so the row stays informative in a dense grid. Bundled card bumped to 0.5.2 — hard-refresh the browser once after updating.
