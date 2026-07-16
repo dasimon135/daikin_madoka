@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.5.2";
+const MADOKA_CARD_VERSION = "0.6.1";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -52,6 +52,9 @@ class MadokaCard extends HTMLElement {
     this._histEntity = null;
     this._histPoints = null;
     this._dragY = null;
+    this._dialog = null;
+    this._dialogCard = null;
+    this._dialogKey = null;
   }
 
   static getStubConfig(hass) {
@@ -103,6 +106,7 @@ class MadokaCard extends HTMLElement {
     this._hass = hass;
     if (!this._built) this._build();
     this._update();
+    if (this._dialogCard) this._dialogCard.hass = hass;
   }
 
   /* ---------- entity resolution (zero-config sibling discovery) ---------- */
@@ -383,7 +387,72 @@ class MadokaCard extends HTMLElement {
     root.getElementById("tdot").addEventListener("click", () => this._power());
     root.getElementById("tminus").addEventListener("click", () => this._bump(-1));
     root.getElementById("tplus").addEventListener("click", () => this._bump(1));
+    // Tapping the name/state opens the full card in a popup (or HA's
+    // native more-info dialog when `tile_tap: more-info` is configured).
+    const info = root.getElementById("tinfo");
+    info.addEventListener("click", () => this._onTileTap());
+    info.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this._onTileTap(); }
+    });
   }
+
+  _onTileTap() {
+    if (this._config.tile_tap === "more-info") { this._moreInfo(); return; }
+    this._openCardDialog();
+  }
+
+  _moreInfo() {
+    this.dispatchEvent(new CustomEvent("hass-more-info", {
+      detail: { entityId: this._config.entity },
+      bubbles: true, composed: true,
+    }));
+  }
+
+  // Open the full dial card in a self-contained modal overlay (no external
+  // dependency). Mounted on document.body so it is never clipped by the
+  // tile's grid cell; HA theme custom properties inherit through the shadow.
+  _openCardDialog() {
+    if (this._dialog) return;
+    const host = document.createElement("div");
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = `<style>
+      .scrim { position:fixed; inset:0; z-index:1000; display:grid; place-items:center;
+        box-sizing:border-box; padding:16px; background:rgba(0,0,0,.5);
+        animation:mkfade .15s ease; }
+      @keyframes mkfade { from{opacity:0} to{opacity:1} }
+      .wrap { position:relative; width:100%; max-width:360px; }
+      .x { position:absolute; top:-12px; right:-12px; z-index:1; width:34px; height:34px;
+        border-radius:50%; border:none; cursor:pointer; font-size:17px; line-height:1;
+        display:grid; place-items:center;
+        background:var(--card-background-color,#fff); color:var(--primary-text-color,#222);
+        box-shadow:0 2px 10px rgba(0,0,0,.35); }
+      .x:focus-visible { outline:2px solid var(--primary-color,#03a9f4); outline-offset:2px; }
+      @media (prefers-reduced-motion: reduce) { .scrim { animation:none } }
+    </style>
+    <div class="scrim"><div class="wrap"><button class="x" aria-label="Close">✕</button></div></div>`;
+    const card = document.createElement("madoka-card");
+    card.setConfig({ entity: this._config.entity, name: this._config.name, layout: "full" });
+    card.hass = this._hass;
+    sr.querySelector(".wrap").appendChild(card);
+    const close = () => this._closeCardDialog();
+    sr.querySelector(".scrim").addEventListener("click", (e) => { if (e.target === e.currentTarget) close(); });
+    sr.querySelector(".x").addEventListener("click", close);
+    this._dialogKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", this._dialogKey);
+    document.body.appendChild(host);
+    this._dialog = host;
+    this._dialogCard = card;
+  }
+
+  _closeCardDialog() {
+    if (this._dialogKey) window.removeEventListener("keydown", this._dialogKey);
+    if (this._dialog) this._dialog.remove();
+    this._dialog = null;
+    this._dialogCard = null;
+    this._dialogKey = null;
+  }
+
+  disconnectedCallback() { this._closeCardDialog(); }
 
   _build() {
     this._built = true;
@@ -467,7 +536,7 @@ class MadokaCard extends HTMLElement {
 <div id="err" class="err"></div>
 <div class="card tile" id="card">
   <button class="tdot" id="tdot" type="button" aria-label="Power"><ha-icon id="ticon"></ha-icon></button>
-  <div class="tinfo">
+  <div class="tinfo" id="tinfo" role="button" tabindex="0" aria-label="Details">
     <span class="tname" id="tname">Madoka</span>
     <span class="tsub" id="tsub"></span>
   </div>
@@ -627,7 +696,8 @@ class MadokaCard extends HTMLElement {
 .tdot ha-icon { --mdc-icon-size:20px; width:20px; height:20px; color:var(--state); }
 .card.tile.off .tdot { box-shadow: inset 0 0 0 1px var(--hairline); background:var(--face); }
 .card.tile.off .tdot ha-icon { color:var(--ink-soft); }
-.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:pointer; border-radius:8px; outline:none; }
+.tinfo:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .tname { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tsub { font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tctl { flex:0 0 auto; display:flex; gap:6px; }
