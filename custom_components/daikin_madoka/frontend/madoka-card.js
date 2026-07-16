@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.5.2";
+const MADOKA_CARD_VERSION = "0.6.0";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -383,6 +383,19 @@ class MadokaCard extends HTMLElement {
     root.getElementById("tdot").addEventListener("click", () => this._power());
     root.getElementById("tminus").addEventListener("click", () => this._bump(-1));
     root.getElementById("tplus").addEventListener("click", () => this._bump(1));
+    // Tapping the name/state opens HA's more-info dialog, like native tiles.
+    const info = root.getElementById("tinfo");
+    info.addEventListener("click", () => this._moreInfo());
+    info.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this._moreInfo(); }
+    });
+  }
+
+  _moreInfo() {
+    this.dispatchEvent(new CustomEvent("hass-more-info", {
+      detail: { entityId: this._config.entity },
+      bubbles: true, composed: true,
+    }));
   }
 
   _build() {
@@ -467,7 +480,7 @@ class MadokaCard extends HTMLElement {
 <div id="err" class="err"></div>
 <div class="card tile" id="card">
   <button class="tdot" id="tdot" type="button" aria-label="Power"><ha-icon id="ticon"></ha-icon></button>
-  <div class="tinfo">
+  <div class="tinfo" id="tinfo" role="button" tabindex="0" aria-label="Details">
     <span class="tname" id="tname">Madoka</span>
     <span class="tsub" id="tsub"></span>
   </div>
@@ -627,7 +640,8 @@ class MadokaCard extends HTMLElement {
 .tdot ha-icon { --mdc-icon-size:20px; width:20px; height:20px; color:var(--state); }
 .card.tile.off .tdot { box-shadow: inset 0 0 0 1px var(--hairline); background:var(--face); }
 .card.tile.off .tdot ha-icon { color:var(--ink-soft); }
-.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:pointer; border-radius:8px; outline:none; }
+.tinfo:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .tname { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tsub { font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tctl { flex:0 0 auto; display:flex; gap:6px; }
