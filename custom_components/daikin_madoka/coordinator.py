@@ -125,19 +125,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         await self.async_request_refresh()
         if self._boost_unsub is not None:
             self._boost_unsub()
-        self._boost_unsub = async_call_later(
-            self.hass,
-            BOOST_DELAY,
-            lambda _now: self.hass.async_create_task(self.async_request_refresh()),
-        )
+
+        @callback
+        def _followup(_now) -> None:
+            self._boost_unsub = None
+            self.hass.async_create_task(self.async_request_refresh())
+
+        self._boost_unsub = async_call_later(self.hass, BOOST_DELAY, _followup)
 
     async def async_reconnect(self) -> None:
         """Force a fresh BLE connection, then refresh."""
+        conn = self.controller.connection
         try:
             await self.controller.stop()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Reconnect: stop failed for %s", self.address, exc_info=True)
-        self.controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+        # stop() -> cleanup() sets the library's _closing flag, which makes the
+        # next start() bail out immediately; clear it so the coordinator's poll
+        # can actually re-establish the link.
+        conn._closing = False
+        conn.connection_status = ConnectionStatus.DISCONNECTED
         await self.async_request_refresh()
 
     @callback
@@ -158,8 +165,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
 
     @callback
     def _clear_unreachable_issue(self) -> None:
-        if not self._issue_active:
-            return
+        # Always delete (idempotent): an issue persisted across a restart must
+        # be cleared on the first success even though _issue_active is False on
+        # the fresh coordinator instance.
         self._issue_active = False
         ir.async_delete_issue(self.hass, DOMAIN, f"unreachable_{self.address}")
 
