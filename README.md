@@ -194,6 +194,27 @@ See [CHANGELOG.md](CHANGELOG.md) for available versions.
 
 ## Dashboard cards
 
+### Madoka Card (bundled)
+
+A dial-style card that mirrors the physical BRC1H — a glowing halo that follows
+the mode, a setpoint arc, fan segments, an eye-brightness slider, a 12 h
+temperature sparkline and filter/signal chips. It ships **inside the
+integration** (no separate install) and registers itself automatically; pick
+**Madoka Card** from the dashboard card picker, or add it in YAML:
+
+```yaml
+type: custom:madoka-card
+entity: climate.my_madoka
+# compact: true        # smaller dial, hides fan row / brightness / graph
+# name: "Bedroom"      # override the title
+```
+
+The related entities (outdoor temperature, eye brightness, filter, signal) are
+discovered automatically from the same device — you only need the `climate.*`
+entity. It follows your Home Assistant theme and language (mode names use HA's
+own climate translations). The signal chip appears once you enable the
+disabled-by-default `sensor.*_signal_strength`.
+
 ### Thermostat card
 
 ```yaml
