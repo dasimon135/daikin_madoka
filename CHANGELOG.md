@@ -1,5 +1,31 @@
 # Changelog
 
+## v3.0.0 - July 2026
+
+A first-class dashboard experience, guided recovery, and self-healing reliability.
+
+### Madoka Card (bundled)
+
+- A dial-style Lovelace card shipped **inside the integration** (auto-registered, no separate install) that mirrors the physical BRC1H: a state-colored glowing halo, a setpoint arc, fan segments, `−`/`○`/`+` controls, a mode switcher, an eye-brightness slider, a 12 h temperature sparkline and filter/signal chips.
+- Three layouts: **full** (default), **compact**, and an ultra-compact **tile** row (`layout: tile`) that lines up with HA's tile cards in a dense grid.
+- Zero config — it auto-discovers the sibling entities (outdoor temperature, brightness, filter, signal) from the same device; you only give it the `climate.*` entity. Theme-aware, and internationalized (mode names from HA's own climate translations; card words in en/fr/es/de/it/nl).
+
+### Setup & recovery
+
+- **Repair issue**: after several consecutive failed polls, an actionable *device unreachable* repair appears (linking the pairing/proxy documentation) and clears itself on recovery — turning a silent unavailable device into a fixable message.
+- **Reconnect button** (diagnostic, always available): drops and re-establishes the Bluetooth link on demand.
+
+### Reliability & stats
+
+- **Self-healing reconnect fixed** (requires **pymadoka-ng 0.3.5**): re-pairing now happens on every reconnect. Because the bond is stored per Bluetooth proxy, a dropped link — or the Reconnect button — used to fail with `Insufficient authentication`; it now recovers cleanly. Validated on hardware.
+- **Adaptive polling**: a command triggers an immediate refresh plus a short follow-up, so the UI reflects the device applying the change without waiting a poll cycle.
+- **Operating-time sensor**: cumulative hours the unit has been powered on, persisted across restarts.
+- Brand icon ships locally (displayed on HA ≥ 2026.3); entity icons via `icons.json`, including a state-aware filter alert.
+
+### Upgrading from 2.4.x
+
+Update via HACS and restart. Entity IDs and history are preserved (a couple of new diagnostic entities appear). The bundled library moves to **pymadoka-ng 0.3.5** on PyPI (installed automatically). The Madoka Card resource is registered automatically — hard-refresh the browser once.
+
 ## v2.4.0 - July 2026
 
 ### HA Integration — "Modern Bluetooth" release
