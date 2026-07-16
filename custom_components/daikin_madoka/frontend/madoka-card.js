@@ -3,22 +3,16 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.3.1";
+const MADOKA_CARD_VERSION = "0.4.0";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
-  cool: { label: "Cooling", hvac: "cool", color: "#38c6ff", color2: "#4d8bff",
-    icon: '<path d="M12 3v18M5 7l14 10M19 7L5 17" stroke-linecap="round"/>' },
-  heat: { label: "Heating", hvac: "heat", color: "#ff7a3d", color2: "#ff5152",
-    icon: '<path d="M12 2c1 3 4 4 4 8a4 4 0 0 1-8 0c0-2 1-3 1-3M12 22a5 5 0 0 0 5-5c0-4-3-5-3-8" stroke-linecap="round" stroke-linejoin="round"/>' },
-  auto: { label: "Auto", hvac: "auto", color: "#8a5cff", color2: "#5b74ff",
-    icon: '<path d="M5 15l3-8 3 8M5.8 13h4.4M14 7v8M14 7h3a3 3 0 0 1 0 6h-3" stroke-linecap="round" stroke-linejoin="round"/>' },
-  fan_only: { label: "Fan", hvac: "fan_only", color: "#35e0b0", color2: "#2bc6c6",
-    icon: '<path d="M12 12c0-4 1-8-2-8s-2 4-2 6M12 12c4 0 8 1 8-2s-4-2-6-2M12 12c0 4-1 8 2 8s2-4 2-6M12 12c-4 0-8-1-8 2s4 2 6 2" stroke-linecap="round"/>' },
-  dry: { label: "Dry", hvac: "dry", color: "#ffc93d", color2: "#ff9f3d",
-    icon: '<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z" stroke-linejoin="round"/>' },
-  off: { label: "Off", hvac: "off", color: "#565a6e", color2: "#3d4050",
-    icon: '<path d="M12 4v8M6.3 7.3a8 8 0 1 0 11.4 0" stroke-linecap="round"/>' },
+  cool: { label: "Cooling", color: "#38c6ff", color2: "#4d8bff", mdi: "mdi:snowflake" },
+  heat: { label: "Heating", color: "#ff7a3d", color2: "#ff5152", mdi: "mdi:fire" },
+  auto: { label: "Auto", color: "#8a5cff", color2: "#5b74ff", mdi: "mdi:autorenew" },
+  fan_only: { label: "Fan", color: "#35e0b0", color2: "#2bc6c6", mdi: "mdi:fan" },
+  dry: { label: "Dry", color: "#ffc93d", color2: "#ff9f3d", mdi: "mdi:water-percent" },
+  off: { label: "Off", color: "#565a6e", color2: "#3d4050", mdi: "mdi:power" },
 };
 const MODE_ORDER = ["cool", "heat", "auto", "fan_only", "dry", "off"];
 
@@ -46,6 +40,8 @@ const MIN_FALLBACK = 16, MAX_FALLBACK = 32;
 
 const svg = (inner, cls) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"${cls ? ` class="${cls}"` : ""}>${inner}</svg>`;
+// Native HA / Material Design icons — crisp and familiar.
+const mdi = (name, cls) => `<ha-icon icon="${name}"${cls ? ` class="${cls}"` : ""}></ha-icon>`;
 
 class MadokaCard extends HTMLElement {
   constructor() {
@@ -168,7 +164,7 @@ class MadokaCard extends HTMLElement {
 
     // center: mode + ambient + target
     root.getElementById("modeRow").innerHTML = on
-      ? svg(M.icon) + `<span>${this._modeLabel(hvac)}</span>`
+      ? mdi(M.mdi) + `<span>${this._modeLabel(hvac)}</span>`
       : `<span>${this._modeLabel("off")}</span>`;
     const cur = a.current_temperature;
     root.getElementById("ambient").textContent = cur != null ? Math.round(cur) : "--";
@@ -202,7 +198,7 @@ class MadokaCard extends HTMLElement {
     const order = MODE_ORDER.filter((m) => supported.includes(m));
     root.getElementById("modes").innerHTML = order.map((m) =>
       `<button class="mode-btn" role="tab" data-mode="${m}" aria-selected="${m === hvac}">` +
-      svg(MODES[m].icon) + `<span>${this._modeLabel(m)}</span></button>`).join("");
+      mdi(MODES[m].mdi) + `<span>${this._modeLabel(m)}</span></button>`).join("");
 
     // localized static labels
     root.getElementById("fanLbl").textContent = this._t("fan");
@@ -258,20 +254,19 @@ class MadokaCard extends HTMLElement {
     if (ids.rssi && hass.states[ids.rssi]) {
       const v = hass.states[ids.rssi].state;
       chips.push(`<span class="chip" title="Bluetooth signal">` +
-        svg('<path d="M7 8l10 8-5 4V4l5 4L7 16"/>') + `${v}</span>`);
+        mdi("mdi:bluetooth") + `${v}</span>`);
     }
     if (ids.outdoor && hass.states[ids.outdoor]) {
       const v = hass.states[ids.outdoor].state;
       if (v != null && v !== "unknown" && v !== "unavailable") {
         chips.push(`<span class="chip" title="Outdoor">` +
-          svg('<path d="M12 3v14M12 17a3 3 0 1 0 0 4 3 3 0 0 0 0-4zM9 6l3-3 3 3"/>') +
-          `${Math.round(Number(v))}°</span>`);
+          mdi("mdi:thermometer") + `${Math.round(Number(v))}°</span>`);
       }
     }
     if (ids.filter && hass.states[ids.filter]) {
       const on = hass.states[ids.filter].state === "on";
       chips.push(`<span class="chip ${on ? "warn" : ""}" title="Filter">` +
-        svg('<path d="M3 5h18M6 12h12M10 19h4"/>') + `${on ? this._t("filterClean") : this._t("filterOk")}</span>`);
+        mdi("mdi:air-filter") + `${on ? this._t("filterClean") : this._t("filterOk")}</span>`);
     }
     wrap.innerHTML = chips.join("");
   }
@@ -430,7 +425,7 @@ class MadokaCard extends HTMLElement {
   <div class="controls">
     <button class="ctl" id="minus" type="button" aria-label="Lower">−</button>
     <button class="ctl power" id="power" type="button" aria-label="Power">
-      ${svg('<path d="M12 4v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>')}
+      ${mdi("mdi:power")}
     </button>
     <button class="ctl" id="plus" type="button" aria-label="Raise">+</button>
   </div>
@@ -438,7 +433,7 @@ class MadokaCard extends HTMLElement {
   <div class="brightrow" id="brightRow">
     <span class="lbl" id="brightLbl">Display</span>
     <input type="range" id="bright" min="0" max="19" step="1"/>
-    ${svg('<path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5M18 6l-1.5 1.5M6 18l1.5-1.5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/>', "brighticon")}
+    ${mdi("mdi:brightness-6", "brighticon")}
   </div>
   <svg class="graph" id="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg>
   <div class="modes" id="modes" role="tablist"></div>
@@ -474,7 +469,7 @@ class MadokaCard extends HTMLElement {
   color: var(--ink-soft); background: color-mix(in srgb, var(--accent) 8%, transparent);
   border:1px solid var(--hairline); padding:3px 8px; border-radius:999px; white-space:nowrap; }
 .chip.warn { color:#d98324; background: color-mix(in srgb,#f0a33a 18%,transparent); border-color:transparent; }
-.chip svg { width:12px; height:12px; }
+.chip svg, .chip ha-icon { width:12px; height:12px; --mdc-icon-size:12px; }
 .dial-wrap { display:grid; place-items:center; padding:4px 0 0; }
 .dial { position:relative; width:250px; height:250px; border-radius:50%;
   background: radial-gradient(circle at 50% 38%, var(--face-2), var(--face) 62%, var(--bezel) 100%);
@@ -497,7 +492,7 @@ class MadokaCard extends HTMLElement {
   filter: drop-shadow(0 0 4px color-mix(in srgb,var(--state) 60%,transparent)); }
 .readout { position:relative; z-index:2; text-align:center; color:var(--dev-ink); line-height:1; }
 .mode-row { display:flex; align-items:center; justify-content:center; gap:6px; height:18px; margin-bottom:6px; }
-.mode-row svg { width:16px; height:16px; color:var(--state); }
+.mode-row svg, .mode-row ha-icon { width:16px; height:16px; color:var(--state); --mdc-icon-size:16px; }
 .mode-row span { font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; color:var(--dev-soft); font-weight:700; }
 .temp { font-size:3.3rem; font-weight:350; letter-spacing:-.02em; font-variant-numeric:tabular-nums; display:inline-flex; align-items:flex-start; }
 .temp .deg { font-size:1.3rem; font-weight:400; margin-top:.45rem; color:var(--dev-soft); }
@@ -517,7 +512,7 @@ class MadokaCard extends HTMLElement {
 .ctl:hover { border-color:var(--accent); background: color-mix(in srgb,var(--accent) 14%,var(--panel)); }
 .ctl:active { transform:scale(.9); }
 .ctl:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-.ctl.power svg { width:20px; height:20px; }
+.ctl.power svg, .ctl.power ha-icon { width:20px; height:20px; --mdc-icon-size:20px; }
 .fanrow, .brightrow { display:flex; align-items:center; gap:10px; }
 .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.12em; font-weight:700; color:var(--ink-soft); min-width:52px; }
 .fansel { display:flex; gap:4px; flex:1; }
@@ -526,7 +521,7 @@ class MadokaCard extends HTMLElement {
 .fanbtn:hover { border-color:var(--accent); color:var(--ink); }
 .fanbtn[aria-pressed="true"] { color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--state),var(--state-2)); }
 .brightrow input[type=range] { flex:1; accent-color: var(--state); height:4px; }
-.brighticon { width:15px; height:15px; color:var(--ink-soft); }
+.brighticon { width:15px; height:15px; --mdc-icon-size:15px; color:var(--ink-soft); }
 .graph { width:100%; height:34px; display:block; }
 .graph .area { fill: color-mix(in srgb,var(--state) 16%,transparent); stroke:none; }
 .graph .line { fill:none; stroke:var(--state); stroke-width:1.4; stroke-linejoin:round; stroke-linecap:round; }
@@ -534,7 +529,7 @@ class MadokaCard extends HTMLElement {
 .modes { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
 .mode-btn { display:inline-flex; align-items:center; gap:6px; font-size:.74rem; font-weight:600; color:var(--ink-soft);
   background:transparent; border:1px solid var(--hairline); border-radius:999px; padding:6px 12px; cursor:pointer; transition:all .18s; }
-.mode-btn svg { width:14px; height:14px; }
+.mode-btn svg, .mode-btn ha-icon { width:14px; height:14px; --mdc-icon-size:14px; }
 .mode-btn:hover { border-color:var(--accent); color:var(--ink); }
 .mode-btn[aria-selected="true"] { color:#fff; border-color:transparent;
   background:linear-gradient(135deg,var(--state),var(--state-2)); box-shadow:0 6px 16px -6px color-mix(in srgb,var(--state) 80%,transparent); }
