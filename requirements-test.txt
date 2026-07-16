@@ -1,4 +1,7 @@
-pytest-homeassistant-custom-component
+# Pinned: each release pins an exact homeassistant version; leaving it loose
+# sends pip's resolver backtracking through every release against the
+# component pins below.
+pytest-homeassistant-custom-component==0.13.346
 pymadoka-ng==0.3.5
 
 # Requirements of the HA bluetooth/usb components (imported by the config
