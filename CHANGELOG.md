@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1 - July 2026
+
+- **Madoka Card**: the **tile** layout now keeps the ambient temperature visible when the unit is off (e.g. `23° · Off`) instead of showing only the "Off" label, so the row stays informative in a dense grid. Bundled card bumped to 0.5.2 — hard-refresh the browser once after updating.
+
 ## v3.0.0 - July 2026
 
 A first-class dashboard experience, guided recovery, and self-healing reliability.
