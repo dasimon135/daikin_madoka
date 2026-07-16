@@ -1,2 +1,15 @@
 pytest-homeassistant-custom-component
 pymadoka-ng==0.3.5
+
+# Requirements of the HA bluetooth/usb components (imported by the config
+# flow); pytest-homeassistant-custom-component does not install per-component
+# requirements. Versions match the pinned homeassistant release.
+aiousbwatcher==1.1.2
+bleak==3.0.2
+bleak-retry-connector==4.6.1
+bluetooth-adapters==2.4.0
+bluetooth-auto-recovery==1.6.4
+bluetooth-data-tools==1.29.18
+dbus-fast==5.0.22
+habluetooth==6.26.5
+serialx==1.8.2
