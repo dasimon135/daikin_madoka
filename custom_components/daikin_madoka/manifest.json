@@ -9,7 +9,7 @@
   ],
   "codeowners": ["@dasimon135", "@andreaippo"],
   "config_flow": true,
-  "dependencies": ["bluetooth"],
+  "dependencies": ["bluetooth", "frontend", "http"],
   "documentation": "https://github.com/dasimon135/daikin_madoka",
   "integration_type": "device",
   "iot_class": "local_polling",
