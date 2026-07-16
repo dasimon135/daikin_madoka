@@ -13,9 +13,11 @@ from .entity import MadokaEntity
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Daikin Madoka buttons based on config_entry."""
     coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
-    async_add_entities(
-        MadokaResetFilterButton(coordinator) for coordinator in coordinators.values()
-    )
+    entities = []
+    for coordinator in coordinators.values():
+        entities.append(MadokaResetFilterButton(coordinator))
+        entities.append(MadokaReconnectButton(coordinator))
+    async_add_entities(entities)
 
 
 class MadokaResetFilterButton(MadokaEntity, ButtonEntity):
@@ -35,3 +37,22 @@ class MadokaResetFilterButton(MadokaEntity, ButtonEntity):
                 ResetCleanFilterTimerStatus()
             ),
         )
+
+
+class MadokaReconnectButton(MadokaEntity, ButtonEntity):
+    """Force a fresh Bluetooth connection to the thermostat."""
+
+    _attr_translation_key = "reconnect"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "reconnect")
+
+    @property
+    def available(self) -> bool:
+        """Always pressable — its whole purpose is to recover a dead link."""
+        return True
+
+    async def async_press(self) -> None:
+        """Drop and re-establish the BLE connection, then refresh."""
+        await self.coordinator.async_reconnect()

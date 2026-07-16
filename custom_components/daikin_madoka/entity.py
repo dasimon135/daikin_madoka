@@ -54,4 +54,6 @@ class MadokaEntity(CoordinatorEntity[MadokaCoordinator]):
                     "device": self.coordinator.device_name,
                 },
             ) from err
-        await self.coordinator.async_request_refresh()
+        # Refresh now and again shortly after, so the UI reflects the device
+        # applying the command without waiting a full poll interval.
+        await self.coordinator.async_boost()
