@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.5.0";
+const MADOKA_CARD_VERSION = "0.5.1";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -92,6 +92,12 @@ class MadokaCard extends HTMLElement {
     }
     return mode;
   }
+  _unavailLabel(st) {
+    if (this._hass.formatEntityState) {
+      try { return this._hass.formatEntityState(st); } catch (e) { /* noop */ }
+    }
+    return "Unavailable";
+  }
 
   set hass(hass) {
     this._hass = hass;
@@ -148,7 +154,8 @@ class MadokaCard extends HTMLElement {
     const a = st.attributes;
     const ids = this._resolve();
     const hvac = st.state; // off / cool / heat / auto / dry / fan_only
-    const on = hvac !== "off" && hvac !== "unavailable";
+    const unavailable = hvac === "unavailable" || hvac === "unknown";
+    const on = !unavailable && hvac !== "off";
     const modeKey = MODES[hvac] ? hvac : "off";
     const M = MODES[modeKey];
     const min = a.min_temp != null ? a.min_temp : MIN_FALLBACK;
@@ -166,14 +173,15 @@ class MadokaCard extends HTMLElement {
     // center: mode + ambient + target
     root.getElementById("modeRow").innerHTML = on
       ? mdi(M.mdi) + `<span>${this._modeLabel(hvac)}</span>`
-      : `<span>${this._modeLabel("off")}</span>`;
+      : `<span>${unavailable ? this._unavailLabel(st) : this._modeLabel("off")}</span>`;
     const cur = a.current_temperature;
     root.getElementById("ambient").textContent = cur != null ? Math.round(cur) : "--";
 
     const tb = root.getElementById("targetBox");
     const meaningful = SETPOINT_MODES.includes(hvac);
     if (!on) {
-      tb.className = "target"; tb.innerHTML = `<span>${this._t("standby")}</span>`;
+      tb.className = "target";
+      tb.innerHTML = unavailable ? "" : `<span>${this._t("standby")}</span>`;
       this._setArc(null, min, max);
     } else if (!meaningful) {
       // Fan / Dry: no relevant setpoint — keep the readout clean.
@@ -474,19 +482,22 @@ class MadokaCard extends HTMLElement {
     const root = this.shadowRoot;
     const a = st.attributes;
     const hvac = st.state;
-    const on = hvac !== "off" && hvac !== "unavailable";
+    const unavailable = hvac === "unavailable" || hvac === "unknown";
+    const on = !unavailable && hvac !== "off";
     const M = MODES[MODES[hvac] ? hvac : "off"];
     root.host.style.setProperty("--state", M.color);
     root.host.style.setProperty("--state-2", M.color2);
     root.getElementById("card").classList.toggle("off", !on);
-    root.getElementById("ticon").setAttribute("icon", M.mdi);
+    root.getElementById("ticon").setAttribute("icon", unavailable ? "mdi:bluetooth-off" : M.mdi);
     root.getElementById("tname").textContent =
       this._config.name || a.friendly_name || "Madoka";
 
     const cur = a.current_temperature != null ? Math.round(a.current_temperature) : "--";
     const meaningful = SETPOINT_MODES.includes(hvac);
     let sub;
-    if (!on) {
+    if (unavailable) {
+      sub = this._unavailLabel(st);
+    } else if (!on) {
       sub = this._modeLabel("off");
     } else if (a.target_temp_low != null && a.target_temp_high != null) {
       sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(a.target_temp_high)}° · ${this._modeLabel(hvac)}`;
