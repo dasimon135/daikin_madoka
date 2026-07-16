@@ -43,18 +43,42 @@
   },
   "entity": {
     "sensor": {
-      "indoor_temperature": { "name": "Température intérieure" },
-      "outdoor_temperature": { "name": "Température extérieure" },
-      "rssi": { "name": "Puissance du signal" }
+      "indoor_temperature": {
+        "name": "Température intérieure"
+      },
+      "outdoor_temperature": {
+        "name": "Température extérieure"
+      },
+      "rssi": {
+        "name": "Puissance du signal"
+      },
+      "operating_time": {
+        "name": "Temps de fonctionnement"
+      }
     },
     "binary_sensor": {
-      "clean_filter": { "name": "Nettoyage du filtre" }
+      "clean_filter": {
+        "name": "Nettoyage du filtre"
+      }
     },
     "button": {
-      "reset_filter": { "name": "Réinitialiser le compteur de filtre" }
+      "reset_filter": {
+        "name": "Réinitialiser le compteur de filtre"
+      },
+      "reconnect": {
+        "name": "Reconnecter"
+      }
     },
     "number": {
-      "eye_brightness": { "name": "Luminosité du voyant" }
+      "eye_brightness": {
+        "name": "Luminosité du voyant"
+      }
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "{device} est injoignable",
+      "description": "Home Assistant n'arrive plus à joindre le thermostat {device} depuis un moment. Vérifiez qu'il est alimenté et à portée Bluetooth. Si vous passez par un proxy Bluetooth ESPHome, le proxy doit être flashé avec le support d'appairage et le thermostat appairé — voir la documentation. Vous pouvez aussi essayer le bouton Reconnecter de l'appareil."
     }
   }
 }

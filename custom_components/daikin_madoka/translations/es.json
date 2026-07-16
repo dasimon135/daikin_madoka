@@ -43,18 +43,42 @@
   },
   "entity": {
     "sensor": {
-      "indoor_temperature": { "name": "Temperatura interior" },
-      "outdoor_temperature": { "name": "Temperatura exterior" },
-      "rssi": { "name": "Intensidad de señal" }
+      "indoor_temperature": {
+        "name": "Temperatura interior"
+      },
+      "outdoor_temperature": {
+        "name": "Temperatura exterior"
+      },
+      "rssi": {
+        "name": "Intensidad de señal"
+      },
+      "operating_time": {
+        "name": "Tiempo de funcionamiento"
+      }
     },
     "binary_sensor": {
-      "clean_filter": { "name": "Limpiar filtro" }
+      "clean_filter": {
+        "name": "Limpiar filtro"
+      }
     },
     "button": {
-      "reset_filter": { "name": "Reiniciar temporizador del filtro" }
+      "reset_filter": {
+        "name": "Reiniciar temporizador del filtro"
+      },
+      "reconnect": {
+        "name": "Reconectar"
+      }
     },
     "number": {
-      "eye_brightness": { "name": "Brillo del LED" }
+      "eye_brightness": {
+        "name": "Brillo del LED"
+      }
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "{device} no responde",
+      "description": "Home Assistant no ha podido comunicarse con el termostato {device} desde hace un rato. Comprueba que esté encendido y dentro del alcance Bluetooth. Si te conectas mediante un proxy Bluetooth ESPHome, el proxy debe tener soporte de emparejamiento y el termostato emparejado con él — consulta la documentación. También puedes probar el botón Reconectar del dispositivo."
     }
   }
 }
