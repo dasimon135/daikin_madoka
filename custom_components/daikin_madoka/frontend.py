@@ -10,7 +10,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_VERSION = "0.4.0"
+CARD_VERSION = "0.5.0"
 CARD_URL = f"/{DOMAIN}/madoka-card.js"
 _REGISTERED = f"{DOMAIN}_card_registered"
 

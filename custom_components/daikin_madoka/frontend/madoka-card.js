@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.4.0";
+const MADOKA_CARD_VERSION = "0.5.0";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -67,7 +67,7 @@ class MadokaCard extends HTMLElement {
     if (this._built) this._update();
   }
 
-  getCardSize() { return 7; }
+  getCardSize() { return this._config && this._layout() === "tile" ? 1 : 7; }
 
   /* ------------------------------ i18n ------------------------------ */
   _lang() { return ((this._hass && this._hass.language) || "en").split("-")[0]; }
@@ -142,7 +142,8 @@ class MadokaCard extends HTMLElement {
     root.getElementById("err").style.display = "none";
     const cardEl = root.getElementById("card");
     cardEl.style.display = "flex";
-    cardEl.classList.toggle("compact", !!this._config.compact);
+    if (this._layout() === "tile") { this._updateTile(st); return; }
+    cardEl.classList.toggle("compact", this._layout() === "compact");
 
     const a = st.attributes;
     const ids = this._resolve();
@@ -364,8 +365,21 @@ class MadokaCard extends HTMLElement {
   }
 
   /* ---------------------------- build DOM ---------------------------- */
+  _layout() {
+    return this._config.layout || (this._config.compact ? "compact" : "full");
+  }
+
+  _buildTile() {
+    this.shadowRoot.innerHTML = this._tileTemplate();
+    const root = this.shadowRoot;
+    root.getElementById("tdot").addEventListener("click", () => this._power());
+    root.getElementById("tminus").addEventListener("click", () => this._bump(-1));
+    root.getElementById("tplus").addEventListener("click", () => this._bump(1));
+  }
+
   _build() {
     this._built = true;
+    if (this._layout() === "tile") { this._buildTile(); return; }
     this.shadowRoot.innerHTML = this._template();
     const root = this.shadowRoot;
     root.getElementById("plus").addEventListener("click", () => this._bump(1));
@@ -438,6 +452,60 @@ class MadokaCard extends HTMLElement {
   <svg class="graph" id="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg>
   <div class="modes" id="modes" role="tablist"></div>
 </div>`;
+  }
+
+  _tileTemplate() {
+    return `<style>${this._css()}</style>
+<div id="err" class="err"></div>
+<div class="card tile" id="card">
+  <button class="tdot" id="tdot" type="button" aria-label="Power"><ha-icon id="ticon"></ha-icon></button>
+  <div class="tinfo">
+    <span class="tname" id="tname">Madoka</span>
+    <span class="tsub" id="tsub"></span>
+  </div>
+  <div class="tctl">
+    <button class="tbtn" id="tminus" type="button" aria-label="Lower">−</button>
+    <button class="tbtn" id="tplus" type="button" aria-label="Raise">+</button>
+  </div>
+</div>`;
+  }
+
+  _updateTile(st) {
+    const root = this.shadowRoot;
+    const a = st.attributes;
+    const hvac = st.state;
+    const on = hvac !== "off" && hvac !== "unavailable";
+    const M = MODES[MODES[hvac] ? hvac : "off"];
+    root.host.style.setProperty("--state", M.color);
+    root.host.style.setProperty("--state-2", M.color2);
+    root.getElementById("card").classList.toggle("off", !on);
+    root.getElementById("ticon").setAttribute("icon", M.mdi);
+    root.getElementById("tname").textContent =
+      this._config.name || a.friendly_name || "Madoka";
+
+    const cur = a.current_temperature != null ? Math.round(a.current_temperature) : "--";
+    const meaningful = SETPOINT_MODES.includes(hvac);
+    let sub;
+    if (!on) {
+      sub = this._modeLabel("off");
+    } else if (a.target_temp_low != null && a.target_temp_high != null) {
+      sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(a.target_temp_high)}° · ${this._modeLabel(hvac)}`;
+    } else if (meaningful && a.temperature != null) {
+      sub = `${cur}° → ${Math.round(a.temperature)}° · ${this._modeLabel(hvac)}`;
+    } else {
+      sub = `${cur}° · ${this._modeLabel(hvac)}`;
+    }
+    root.getElementById("tsub").textContent = sub;
+
+    const disabled = !on || !meaningful;
+    root.getElementById("tminus").disabled = disabled;
+    root.getElementById("tplus").disabled = disabled;
+
+    // state used by _bump / _power
+    this._min = a.min_temp != null ? a.min_temp : MIN_FALLBACK;
+    this._max = a.max_temp != null ? a.max_temp : MAX_FALLBACK;
+    this._isRange = a.target_temp_low != null && a.target_temp_high != null;
+    this._on = on;
   }
 
   _css() {
@@ -534,6 +602,29 @@ class MadokaCard extends HTMLElement {
 .mode-btn[aria-selected="true"] { color:#fff; border-color:transparent;
   background:linear-gradient(135deg,var(--state),var(--state-2)); box-shadow:0 6px 16px -6px color-mix(in srgb,var(--state) 80%,transparent); }
 .mode-btn:focus-visible, .fanbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Tile (ultra-compact) layout — config: layout: tile */
+.card.tile { flex-direction:row; align-items:center; gap:12px; padding:10px 12px; }
+.tdot { flex:0 0 auto; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+  display:grid; place-items:center;
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb,var(--state) 45%, var(--face)), var(--face) 78%);
+  box-shadow: 0 0 0 2px color-mix(in srgb,var(--state) 70%,transparent),
+    0 0 14px 1px color-mix(in srgb,var(--state) 55%,transparent);
+  transition: box-shadow .5s ease, background .5s ease; }
+.tdot ha-icon { --mdc-icon-size:20px; width:20px; height:20px; color:var(--state); }
+.card.tile.off .tdot { box-shadow: inset 0 0 0 1px var(--hairline); background:var(--face); }
+.card.tile.off .tdot ha-icon { color:var(--ink-soft); }
+.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tname { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tsub { font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tctl { flex:0 0 auto; display:flex; gap:6px; }
+.tbtn { width:34px; height:34px; border-radius:9px; border:1px solid var(--hairline);
+  background: color-mix(in srgb,var(--accent) 6%,var(--panel)); color:var(--ink); font-size:1.1rem;
+  cursor:pointer; transition:transform .12s,background .2s,border-color .2s; }
+.tbtn:hover:not(:disabled) { border-color:var(--accent); background: color-mix(in srgb,var(--accent) 14%,var(--panel)); }
+.tbtn:active:not(:disabled) { transform:scale(.9); }
+.tbtn:disabled { opacity:.4; cursor:default; }
+.tdot:focus-visible, .tbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
 /* Compact variant (config: compact: true) — dial + controls + modes only */
 .card.compact { gap:12px; padding:14px 14px 12px; }
 .card.compact .dial { width:184px; height:184px; }

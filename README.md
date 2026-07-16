@@ -205,9 +205,15 @@ integration** (no separate install) and registers itself automatically; pick
 ```yaml
 type: custom:madoka-card
 entity: climate.my_madoka
-# compact: true        # smaller dial, hides fan row / brightness / graph
+# layout: full         # full | compact | tile  (default: full)
+# compact: true        # alias for layout: compact
 # name: "Bedroom"      # override the title
 ```
+
+Three layouts: **full** (the dial with fan/brightness/graph), **compact**
+(dial + controls + modes only) and **tile** — an ultra-compact row (a
+mode-colored status dot + name + current→target + `−`/`+`) that lines up with
+Home Assistant's tile cards in a dense grid.
 
 The related entities (outdoor temperature, eye brightness, filter, signal) are
 discovered automatically from the same device — you only need the `climate.*`
