@@ -18,6 +18,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import MadokaCoordinator
+from .frontend import async_register_card
 from .util import normalize_mac
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
@@ -42,6 +43,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     refresh connects, and every later poll doubles as a reconnect attempt. The
     legacy ``adapter``/``force_update`` entry options are ignored.
     """
+    await async_register_card(hass)
+
     if CONF_MAC in entry.data:
         devices = [(entry.data[CONF_MAC], entry.data.get(CONF_FRIENDLY_NAME) or None)]
         single_device = True
