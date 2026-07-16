@@ -147,6 +147,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         conn._closing = False
         conn._paired = False
         conn.connection_status = ConnectionStatus.DISCONNECTED
+        # The BRC1H stops advertising while connected and takes a moment to
+        # resume after a disconnect; refreshing instantly would fail fast with
+        # "not advertising" and defer the reconnect to the next poll.
+        await asyncio.sleep(3)
         await self.async_request_refresh()
 
     @callback
