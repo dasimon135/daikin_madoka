@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -10,6 +11,13 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.daikin_madoka.const import CONF_FRIENDLY_NAME, CONF_MAC, DOMAIN
 
 MAC = "AA:BB:CC:DD:EE:FF"
+
+
+@pytest.fixture
+def expected_lingering_timers() -> bool:
+    """Setting up the bluetooth dependency schedules a device-expiry timer
+    that outlives the test; it is HA's scanner bookkeeping, not ours."""
+    return True
 
 
 def _discovery_info() -> SimpleNamespace:

@@ -142,7 +142,10 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_MAC] = "not_a_mac"
 
             if not errors:
-                await self.async_set_unique_id(mac)
+                # raise_on_progress=False: a manual user flow takes precedence
+                # over a pending Bluetooth discovery flow for the same device
+                # (the discovery flow is aborted when the entry is created).
+                await self.async_set_unique_id(mac, raise_on_progress=False)
                 self._abort_if_unique_id_configured()
                 if mac in self._configured_addresses():
                     return self.async_abort(reason="already_configured")
