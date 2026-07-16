@@ -142,8 +142,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             _LOGGER.debug("Reconnect: stop failed for %s", self.address, exc_info=True)
         # stop() -> cleanup() sets the library's _closing flag, which makes the
         # next start() bail out immediately; clear it so the coordinator's poll
-        # can actually re-establish the link.
+        # can actually re-establish the link. Also clear _paired so the fresh
+        # connection re-authenticates (the bond is per proxy).
         conn._closing = False
+        conn._paired = False
         conn.connection_status = ConnectionStatus.DISCONNECTED
         await self.async_request_refresh()
 
