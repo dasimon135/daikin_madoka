@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.3.0";
+const MADOKA_CARD_VERSION = "0.3.1";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -26,12 +26,12 @@ const MODE_ORDER = ["cool", "heat", "auto", "fan_only", "dry", "off"];
 // (hass.localize) so they always match the user's HA language; these cover
 // only the labels HA does not provide. English is the fallback.
 const CARD_STRINGS = {
-  en: { to: "to", standby: "standby", display: "Display", fan: "Fan", filterOk: "OK", filterClean: "Clean" },
-  fr: { to: "vers", standby: "en veille", display: "Voyant", fan: "Ventilation", filterOk: "OK", filterClean: "Nettoyer" },
-  es: { to: "a", standby: "en espera", display: "Pantalla", fan: "Ventilación", filterOk: "OK", filterClean: "Limpiar" },
-  de: { to: "auf", standby: "Standby", display: "Anzeige", fan: "Lüftung", filterOk: "OK", filterClean: "Reinigen" },
-  it: { to: "a", standby: "in pausa", display: "Display", fan: "Ventola", filterOk: "OK", filterClean: "Pulire" },
-  nl: { to: "naar", standby: "stand-by", display: "Display", fan: "Ventilatie", filterOk: "OK", filterClean: "Reinigen" },
+  en: { to: "to", standby: "standby", display: "Display", fan: "Fan", fanMode: "Fan", filterOk: "OK", filterClean: "Clean" },
+  fr: { to: "vers", standby: "en veille", display: "Voyant", fan: "Ventilation", fanMode: "Ventilation", filterOk: "OK", filterClean: "Nettoyer" },
+  es: { to: "a", standby: "en espera", display: "Pantalla", fan: "Ventilación", fanMode: "Ventilación", filterOk: "OK", filterClean: "Limpiar" },
+  de: { to: "auf", standby: "Standby", display: "Anzeige", fan: "Lüftung", fanMode: "Lüftung", filterOk: "OK", filterClean: "Reinigen" },
+  it: { to: "a", standby: "in pausa", display: "Display", fan: "Ventola", fanMode: "Ventola", filterOk: "OK", filterClean: "Pulire" },
+  nl: { to: "naar", standby: "stand-by", display: "Display", fan: "Ventilatie", fanMode: "Ventilatie", filterOk: "OK", filterClean: "Reinigen" },
 };
 const FAN_SHORT = {
   en: { auto: "Auto", low: "Low", medium: "Mid", high: "High" },
@@ -80,6 +80,9 @@ class MadokaCard extends HTMLElement {
     return (CARD_STRINGS[l] && CARD_STRINGS[l][key]) || CARD_STRINGS.en[key];
   }
   _modeLabel(mode) {
+    // HA translates fan_only as the verbose "Fan only" / "Ventilation
+    // uniquement"; use a short card-specific label for this one mode.
+    if (mode === "fan_only") return this._t("fanMode");
     const t = this._hass.localize &&
       this._hass.localize(`component.climate.entity_component._.state.${mode}`);
     return t || (MODES[mode] ? MODES[mode].label : mode);
