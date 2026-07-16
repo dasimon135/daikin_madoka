@@ -7,6 +7,9 @@ pymadoka-ng==0.3.5
 # Requirements of the HA bluetooth/usb components (imported by the config
 # flow); pytest-homeassistant-custom-component does not install per-component
 # requirements. Versions match the pinned homeassistant release.
+# The integration manifest depends on frontend; flows set up dependencies.
+home-assistant-frontend==20260624.5
+
 # serialx (usb component) imports aioesphomeapi at module level.
 aioesphomeapi==45.3.1
 aiousbwatcher==1.1.2

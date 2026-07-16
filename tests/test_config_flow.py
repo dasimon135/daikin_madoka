@@ -19,6 +19,7 @@ def _discovery_info() -> SimpleNamespace:
 
 async def test_user_flow_takes_over_pending_discovery_flow(
     hass: HomeAssistant,
+    enable_bluetooth: None,
 ) -> None:
     """A manual user flow must win over a pending Bluetooth discovery flow.
 
