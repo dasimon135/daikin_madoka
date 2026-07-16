@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.1.1 - Unreleased
+
+- **Config flow**: manual setup ("Add integration") now takes over a pending
+  Bluetooth discovery flow for the same device instead of aborting with
+  `already_in_progress`; the discovery card is dismissed automatically once
+  the entry is created.
+- **Tests/CI**: first pytest suite (Home Assistant test harness) wired into
+  the CI workflow alongside ruff.
+
 ## v3.1.0 - July 2026
 
 ### Madoka Card
