@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.1.1 - Unreleased
+## v3.1.1 - July 2026
 
 - **Config flow**: manual setup ("Add integration") now takes over a pending
   Bluetooth discovery flow for the same device instead of aborting with
