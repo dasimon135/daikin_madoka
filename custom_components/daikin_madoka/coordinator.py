@@ -14,7 +14,14 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import BRC1H_NAME_PREFIX, CONNECT_TIMEOUT, DOMAIN, POLL_TIMEOUT
+from .const import (
+    BRC1H_NAME_PREFIX,
+    CONF_MAC,
+    CONF_PREFERRED_SOURCE,
+    CONNECT_TIMEOUT,
+    DOMAIN,
+    POLL_TIMEOUT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +69,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             raise
         self._fail_count = 0
         self._clear_unreachable_issue()
+        self._async_persist_preferred_source()
         return data
 
     async def _async_poll(self) -> dict:
@@ -152,6 +160,32 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # "not advertising" and defer the reconnect to the next poll.
         await asyncio.sleep(3)
         await self.async_request_refresh()
+
+    @callback
+    def _async_persist_preferred_source(self) -> None:
+        """Remember which proxy carried the successful session.
+
+        The stored source primes build_candidates on the next (re)connect and
+        survives restarts, so the connection returns to the bonded proxy
+        instead of whichever proxy wins on RSSI. Skipped for legacy multi-MAC
+        entries (no CONF_MAC): they share one entry, and a single
+        preferred_source cannot be right for several thermostats. None means
+        local adapter / unknown backend — nothing worth pinning.
+        """
+        source = self.controller.connection.connected_source
+        if (
+            not source
+            or self.config_entry is None
+            or CONF_MAC not in self.config_entry.data
+            or self.config_entry.data.get(CONF_PREFERRED_SOURCE) == source
+        ):
+            return
+        # async_update_entry fires the entry's update listener; ours only
+        # re-applies the poll interval from options, so no side effects here.
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            data={**self.config_entry.data, CONF_PREFERRED_SOURCE: source},
+        )
 
     @callback
     def _raise_unreachable_issue(self) -> None:

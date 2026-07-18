@@ -3,6 +3,10 @@
 DOMAIN = "daikin_madoka"
 CONF_MAC = "address"
 CONF_FRIENDLY_NAME = "friendly_name"
+# Source (proxy) MAC of the path that last authenticated successfully; the
+# candidates list is ordered sticky-first so reconnects go back to the bonded
+# proxy instead of whichever proxy wins on RSSI.
+CONF_PREFERRED_SOURCE = "preferred_source"
 
 COORDINATORS = "coordinators"
 

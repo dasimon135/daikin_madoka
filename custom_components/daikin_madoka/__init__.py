@@ -13,13 +13,14 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     CONF_FRIENDLY_NAME,
     CONF_MAC,
+    CONF_PREFERRED_SOURCE,
     COORDINATORS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 from .coordinator import MadokaCoordinator
 from .frontend import async_register_card
-from .util import normalize_mac
+from .util import build_candidates, normalize_mac
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -58,9 +59,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for raw_mac, friendly_name in devices:
         mac = normalize_mac(raw_mac) or raw_mac
 
+        # Reads entry.data live so the preferred_source the coordinator
+        # persists after a successful poll primes the very next reconnect,
+        # without an entry reload. Legacy multi-MAC entries share one entry,
+        # so a single preferred_source cannot be right for all of them: they
+        # get plain RSSI ordering instead.
+        def _candidates(mac=mac):
+            preferred = (
+                entry.data.get(CONF_PREFERRED_SOURCE) if single_device else None
+            )
+            return build_candidates(hass, mac, preferred)
+
         # reconnect=False: the coordinator is the single reconnect owner; a
         # library-side background reconnect task would race it.
-        controller = Controller(mac, hass=hass, name=friendly_name, reconnect=False)
+        controller = Controller(
+            mac,
+            hass=hass,
+            name=friendly_name,
+            reconnect=False,
+            candidates_callback=_candidates,
+        )
         coordinator = MadokaCoordinator(
             hass, controller, scan_interval, friendly_name=friendly_name
         )
