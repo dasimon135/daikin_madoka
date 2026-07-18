@@ -3,15 +3,18 @@
     "flow_title": "{name}",
     "abort": {
       "already_configured": "Este termostato ya está configurado",
-      "already_in_progress": "Ya hay un flujo de configuración en curso"
+      "already_in_progress": "Ya hay un flujo de configuración en curso",
+      "weak_signal": "Señal demasiado débil — el dispositivo probablemente está fuera de tu casa."
     },
     "error": {
-      "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)"
+      "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)",
+      "cannot_connect": "No se pudo conectar con el termostato. Comprueba que esté encendido y dentro del alcance Bluetooth de un proxy, y vuelve a intentarlo.",
+      "pairing_failed": "El termostato rechazó la conexión: probablemente hay una solicitud de emparejamiento esperando en su pantalla. Quédate cerca del termostato, confirma la solicitud y vuelve a intentarlo."
     },
     "step": {
       "user": {
         "title": "Configurar Daikin Madoka",
-        "description": "Elige un termostato BRC1H descubierto o introduce su dirección MAC Bluetooth. Ejecuta este flujo de nuevo para añadir más termostatos.\n\nEl dispositivo debe estar emparejado con el host de Home Assistant (o accesible a través de un proxy Bluetooth ESPHome). Consulta la documentación para los pasos de emparejamiento.",
+        "description": "Elige un termostato BRC1H descubierto o introduce su dirección MAC Bluetooth. Ejecuta este flujo de nuevo para añadir más termostatos.\n\nLa conexión se prueba antes de añadir el dispositivo. Quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar. Consulta la documentación para los pasos de emparejamiento.",
         "data": {
           "address": "Termostato BRC1H",
           "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
@@ -19,7 +22,7 @@
       },
       "bluetooth_confirm": {
         "title": "Termostato Daikin Madoka encontrado",
-        "description": "¿Añadir {name} a Home Assistant?",
+        "description": "¿Añadir {name} a Home Assistant?\n\nLa conexión se prueba primero. Quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar.",
         "data": {
           "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
         }
@@ -79,6 +82,10 @@
     "device_unreachable": {
       "title": "{device} no responde",
       "description": "Home Assistant no ha podido comunicarse con el termostato {device} desde hace un rato. Comprueba que esté encendido y dentro del alcance Bluetooth. Si te conectas mediante un proxy Bluetooth ESPHome, el proxy debe tener soporte de emparejamiento y el termostato emparejado con él — consulta la documentación. También puedes probar el botón Reconectar del dispositivo."
+    },
+    "pairing_required": {
+      "title": "{device} rechaza la conexión Bluetooth",
+      "description": "Todas las rutas Bluetooth hacia {device} fueron rechazadas porque el proxy no está emparejado con él (intentado a través de: {proxies}). Confirma la solicitud de emparejamiento en la pantalla del termostato — necesaria una vez por proxy — o pon el proxy sin emparejar en modo pasivo. Consulta la documentación de emparejamiento para más detalles."
     }
   }
 }

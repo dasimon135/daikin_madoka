@@ -1,5 +1,6 @@
 """Config flow for the Daikin Madoka platform."""
 
+import asyncio
 from typing import Any
 
 import voluptuous as vol
@@ -26,9 +27,12 @@ from .const import (
     BRC1H_NAME_PREFIX,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
+    CONF_PREFERRED_SOURCE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MADOKA_SERVICE_UUID,
+    RSSI_DISCOVERY_FLOOR,
+    VALIDATE_TIMEOUT,
 )
 from .util import normalize_mac
 
@@ -82,21 +86,78 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
-    async def _create_entry(self, mac: str, friendly_name: str) -> ConfigFlowResult:
+    async def _create_entry(
+        self, mac: str, friendly_name: str, preferred_source: str | None = None
+    ) -> ConfigFlowResult:
         """Register new entry."""
         title = friendly_name.strip() or f"{BRC1H_NAME_PREFIX} {mac}"
-        return self.async_create_entry(
-            title=title,
-            data={
-                CONF_MAC: mac,
-                CONF_FRIENDLY_NAME: friendly_name.strip(),
-            },
+        data: dict[str, Any] = {
+            CONF_MAC: mac,
+            CONF_FRIENDLY_NAME: friendly_name.strip(),
+        }
+        # Prime the sticky proxy with the path that just validated, so the
+        # very first setup reconnects through the bonded proxy instead of
+        # whichever proxy wins on RSSI. None means the validation went
+        # through the local adapter — nothing useful to store.
+        if preferred_source is not None:
+            data[CONF_PREFERRED_SOURCE] = preferred_source
+        return self.async_create_entry(title=title, data=data)
+
+    async def _async_validate_device(self, mac: str) -> tuple[str | None, str | None]:
+        """Try a full authenticated connect. Returns (error_key, connected_source).
+
+        A successful validation disconnects right away (controller.stop in the
+        finally block). The BRC1H stops advertising while connected and needs
+        a moment to reappear, so the device may be briefly invisible when
+        async_setup_entry runs its real connect right after entry creation.
+        That is acceptable — the coordinator fails fast on "not advertising"
+        and retries on the next poll, and setup retries via
+        ConfigEntryNotReady — so no sleep is added here.
+        """
+        from pymadoka import ConnectionStatus, Controller, PairingRequiredError
+
+        from .util import build_candidates
+
+        controller = Controller(
+            mac,
+            hass=self.hass,
+            reconnect=False,
+            candidates_callback=lambda: build_candidates(self.hass, mac, None),
         )
+        try:
+            await asyncio.wait_for(controller.start(), timeout=VALIDATE_TIMEOUT)
+            # start() can return NORMALLY with status ABORTED: its connect
+            # loop stamps ABORTED on unclassified bleak/proxy errors instead
+            # of raising, so a bare return does not prove a live connection.
+            if controller.connection.connection_status is not ConnectionStatus.CONNECTED:
+                return "cannot_connect", None
+            return None, controller.connection.connected_source
+        except PairingRequiredError:
+            return "pairing_failed", None
+        except Exception:  # noqa: BLE001  (DeviceUnreachableError, TimeoutError, anything)
+            return "cannot_connect", None
+        finally:
+            try:
+                # Capped so a wedged disconnect cannot hang the config flow.
+                await asyncio.wait_for(controller.stop(), timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
         """Handle a thermostat discovered by Home Assistant's Bluetooth stack."""
+        # A very weak advert is almost certainly a neighbour's device: don't
+        # offer a discovery card the user can't complete. Consequence of the
+        # abort: HA will not re-fire discovery for this address until it
+        # fully disappears from the scanners or HA restarts, so no card
+        # appears even if the signal later improves. Manual setup via
+        # async_step_user deliberately skips this filter (escape hatch).
+        if (
+            discovery_info.rssi is not None
+            and discovery_info.rssi < RSSI_DISCOVERY_FLOOR
+        ):
+            return self.async_abort(reason="weak_signal")
         address = discovery_info.address.upper()
         await self.async_set_unique_id(address)
         self._abort_if_unique_id_configured()
@@ -115,16 +176,23 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Confirm the discovered thermostat and pick a name."""
         assert self._discovery_info is not None
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            return await self._create_entry(
-                self._discovery_info.address.upper(),
-                user_input.get(CONF_FRIENDLY_NAME, ""),
-            )
+            mac = self._discovery_info.address.upper()
+            error_key, source = await self._async_validate_device(mac)
+            if error_key is None:
+                return await self._create_entry(
+                    mac,
+                    user_input.get(CONF_FRIENDLY_NAME, ""),
+                    preferred_source=source,
+                )
+            errors["base"] = error_key
 
         return self.async_show_form(
             step_id="bluetooth_confirm",
             data_schema=vol.Schema({vol.Optional(CONF_FRIENDLY_NAME, default=""): str}),
+            errors=errors,
             description_placeholders={
                 "name": self._discovery_info.name or self._discovery_info.address
             },
@@ -134,7 +202,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """User initiated config flow."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             mac = normalize_mac(user_input[CONF_MAC])
@@ -149,10 +217,14 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 if mac in self._configured_addresses():
                     return self.async_abort(reason="already_configured")
-                return await self._create_entry(
-                    mac,
-                    user_input.get(CONF_FRIENDLY_NAME, ""),
-                )
+                error_key, source = await self._async_validate_device(mac)
+                if error_key is None:
+                    return await self._create_entry(
+                        mac,
+                        user_input.get(CONF_FRIENDLY_NAME, ""),
+                        preferred_source=source,
+                    )
+                errors["base"] = error_key
 
         return self.async_show_form(
             step_id="user", data_schema=self._user_schema(), errors=errors

@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.2.0 - Unreleased
+
+Multi-proxy robustness: reliable in homes with several Bluetooth proxies and several thermostats.
+
+- **Sticky proxy**: the integration remembers which proxy last authenticated with each thermostat and tries it first on every reconnect. A closer proxy that has no bond can no longer steal the connection and take the thermostat down with `Insufficient authentication`.
+- **`pairing_required` repair**: when every connection path refuses the link for lack of a bond, an actionable repair appears that **names the refusing proxies**, so you know exactly which one to pair (or set passive) — see the new [ESPHome proxy reference](docs/esphome-proxy.md).
+- **Stale-value grace**: 1–2 transient poll failures no longer punch holes in graphs or flicker entities to unavailable — sensors keep their last value for a short grace period while the connection recovers. Real outages (and pairing failures) still surface immediately.
+- **Saner discovery & onboarding**: discovery ignores advertisements below −90 dBm (no more discovery cards for out-of-home devices at the edge of range), and the config flow now tests the connection — including pairing — before creating the entry, so a misconfigured setup fails in the flow instead of producing a dead device.
+- **Registry hygiene**: orphaned devices left behind by removed entries are cleaned up at startup, and devices can now be deleted individually from the device page.
+- Requires **pymadoka-ng 0.3.6** (typed connection errors, candidate proxy list, preferred-proxy support; installed automatically).
+
 ## v3.1.1 - July 2026
 
 - **Config flow**: manual setup ("Add integration") now takes over a pending
