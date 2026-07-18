@@ -24,8 +24,11 @@ from homeassistant.components.climate.const import (
     FAN_MEDIUM,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COORDINATORS, DOMAIN, MAX_TEMP, MIN_TEMP
+from .const import MAX_TEMP, MIN_TEMP
+from .coordinator import MadokaConfigEntry
 from .entity import MadokaEntity
 
 HA_MODE_TO_DAIKIN = {
@@ -67,11 +70,14 @@ DAIKIN_TO_HA_CURRENT_HVAC_MODE = {
 }
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin climate based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
     async_add_entities(
-        DaikinMadokaClimate(coordinator) for coordinator in coordinators.values()
+        DaikinMadokaClimate(coordinator) for coordinator in entry.runtime_data.values()
     )
 
 

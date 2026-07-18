@@ -4,17 +4,22 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COORDINATORS, DOMAIN
-from .coordinator import MadokaCoordinator
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin Madoka binary sensors based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
     async_add_entities(
-        MadokaFilterBinarySensor(coordinator) for coordinator in coordinators.values()
+        MadokaFilterBinarySensor(coordinator)
+        for coordinator in entry.runtime_data.values()
     )
 
 

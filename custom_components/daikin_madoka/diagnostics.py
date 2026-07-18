@@ -1,20 +1,20 @@
 """Diagnostics support for Daikin Madoka."""
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICES
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_MAC, COORDINATORS, DOMAIN
+from .const import CONF_MAC
+from .coordinator import MadokaConfigEntry
 
 TO_REDACT = {CONF_MAC, CONF_DEVICES, "title", "unique_id"}
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: MadokaConfigEntry
 ) -> dict:
     """Return diagnostics for a config entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
+    coordinators = entry.runtime_data
 
     devices = {}
     for index, coordinator in enumerate(coordinators.values()):

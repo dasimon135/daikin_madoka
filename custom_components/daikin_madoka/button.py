@@ -4,17 +4,21 @@ from pymadoka.features.clean_filter import ResetCleanFilterTimerStatus
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COORDINATORS, DOMAIN
-from .coordinator import MadokaCoordinator
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin Madoka buttons based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
-    entities = []
-    for coordinator in coordinators.values():
+    entities: list[MadokaEntity] = []
+    for coordinator in entry.runtime_data.values():
         entities.append(MadokaResetFilterButton(coordinator))
         entities.append(MadokaReconnectButton(coordinator))
     async_add_entities(entities)

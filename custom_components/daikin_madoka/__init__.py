@@ -4,7 +4,6 @@ import logging
 
 from pymadoka import Controller
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -15,11 +14,10 @@ from .const import (
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
-    COORDINATORS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
-from .coordinator import MadokaCoordinator
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .frontend import async_register_card
 from .util import build_candidates, normalize_mac
 
@@ -52,7 +50,7 @@ def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
         dev_reg.async_remove_device(device.id)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bool:
     """Set up Madoka thermostat(s) from a config entry.
 
     New-style entries carry a single MAC (``CONF_MAC``); legacy entries created
@@ -132,8 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not coordinators:
         raise ConfigEntryNotReady("No Madoka device is reachable")
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {COORDINATORS: coordinators}
+    entry.runtime_data = coordinators
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -150,31 +147,35 @@ async def _safe_stop(controller: Controller) -> None:
         _LOGGER.debug("Error stopping controller", exc_info=True)
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(
+    hass: HomeAssistant, entry: MadokaConfigEntry
+) -> None:
     """Apply a new poll interval without tearing down the BLE connection."""
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    for coordinator in hass.data[DOMAIN][entry.entry_id][COORDINATORS].values():
+    for coordinator in entry.runtime_data.values():
         coordinator.update_interval = timedelta(seconds=scan_interval)
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, config_entry: MadokaConfigEntry
+) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(
         config_entry, COMPONENT_TYPES
     )
 
     if unload_ok:
-        data = hass.data[DOMAIN].pop(config_entry.entry_id, None)
-        if data:
-            for coordinator in data[COORDINATORS].values():
-                coordinator.async_shutdown_extras()
-                await _safe_stop(coordinator.controller)
+        # HA discards runtime_data once the entry is unloaded; only the BLE
+        # side needs an explicit teardown here.
+        for coordinator in config_entry.runtime_data.values():
+            coordinator.async_shutdown_extras()
+            await _safe_stop(coordinator.controller)
 
     return unload_ok
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+    hass: HomeAssistant, config_entry: MadokaConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
     """Allow deleting a device that the entry no longer serves.
 
@@ -183,8 +184,7 @@ async def async_remove_config_entry_device(
     must not be removable; anything else (stale MAC after an entry rewrite,
     leftover from a legacy multi-MAC entry) may go.
     """
-    coordinators = (
-        hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {}).get(COORDINATORS, {})
-    )
+    # runtime_data is unset when the entry never finished setting up.
+    coordinators = getattr(config_entry, "runtime_data", None) or {}
     macs = {mac for domain, mac in device_entry.identifiers if domain == DOMAIN}
     return not (macs & set(coordinators))

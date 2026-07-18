@@ -12,7 +12,7 @@ from custom_components.daikin_madoka import (
     _async_purge_orphan_devices,
     async_remove_config_entry_device,
 )
-from custom_components.daikin_madoka.const import COORDINATORS, DOMAIN
+from custom_components.daikin_madoka.const import DOMAIN
 
 MAC = "AA:BB:CC:DD:EE:FF"
 OTHER_MAC = "AA:BB:CC:DD:EE:00"
@@ -108,7 +108,7 @@ async def test_purge_ignores_foreign_domain_device(hass: HomeAssistant) -> None:
 async def test_remove_device_allowed_for_stale_mac(hass: HomeAssistant) -> None:
     """Removal is allowed when no coordinator serves the device's MAC."""
     entry = _add_entry(hass)
-    hass.data[DOMAIN] = {entry.entry_id: {COORDINATORS: {OTHER_MAC: MagicMock()}}}
+    entry.runtime_data = {OTHER_MAC: MagicMock()}
     device_entry = SimpleNamespace(identifiers={(DOMAIN, MAC)})
 
     assert await async_remove_config_entry_device(hass, entry, device_entry) is True
@@ -117,7 +117,7 @@ async def test_remove_device_allowed_for_stale_mac(hass: HomeAssistant) -> None:
 async def test_remove_device_refused_for_active_mac(hass: HomeAssistant) -> None:
     """Removal is refused while a live coordinator serves the device's MAC."""
     entry = _add_entry(hass)
-    hass.data[DOMAIN] = {entry.entry_id: {COORDINATORS: {MAC: MagicMock()}}}
+    entry.runtime_data = {MAC: MagicMock()}
     device_entry = SimpleNamespace(identifiers={(DOMAIN, MAC), ("other", "x")})
 
     assert await async_remove_config_entry_device(hass, entry, device_entry) is False

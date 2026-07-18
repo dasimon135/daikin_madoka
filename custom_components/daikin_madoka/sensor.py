@@ -13,19 +13,22 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import COORDINATORS, DOMAIN
-from .coordinator import MadokaCoordinator
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin sensors based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
-    entities = []
-    for coordinator in coordinators.values():
+    entities: list[MadokaEntity] = []
+    for coordinator in entry.runtime_data.values():
         entities.append(MadokaIndoorSensor(coordinator))
         entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
