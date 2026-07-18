@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # requirements-test.txt (the integration's own requirement, pymadoka-ng,
+  # is pinned both there and in the manifest; bumps land here first and the
+  # manifest is updated in the same PR by hand).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Workflow actions, including the SHA-pinned ones in validate.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
