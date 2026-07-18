@@ -5,7 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from homeassistant import config_entries
+from homeassistant.const import CONF_DEVICES
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
@@ -18,7 +21,9 @@ from custom_components.daikin_madoka.const import (
 )
 
 MAC = "AA:BB:CC:DD:EE:FF"
+OTHER_MAC = "AA:BB:CC:DD:EE:01"
 PROXY_SOURCE = "D0:CF:13:0F:11:F6"
+OTHER_SOURCE = "D0:CF:13:0F:11:F7"
 
 VALIDATE = "custom_components.daikin_madoka.config_flow.FlowHandler._async_validate_device"
 SETUP_ENTRY = "custom_components.daikin_madoka.async_setup_entry"
@@ -198,6 +203,150 @@ async def test_user_flow_local_adapter_omits_preferred_source(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MAC] == MAC
     assert CONF_PREFERRED_SOURCE not in result["data"]
+
+
+# --- Reconfigure flow ------------------------------------------------------
+
+
+def _add_configured_entry(
+    hass: HomeAssistant, mac: str = MAC, name: str = "Salon"
+) -> MockConfigEntry:
+    """Add a single-device entry the way _create_entry shapes it."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_MAC: mac,
+            CONF_FRIENDLY_NAME: name,
+            CONF_PREFERRED_SOURCE: PROXY_SOURCE,
+        },
+        unique_id=mac,
+        title=name,
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_reconfigure_rename_only_skips_validation(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """A friendly-name change must not require the device to be reachable."""
+    entry = _add_configured_entry(hass)
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch(VALIDATE) as mock_validate,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_MAC: MAC, CONF_FRIENDLY_NAME: "Buanderie"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    mock_validate.assert_not_called()
+    assert entry.data[CONF_MAC] == MAC
+    assert entry.data[CONF_FRIENDLY_NAME] == "Buanderie"
+    # The sticky proxy still belongs to the same device: it must survive.
+    assert entry.data[CONF_PREFERRED_SOURCE] == PROXY_SOURCE
+    assert entry.title == "Buanderie"
+
+
+async def test_reconfigure_mac_change_validates_and_resets_source(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """A MAC change is validated and replaces the stored sticky proxy."""
+    entry = _add_configured_entry(hass)
+    result = await entry.start_reconfigure_flow(hass)
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch(VALIDATE, return_value=(None, OTHER_SOURCE)) as mock_validate,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MAC: OTHER_MAC, CONF_FRIENDLY_NAME: "Salon"},
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    mock_validate.assert_called_once()
+    assert entry.data[CONF_MAC] == OTHER_MAC
+    assert entry.data[CONF_PREFERRED_SOURCE] == OTHER_SOURCE
+    assert entry.unique_id == OTHER_MAC
+
+
+async def test_reconfigure_mac_change_validation_failure_keeps_entry(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """A failed validation re-shows the form and leaves the entry untouched."""
+    entry = _add_configured_entry(hass)
+    result = await entry.start_reconfigure_flow(hass)
+
+    with patch(VALIDATE, return_value=("cannot_connect", None)):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MAC: OTHER_MAC, CONF_FRIENDLY_NAME: "Salon"},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert entry.data[CONF_MAC] == MAC
+
+
+async def test_reconfigure_to_other_entry_mac_aborts(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """Pointing the entry at another entry's thermostat must abort."""
+    entry = _add_configured_entry(hass)
+    _add_configured_entry(hass, mac=OTHER_MAC, name="Buanderie")
+    result = await entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MAC: OTHER_MAC, CONF_FRIENDLY_NAME: "Salon"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_MAC] == MAC
+
+
+async def test_reconfigure_invalid_mac_shows_error(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """A malformed MAC re-shows the form with a field error."""
+    entry = _add_configured_entry(hass)
+    result = await entry.start_reconfigure_flow(hass)
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MAC: "nonsense", CONF_FRIENDLY_NAME: "Salon"}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_MAC: "not_a_mac"}
+
+
+async def test_reconfigure_legacy_multi_device_entry_aborts(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """Legacy multi-MAC entries have no single identity to rewrite."""
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_DEVICES: [MAC, OTHER_MAC]})
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reconfigure_flow(hass)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_legacy"
 
 
 # --- Direct unit tests for FlowHandler._async_validate_device -------------

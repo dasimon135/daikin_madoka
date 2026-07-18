@@ -4,7 +4,9 @@
     "abort": {
       "already_configured": "This thermostat is already configured",
       "already_in_progress": "Configuration flow is already in progress",
-      "weak_signal": "Signal too weak — the device is probably outside your home."
+      "weak_signal": "Signal too weak — the device is probably outside your home.",
+      "reconfigure_successful": "Reconfiguration successful",
+      "reconfigure_legacy": "This legacy entry covers several thermostats and cannot be reconfigured. Remove it and add each thermostat individually."
     },
     "error": {
       "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)",
@@ -24,6 +26,14 @@
         "title": "Daikin Madoka thermostat found",
         "description": "Add {name} to Home Assistant?\n\nThe connection is tested first. Stay near the thermostat: a pairing prompt may appear on its screen and need to be confirmed.",
         "data": {
+          "friendly_name": "Friendly name (optional, e.g. 'Living room')"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Daikin Madoka",
+        "description": "Update the thermostat's Bluetooth MAC address or its friendly name. A changed MAC is validated with a connection test first — stay near the thermostat: a pairing prompt may appear on its screen and need to be confirmed.",
+        "data": {
+          "address": "Bluetooth MAC address",
           "friendly_name": "Friendly name (optional, e.g. 'Living room')"
         }
       }

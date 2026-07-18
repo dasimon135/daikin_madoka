@@ -46,10 +46,12 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
 
-    def _configured_addresses(self) -> set[str]:
+    def _configured_addresses(self, exclude_entry_id: str | None = None) -> set[str]:
         """Normalized MACs of all existing entries, legacy shapes included."""
         addresses: set[str] = set()
         for entry in self._async_current_entries(include_ignore=True):
+            if entry.entry_id == exclude_entry_id:
+                continue
             macs = []
             if CONF_MAC in entry.data:
                 macs.append(entry.data[CONF_MAC])
@@ -228,6 +230,75 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=self._user_schema(), errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the MAC and/or friendly name without delete + re-add.
+
+        A rename alone needs no device round-trip; a MAC change is validated
+        with a full authenticated connect, exactly like initial setup, and
+        replaces the stored sticky proxy (the old bond belongs to the old
+        device).
+        """
+        entry = self._get_reconfigure_entry()
+        # Legacy multi-MAC entries have no single identity to rewrite;
+        # reconfiguring one would silently drop its other thermostats.
+        if CONF_MAC not in entry.data:
+            return self.async_abort(reason="reconfigure_legacy")
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            mac = normalize_mac(user_input[CONF_MAC])
+            if mac is None:
+                errors[CONF_MAC] = "not_a_mac"
+            else:
+                current_mac = normalize_mac(entry.data[CONF_MAC])
+                mac_changed = mac != current_mac
+                if mac_changed and mac in self._configured_addresses(
+                    exclude_entry_id=entry.entry_id
+                ):
+                    return self.async_abort(reason="already_configured")
+                error_key: str | None = None
+                source: str | None = None
+                if mac_changed:
+                    error_key, source = await self._async_validate_device(mac)
+                if error_key is None:
+                    friendly = user_input.get(CONF_FRIENDLY_NAME, "").strip()
+                    data: dict[str, Any] = {
+                        CONF_MAC: mac,
+                        CONF_FRIENDLY_NAME: friendly,
+                    }
+                    if mac_changed:
+                        if source is not None:
+                            data[CONF_PREFERRED_SOURCE] = source
+                    elif CONF_PREFERRED_SOURCE in entry.data:
+                        data[CONF_PREFERRED_SOURCE] = entry.data[
+                            CONF_PREFERRED_SOURCE
+                        ]
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        unique_id=mac,
+                        title=friendly or f"{BRC1H_NAME_PREFIX} {mac}",
+                        data=data,
+                    )
+                errors["base"] = error_key
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MAC, default=entry.data.get(CONF_MAC, "")
+                    ): str,
+                    vol.Optional(
+                        CONF_FRIENDLY_NAME,
+                        default=entry.data.get(CONF_FRIENDLY_NAME, ""),
+                    ): str,
+                }
+            ),
+            errors=errors,
         )
 
     @staticmethod
