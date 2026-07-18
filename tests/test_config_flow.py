@@ -1,13 +1,15 @@
 """Tests for the daikin_madoka config flow."""
 
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.daikin_madoka.config_flow import FlowHandler
 from custom_components.daikin_madoka.const import (
     CONF_FRIENDLY_NAME,
     CONF_MAC,
@@ -82,6 +84,20 @@ async def test_discovery_below_rssi_floor_aborts(
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "weak_signal"
+
+
+async def test_discovery_at_rssi_floor_shows_confirm(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """The floor is strict: exactly -90 dBm still raises a discovery card."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_BLUETOOTH},
+        data=_discovery_info(rssi=-90),
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "bluetooth_confirm"
 
 
 async def test_discovery_above_rssi_floor_shows_confirm(
@@ -182,3 +198,83 @@ async def test_user_flow_local_adapter_omits_preferred_source(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MAC] == MAC
     assert CONF_PREFERRED_SOURCE not in result["data"]
+
+
+# --- Direct unit tests for FlowHandler._async_validate_device -------------
+# The flow tests above patch the validator (plumbing); these execute its
+# error-mapping logic against a stubbed pymadoka Controller. The import in
+# the validator is function-local (`from pymadoka import Controller`), so
+# the patch target is pymadoka.Controller itself.
+
+
+def _stub_controller(status: object, source: str | None = None) -> MagicMock:
+    """Controller stand-in: async start/stop, a connection with status/source."""
+    controller = MagicMock()
+    controller.start = AsyncMock()
+    controller.stop = AsyncMock()
+    controller.connection = SimpleNamespace(
+        connection_status=status, connected_source=source
+    )
+    return controller
+
+
+async def _validate_with(controller: MagicMock) -> tuple[str | None, str | None]:
+    """Run _async_validate_device against a stubbed Controller class."""
+    handler = FlowHandler()
+    # The stub never touches hass (candidates_callback is never invoked).
+    handler.hass = None
+    with patch("pymadoka.Controller", return_value=controller):
+        return await handler._async_validate_device(MAC)
+
+
+async def test_validator_maps_pairing_refusal() -> None:
+    """PairingRequiredError from start() maps to pairing_failed."""
+    from pymadoka import ConnectionStatus, PairingRequiredError
+
+    controller = _stub_controller(ConnectionStatus.ABORTED)
+    controller.start.side_effect = PairingRequiredError("pairing refused")
+
+    assert await _validate_with(controller) == ("pairing_failed", None)
+    assert controller.stop.await_count == 1
+
+
+async def test_validator_times_out_as_cannot_connect() -> None:
+    """A start() that never finishes is cut at VALIDATE_TIMEOUT."""
+    from pymadoka import ConnectionStatus
+
+    controller = _stub_controller(ConnectionStatus.DISCONNECTED)
+
+    async def _hang() -> None:
+        await asyncio.sleep(999)
+
+    controller.start = _hang
+
+    with patch(
+        "custom_components.daikin_madoka.config_flow.VALIDATE_TIMEOUT", 0.05
+    ):
+        assert await _validate_with(controller) == ("cannot_connect", None)
+    assert controller.stop.await_count == 1
+
+
+async def test_validator_rejects_aborted_without_raise() -> None:
+    """start() returning normally with status ABORTED is NOT a success.
+
+    pymadoka's connect loop stamps ABORTED on unclassified errors instead of
+    raising, so the validator must check connection_status itself.
+    """
+    from pymadoka import ConnectionStatus
+
+    controller = _stub_controller(ConnectionStatus.ABORTED)
+
+    assert await _validate_with(controller) == ("cannot_connect", None)
+    assert controller.stop.await_count == 1
+
+
+async def test_validator_returns_connected_source_on_success() -> None:
+    """A CONNECTED validation returns the serving proxy's source MAC."""
+    from pymadoka import ConnectionStatus
+
+    controller = _stub_controller(ConnectionStatus.CONNECTED, source=PROXY_SOURCE)
+
+    assert await _validate_with(controller) == (None, PROXY_SOURCE)
+    assert controller.stop.await_count == 1

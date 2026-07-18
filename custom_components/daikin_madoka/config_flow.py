@@ -114,7 +114,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         and retries on the next poll, and setup retries via
         ConfigEntryNotReady — so no sleep is added here.
         """
-        from pymadoka import Controller, PairingRequiredError
+        from pymadoka import ConnectionStatus, Controller, PairingRequiredError
 
         from .util import build_candidates
 
@@ -126,6 +126,11 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
         try:
             await asyncio.wait_for(controller.start(), timeout=VALIDATE_TIMEOUT)
+            # start() can return NORMALLY with status ABORTED: its connect
+            # loop stamps ABORTED on unclassified bleak/proxy errors instead
+            # of raising, so a bare return does not prove a live connection.
+            if controller.connection.connection_status is not ConnectionStatus.CONNECTED:
+                return "cannot_connect", None
             return None, controller.connection.connected_source
         except PairingRequiredError:
             return "pairing_failed", None
@@ -133,7 +138,8 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             return "cannot_connect", None
         finally:
             try:
-                await controller.stop()
+                # Capped so a wedged disconnect cannot hang the config flow.
+                await asyncio.wait_for(controller.stop(), timeout=10)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -142,7 +148,10 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle a thermostat discovered by Home Assistant's Bluetooth stack."""
         # A very weak advert is almost certainly a neighbour's device: don't
-        # offer a discovery card the user can't complete. Manual setup via
+        # offer a discovery card the user can't complete. Consequence of the
+        # abort: HA will not re-fire discovery for this address until it
+        # fully disappears from the scanners or HA restarts, so no card
+        # appears even if the signal later improves. Manual setup via
         # async_step_user deliberately skips this filter (escape hatch).
         if (
             discovery_info.rssi is not None
@@ -193,7 +202,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """User initiated config flow."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             mac = normalize_mac(user_input[CONF_MAC])
