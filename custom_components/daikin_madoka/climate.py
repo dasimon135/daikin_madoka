@@ -31,13 +31,16 @@ from .const import MAX_TEMP, MIN_TEMP
 from .coordinator import MadokaConfigEntry
 from .entity import MadokaEntity
 
+# HVACMode.OFF has no Daikin operation mode on purpose: the BRC1H models
+# "off" as a power state, not a mode. async_set_hvac_mode handles OFF by
+# writing the power state only, and hvac_mode reports OFF from the power
+# state before consulting this map.
 HA_MODE_TO_DAIKIN = {
     HVACMode.FAN_ONLY: OperationModeEnum.FAN,
     HVACMode.DRY: OperationModeEnum.DRY,
     HVACMode.COOL: OperationModeEnum.COOL,
     HVACMode.HEAT: OperationModeEnum.HEAT,
     HVACMode.AUTO: OperationModeEnum.AUTO,
-    HVACMode.OFF: OperationModeEnum.AUTO,
 }
 
 DAIKIN_TO_HA_MODE = {
@@ -86,8 +89,11 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
 
     _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # The BLE frames carry 1/128 degree resolution, but pymadoka-ng's SetPointStatus API is
+    # whole-degree only (int setpoints, round() on decode), so a finer step
+    # would just snap back after the next poll.
     _attr_target_temperature_step = 1
-    _attr_hvac_modes = list(HA_MODE_TO_DAIKIN)
+    _attr_hvac_modes = [*HA_MODE_TO_DAIKIN, HVACMode.OFF]
     _attr_fan_modes = list(HA_FAN_MODE_TO_DAIKIN)
 
     @property
@@ -263,12 +269,17 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         )
 
     async def async_set_hvac_mode(self, hvac_mode):
-        """Set HVAC mode."""
+        """Set HVAC mode.
+
+        OFF is a power-state write only (the device keeps its last operation
+        mode); every other mode writes the operation mode and turns the unit
+        on in the same session.
+        """
         calls = []
         if hvac_mode != HVACMode.OFF:
             calls.append(
                 lambda: self.controller.operation_mode.update(
-                    OperationModeStatus(HA_MODE_TO_DAIKIN.get(hvac_mode))
+                    OperationModeStatus(HA_MODE_TO_DAIKIN[hvac_mode])
                 )
             )
         calls.append(
