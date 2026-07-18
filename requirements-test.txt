@@ -3,6 +3,9 @@
 # component pins below.
 pytest-homeassistant-custom-component==0.13.346
 pymadoka-ng==0.3.7
+# Coverage flags in CI; the plugin already pins the compatible version, the
+# explicit line just documents the direct dependency.
+pytest-cov
 
 # Requirements of the HA bluetooth/usb components (imported by the config
 # flow); pytest-homeassistant-custom-component does not install per-component

@@ -210,8 +210,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             mac = normalize_mac(user_input[CONF_MAC])
             if mac is None:
                 errors[CONF_MAC] = "not_a_mac"
-
-            if not errors:
+            else:
                 # raise_on_progress=False: a manual user flow takes precedence
                 # over a pending Bluetooth discovery flow for the same device
                 # (the discovery flow is aborted when the entry is created).

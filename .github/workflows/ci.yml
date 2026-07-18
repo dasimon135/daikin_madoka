@@ -56,4 +56,27 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -q
+          python -m pytest tests/ -q --cov=custom_components/daikin_madoka --cov-report=term-missing
+
+  mypy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # requirements-test.txt pins homeassistant (via the pytest plugin) and
+      # pymadoka-ng, which mypy needs installed to see their type hints.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-test.txt mypy
+
+      - name: Type check
+        run: |
+          python -m mypy

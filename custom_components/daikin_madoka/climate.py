@@ -143,16 +143,16 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
     @property
     def target_temperature_low(self) -> float | None:
         """Return the lower (heating) setpoint in AUTO range mode."""
-        if not self._range_active:
+        if (set_point := self._set_point) is None or not self._range_active:
             return None
-        return self._set_point.heating_set_point
+        return set_point.heating_set_point
 
     @property
     def target_temperature_high(self) -> float | None:
         """Return the upper (cooling) setpoint in AUTO range mode."""
-        if not self._range_active:
+        if (set_point := self._set_point) is None or not self._range_active:
             return None
-        return self._set_point.cooling_set_point
+        return set_point.cooling_set_point
 
     @property
     def min_temp(self) -> float:

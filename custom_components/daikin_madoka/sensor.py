@@ -167,7 +167,7 @@ class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and last.native_value is not None:
             try:
-                self._hours = float(last.native_value)
+                self._hours = float(str(last.native_value))
             except (TypeError, ValueError):
                 self._hours = 0.0
         self._last_ts = dt_util.utcnow()

@@ -1,0 +1,18 @@
+# Tooling configuration only — this repository is a Home Assistant custom
+# integration, not an installable Python package.
+
+[tool.mypy]
+# Non-strict baseline: keep CI green while annotations grow. Tightening
+# (disallow_untyped_defs, strict) can come platform by platform later.
+files = ["custom_components/daikin_madoka"]
+check_untyped_defs = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+
+# pymadoka-ng ships no py.typed marker; bleak and HA are installed in CI so
+# their own hints are used.
+[[tool.mypy.overrides]]
+module = ["pymadoka", "pymadoka.*"]
+ignore_missing_imports = true
