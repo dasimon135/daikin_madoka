@@ -40,7 +40,10 @@ def _mock_controller(source: str | None = SOURCE) -> MagicMock:
 
 
 def _coordinator(
-    hass: HomeAssistant, entry: MockConfigEntry, controller: MagicMock
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    controller: MagicMock,
+    friendly_name: str | None = None,
 ) -> MadokaCoordinator:
     """Build a coordinator bound to the entry the way HA does during setup.
 
@@ -49,7 +52,9 @@ def _coordinator(
     """
     token = config_entries.current_entry.set(entry)
     try:
-        return MadokaCoordinator(hass, controller, scan_interval=60)
+        return MadokaCoordinator(
+            hass, controller, scan_interval=60, friendly_name=friendly_name
+        )
     finally:
         config_entries.current_entry.reset(token)
 
@@ -130,7 +135,9 @@ async def test_pairing_refusal_raises_repair_issue(hass: HomeAssistant) -> None:
     controller = _mock_controller()
     controller.connection.connection_status = ConnectionStatus.DISCONNECTED
     controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE, None]))
-    coordinator = _coordinator(hass, entry, controller)
+    # friendly_name is what production setup passes from the entry; without it
+    # device_name falls back to the advertised connection name ("Daikin").
+    coordinator = _coordinator(hass, entry, controller, friendly_name="Salon")
 
     with (
         patch(f"{BLUETOOTH}.async_address_present", return_value=True),
