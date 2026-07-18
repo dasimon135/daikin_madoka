@@ -37,6 +37,10 @@ def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
     at startup). Purge only devices that are ours AND whose every linked
     entry id is dangling — a device still linked to any live entry (ours or
     another integration's) is left alone.
+
+    Note: now that the config flow supports reconfigure (MAC/name changes
+    without delete + re-add), fresh orphans should become rare; this sweep
+    can be reassessed for removal once field reports confirm that.
     """
     dev_reg = dr.async_get(hass)
     for device in list(dev_reg.devices.values()):
