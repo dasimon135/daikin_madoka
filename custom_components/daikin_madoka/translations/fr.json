@@ -79,6 +79,10 @@
     "device_unreachable": {
       "title": "{device} est injoignable",
       "description": "Home Assistant n'arrive plus à joindre le thermostat {device} depuis un moment. Vérifiez qu'il est alimenté et à portée Bluetooth. Si vous passez par un proxy Bluetooth ESPHome, le proxy doit être flashé avec le support d'appairage et le thermostat appairé — voir la documentation. Vous pouvez aussi essayer le bouton Reconnecter de l'appareil."
+    },
+    "pairing_required": {
+      "title": "{device} refuse la connexion Bluetooth",
+      "description": "Tous les chemins Bluetooth vers {device} ont été refusés car le proxy n'est pas appairé avec lui (essayé via : {proxies}). Confirmez l'invite d'appairage sur l'écran du thermostat — nécessaire une fois par proxy — ou passez le proxy non appairé en mode passif. Consultez la documentation d'appairage pour plus de détails."
     }
   }
 }

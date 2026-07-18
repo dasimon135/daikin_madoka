@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 import logging
 
-from pymadoka import ConnectionException, Controller
+from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
 
 from homeassistant.components import bluetooth
@@ -21,6 +21,7 @@ from .const import (
     CONNECT_TIMEOUT,
     DOMAIN,
     POLL_TIMEOUT,
+    STALE_GRACE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._friendly_name = friendly_name
         self._fail_count = 0
         self._issue_active = False
+        self._pairing_issue_active = False
         self._boost_unsub: CALLBACK_TYPE | None = None
         super().__init__(
             hass,
@@ -62,13 +64,38 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         """Poll the device, tracking sustained failures for a repair issue."""
         try:
             data = await self._async_poll()
-        except UpdateFailed:
+        except UpdateFailed as err:
             self._fail_count += 1
             if self._fail_count >= UNREACHABLE_THRESHOLD:
                 self._raise_unreachable_issue()
+            # Stale-value grace: a short BLE micro-drop should not punch holes
+            # in graphs or flip entities unavailable, so the first STALE_GRACE
+            # failures serve the last good data (counter incremented above, so
+            # compare with <=: failures 1..STALE_GRACE are masked, the next one
+            # propagates). The counter keeps rising, so the unreachable
+            # threshold fires on its normal schedule. A pairing refusal never
+            # heals on its own and must surface immediately; the raise site
+            # chains PairingRequiredError as __cause__, which we inspect here
+            # instead of tracking a per-cycle flag that would need careful
+            # resetting at the start of every poll.
+            if (
+                self._fail_count <= STALE_GRACE
+                and self.data
+                and not isinstance(err.__cause__, PairingRequiredError)
+            ):
+                _LOGGER.debug(
+                    "Poll %d/%d failed for %s, serving stale data: %s",
+                    self._fail_count,
+                    STALE_GRACE,
+                    self.address,
+                    err,
+                )
+                # Not a real success: leave the fail counter and any active
+                # repair issues untouched.
+                return self.data
             raise
         self._fail_count = 0
-        self._clear_unreachable_issue()
+        self._clear_issues()
         self._async_persist_preferred_source()
         return data
 
@@ -89,7 +116,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 raise UpdateFailed(f"Device {self.address} is not advertising")
             try:
                 await asyncio.wait_for(self.controller.start(), timeout=CONNECT_TIMEOUT)
+            except PairingRequiredError as err:
+                self._raise_pairing_issue(err)
+                raise UpdateFailed(str(err)) from err
             except Exception as err:  # noqa: BLE001
+                # DeviceUnreachableError (and a wait_for TimeoutError) lands
+                # here on purpose: both feed the threshold-based
+                # device_unreachable repair, not a dedicated issue.
                 raise UpdateFailed(f"Could not reconnect to {self.address}: {err}") from err
             if (
                 self.controller.connection.connection_status
@@ -204,20 +237,53 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         )
 
     @callback
-    def _clear_unreachable_issue(self) -> None:
+    def _raise_pairing_issue(self, err: PairingRequiredError) -> None:
+        """Raise an immediate repair: an auth refusal never heals on its own."""
+        if self._pairing_issue_active:
+            return
+        self._pairing_issue_active = True
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"pairing_required_{self.address}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="pairing_required",
+            translation_placeholders={
+                "device": self.device_name,
+                "proxies": self._proxy_names(err.tried_sources),
+            },
+            learn_more_url=DOCS_URL,
+        )
+
+    def _proxy_names(self, sources: list[str | None]) -> str:
+        """Resolve proxy source MACs to human-readable scanner names."""
+        names = []
+        for source in sources:
+            if source is None:
+                names.append("local adapter")
+                continue
+            scanner = bluetooth.async_scanner_by_source(self.hass, source)
+            names.append(getattr(scanner, "name", None) or source)
+        return ", ".join(dict.fromkeys(names)) or "unknown"
+
+    @callback
+    def _clear_issues(self) -> None:
         # Always delete (idempotent): an issue persisted across a restart must
-        # be cleared on the first success even though _issue_active is False on
+        # be cleared on the first success even though the flags are False on
         # the fresh coordinator instance.
         self._issue_active = False
+        self._pairing_issue_active = False
         ir.async_delete_issue(self.hass, DOMAIN, f"unreachable_{self.address}")
+        ir.async_delete_issue(self.hass, DOMAIN, f"pairing_required_{self.address}")
 
     @callback
     def async_shutdown_extras(self) -> None:
-        """Cancel a pending boost and clear the repair issue on unload."""
+        """Cancel a pending boost and clear the repair issues on unload."""
         if self._boost_unsub is not None:
             self._boost_unsub()
             self._boost_unsub = None
-        self._clear_unreachable_issue()
+        self._clear_issues()
 
     @property
     def address(self) -> str:

@@ -45,7 +45,13 @@ def build_candidates(
         details = getattr(sd.ble_device, "details", None)
         if isinstance(details, dict):
             source = details.get("source")
-        rssi = sd.advertisement.rssi if sd.advertisement else -127
+        # Some backends deliver an advertisement without an RSSI; a None here
+        # would TypeError inside the sort and silently drop the candidates.
+        rssi = (
+            sd.advertisement.rssi
+            if sd.advertisement and sd.advertisement.rssi is not None
+            else -127
+        )
         return (0 if preferred_source and source == preferred_source else 1, -rssi)
 
     return [sd.ble_device for sd in sorted(scanner_devices, key=sort_key)]

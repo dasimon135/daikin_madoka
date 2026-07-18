@@ -20,6 +20,11 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
+# Failed polls masked by serving the last good data instead of raising: a
+# one-off BLE micro-drop should not punch holes in graphs or flip entities
+# unavailable. Kept well below UNREACHABLE_THRESHOLD so a real outage still
+# surfaces quickly; pairing refusals are never masked.
+STALE_GRACE = 2
 # Must exceed the connect path's internal budget (establish_connection retries
 # + pairing + settle), or reconnects get cancelled mid-handshake.
 CONNECT_TIMEOUT = 30

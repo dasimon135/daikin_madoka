@@ -79,6 +79,10 @@
     "device_unreachable": {
       "title": "{device} no responde",
       "description": "Home Assistant no ha podido comunicarse con el termostato {device} desde hace un rato. Comprueba que esté encendido y dentro del alcance Bluetooth. Si te conectas mediante un proxy Bluetooth ESPHome, el proxy debe tener soporte de emparejamiento y el termostato emparejado con él — consulta la documentación. También puedes probar el botón Reconectar del dispositivo."
+    },
+    "pairing_required": {
+      "title": "{device} refuses the Bluetooth connection",
+      "description": "Every Bluetooth path to {device} was refused because the proxy is not paired with it (tried via: {proxies}). Confirm the pairing prompt on the thermostat screen — required once per proxy — or set the unpaired proxy to passive mode. See the pairing documentation for details."
     }
   }
 }

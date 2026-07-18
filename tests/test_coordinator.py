@@ -1,13 +1,16 @@
-"""Tests for the coordinator's sticky-proxy persistence."""
+"""Tests for the coordinator: sticky-proxy persistence, repairs, stale grace."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pymadoka import ConnectionException, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_DEVICES
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 from custom_components.daikin_madoka.const import (
     CONF_FRIENDLY_NAME,
@@ -20,6 +23,8 @@ from custom_components.daikin_madoka.coordinator import MadokaCoordinator
 MAC = "D0:CF:13:0F:11:F6"
 OTHER_MAC = "D0:CF:13:0F:11:F7"
 SOURCE = "AA:BB:CC:11:22:33"
+
+BLUETOOTH = "homeassistant.components.bluetooth"
 
 
 def _mock_controller(source: str | None = SOURCE) -> MagicMock:
@@ -115,3 +120,123 @@ async def test_unknown_source_is_not_persisted(hass: HomeAssistant) -> None:
 
     assert coordinator.last_update_success
     assert entry.data[CONF_PREFERRED_SOURCE] == SOURCE
+
+
+async def test_pairing_refusal_raises_repair_issue(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_MAC: MAC, CONF_FRIENDLY_NAME: "Salon"}
+    )
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+    controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE, None]))
+    coordinator = _coordinator(hass, entry, controller)
+
+    with (
+        patch(f"{BLUETOOTH}.async_address_present", return_value=True),
+        patch(
+            f"{BLUETOOTH}.async_scanner_by_source",
+            return_value=SimpleNamespace(name="Proxy Salon"),
+        ),
+    ):
+        await coordinator.async_refresh()
+
+    assert not coordinator.last_update_success
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.ERROR
+    assert issue.translation_placeholders == {
+        "device": "Salon",
+        "proxies": "Proxy Salon, local adapter",
+    }
+
+
+async def test_successful_poll_clears_issues(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+    controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE]))
+    coordinator = _coordinator(hass, entry, controller)
+
+    with (
+        patch(f"{BLUETOOTH}.async_address_present", return_value=True),
+        patch(
+            f"{BLUETOOTH}.async_scanner_by_source",
+            return_value=SimpleNamespace(name="Proxy Salon"),
+        ),
+    ):
+        await coordinator.async_refresh()
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is not None
+
+    # An unreachable issue persisted from before a restart must clear too,
+    # even though this coordinator instance never raised it.
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"unreachable_{MAC}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="device_unreachable",
+    )
+
+    controller.connection.connection_status = ConnectionStatus.CONNECTED
+    await coordinator.async_refresh()
+
+    assert coordinator.last_update_success
+    assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is None
+    assert registry.async_get_issue(DOMAIN, f"unreachable_{MAC}") is None
+
+
+async def test_stale_grace_masks_transient_failures(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    coordinator = _coordinator(hass, entry, controller)
+
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success
+    good_data = coordinator.data
+
+    controller.update = AsyncMock(side_effect=ConnectionException("transient drop"))
+
+    # Failures 1 and 2 are masked: entities keep the last good data.
+    for _ in range(2):
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.data == good_data
+
+    # Failure 3 exceeds the grace and propagates.
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+
+
+async def test_pairing_failure_is_never_masked_by_grace(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    coordinator = _coordinator(hass, entry, controller)
+
+    await coordinator.async_refresh()
+    # Grace precondition holds (existing data, first failure), yet a pairing
+    # refusal must still surface immediately: it never heals on its own.
+    assert coordinator.data
+
+    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+    controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE]))
+
+    with (
+        patch(f"{BLUETOOTH}.async_address_present", return_value=True),
+        patch(
+            f"{BLUETOOTH}.async_scanner_by_source",
+            return_value=SimpleNamespace(name="Proxy Salon"),
+        ),
+    ):
+        await coordinator.async_refresh()
+
+    assert not coordinator.last_update_success
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
+    assert issue is not None

@@ -79,6 +79,10 @@
     "device_unreachable": {
       "title": "{device} is unreachable",
       "description": "Home Assistant hasn't been able to reach the {device} thermostat for a while. Check that it is powered and within Bluetooth range. If you connect through an ESPHome Bluetooth proxy, the proxy must be flashed with pairing support and the thermostat paired to it — see the documentation. You can also try the device's Reconnect button."
+    },
+    "pairing_required": {
+      "title": "{device} refuses the Bluetooth connection",
+      "description": "Every Bluetooth path to {device} was refused because the proxy is not paired with it (tried via: {proxies}). Confirm the pairing prompt on the thermostat screen — required once per proxy — or set the unpaired proxy to passive mode. See the pairing documentation for details."
     }
   }
 }

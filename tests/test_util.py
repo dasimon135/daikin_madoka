@@ -66,3 +66,43 @@ def test_non_dict_details_tolerated() -> None:
 def test_no_scanner_devices_returns_empty_list() -> None:
     with patch(PATCH_TARGET, return_value=[]):
         assert build_candidates(HASS, ADDRESS, PROXY_A) == []
+
+
+def test_absent_preferred_source_falls_back_to_rssi_order() -> None:
+    # The sticky proxy may be offline (reflash, power cut); its absence must
+    # not disturb the pure RSSI ordering of the remaining paths.
+    weak = _scanner_device(PROXY_A, -80)
+    strong = _scanner_device(PROXY_B, -45)
+
+    with patch(PATCH_TARGET, return_value=[weak, strong]):
+        result = build_candidates(HASS, ADDRESS, "33:33:33:33:33:33")
+
+    assert result == [strong.ble_device, weak.ble_device]
+
+
+def test_rssi_tie_preserves_input_order() -> None:
+    # sorted() is stable: equal keys keep the scanner-reported order rather
+    # than reshuffling candidates between polls.
+    first = _scanner_device(PROXY_A, -60)
+    second = _scanner_device(PROXY_B, -60)
+
+    with patch(PATCH_TARGET, return_value=[first, second]):
+        result = build_candidates(HASS, ADDRESS, None)
+
+    assert result == [first.ble_device, second.ble_device]
+
+
+def test_none_rssi_in_advertisement_sorted_last() -> None:
+    # Some backends deliver an advertisement without an RSSI; a None must not
+    # TypeError inside the sort key (which would silently downgrade every
+    # connect to the legacy path) and sorts as the weakest candidate.
+    ghost = SimpleNamespace(
+        ble_device=SimpleNamespace(details={"source": PROXY_A}),
+        advertisement=SimpleNamespace(rssi=None),
+    )
+    strong = _scanner_device(PROXY_B, -45)
+
+    with patch(PATCH_TARGET, return_value=[ghost, strong]):
+        result = build_candidates(HASS, ADDRESS, None)
+
+    assert result == [strong.ble_device, ghost.ble_device]
