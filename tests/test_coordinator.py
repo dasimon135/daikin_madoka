@@ -240,3 +240,62 @@ async def test_pairing_failure_is_never_masked_by_grace(
     assert not coordinator.last_update_success
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
     assert issue is not None
+
+
+async def test_sustained_pairing_refusal_suppresses_unreachable_issue(
+    hass: HomeAssistant,
+) -> None:
+    # A refused bond also trips the failure threshold; showing the
+    # unreachable WARNING (power/range advice) next to the pairing ERROR
+    # would be contradictory, so only the pairing repair may appear.
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+    controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE]))
+    coordinator = _coordinator(hass, entry, controller)
+
+    with (
+        patch(f"{BLUETOOTH}.async_address_present", return_value=True),
+        patch(
+            f"{BLUETOOTH}.async_scanner_by_source",
+            return_value=SimpleNamespace(name="Proxy Salon"),
+        ),
+    ):
+        for _ in range(5):
+            await coordinator.async_refresh()
+
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is not None
+    assert registry.async_get_issue(DOMAIN, f"unreachable_{MAC}") is None
+
+
+async def test_grace_then_threshold_state_machine(hass: HomeAssistant) -> None:
+    # The full walk from healthy to unreachable proves the grace did not
+    # break the threshold: failures 1-2 masked, 3-4 unavailable, 5 raises
+    # the unreachable repair.
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
+    entry.add_to_hass(hass)
+    controller = _mock_controller()
+    coordinator = _coordinator(hass, entry, controller)
+
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success
+    good_data = coordinator.data
+
+    controller.update = AsyncMock(side_effect=ConnectionException("link lost"))
+    registry = ir.async_get(hass)
+
+    for _ in range(2):
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.data == good_data
+
+    for _ in range(2):
+        await coordinator.async_refresh()
+        assert not coordinator.last_update_success
+        assert registry.async_get_issue(DOMAIN, f"unreachable_{MAC}") is None
+
+    await coordinator.async_refresh()
+    assert not coordinator.last_update_success
+    assert registry.async_get_issue(DOMAIN, f"unreachable_{MAC}") is not None

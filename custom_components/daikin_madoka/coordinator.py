@@ -78,8 +78,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # chains PairingRequiredError as __cause__, which we inspect here
             # instead of tracking a per-cycle flag that would need careful
             # resetting at the start of every poll.
+            # last_update_success gate: only mask success->transient dips. A
+            # generic failure right after a surfaced one (e.g. a pairing
+            # refusal) must not briefly resurrect entities on stale data
+            # while an ERROR repair is on screen.
             if (
-                self._fail_count <= STALE_GRACE
+                self.last_update_success
+                and self._fail_count <= STALE_GRACE
                 and self.data
                 and not isinstance(err.__cause__, PairingRequiredError)
             ):
@@ -222,6 +227,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
 
     @callback
     def _raise_unreachable_issue(self) -> None:
+        # A sustained pairing refusal also trips the failure threshold; the
+        # unreachable advice (power/range) would be wrong next to the
+        # pairing_required ERROR, so keep that single repair on screen.
+        if self._pairing_issue_active:
+            return
         if self._issue_active:
             return
         self._issue_active = True
@@ -239,8 +249,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     @callback
     def _raise_pairing_issue(self, err: PairingRequiredError) -> None:
         """Raise an immediate repair: an auth refusal never heals on its own."""
-        if self._pairing_issue_active:
-            return
+        # No idempotence guard: async_create_issue updates in place, and
+        # re-creating keeps the {proxies} placeholder current when a later
+        # refusal went through a different proxy set. The flag only feeds
+        # the unreachable-repair suppression and _clear_issues.
         self._pairing_issue_active = True
         ir.async_create_issue(
             self.hass,
