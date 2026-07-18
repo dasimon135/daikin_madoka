@@ -28,5 +28,15 @@ STALE_GRACE = 2
 # Must exceed the connect path's internal budget (establish_connection retries
 # + pairing + settle), or reconnects get cancelled mid-handshake.
 CONNECT_TIMEOUT = 30
+# Discovery adverts below this RSSI are almost certainly a neighbour's BRC1H
+# bleeding through a wall: don't offer a discovery card for a device the user
+# can't actually pair with. Manual setup (async_step_user) is the escape
+# hatch — it never filters on signal strength.
+RSSI_DISCOVERY_FLOOR = -90
+# Ceiling on the config-flow validation connect. Matches CONNECT_TIMEOUT's
+# rationale: it must exceed the connect path's internal budget (candidate
+# retries + pairing prompt + settle) or a slow-but-successful first pairing
+# gets cut short and reported as cannot_connect.
+VALIDATE_TIMEOUT = 30
 # Hard ceiling on one full-feature poll (queries retry individually).
 POLL_TIMEOUT = 45

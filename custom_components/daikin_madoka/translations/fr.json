@@ -3,15 +3,18 @@
     "flow_title": "{name}",
     "abort": {
       "already_configured": "Ce thermostat est déjà configuré",
-      "already_in_progress": "Une configuration est déjà en cours"
+      "already_in_progress": "Une configuration est déjà en cours",
+      "weak_signal": "Signal trop faible — l'appareil est probablement en dehors de votre domicile."
     },
     "error": {
-      "not_a_mac": "Format d'adresse MAC incorrect (ex. AA:BB:CC:DD:EE:FF)"
+      "not_a_mac": "Format d'adresse MAC incorrect (ex. AA:BB:CC:DD:EE:FF)",
+      "cannot_connect": "Impossible de se connecter au thermostat. Vérifiez qu'il est alimenté et à portée Bluetooth d'un proxy, puis réessayez.",
+      "pairing_failed": "Le thermostat a refusé la connexion : une invite d'appairage attend probablement sur son écran. Restez près du thermostat, confirmez l'invite, puis réessayez."
     },
     "step": {
       "user": {
         "title": "Configurer Daikin Madoka",
-        "description": "Choisissez un thermostat BRC1H détecté ou saisissez son adresse MAC Bluetooth. Relancez ce flux pour ajouter d'autres thermostats.\n\nL'appareil doit être appairé avec l'hôte Home Assistant (ou accessible via un proxy Bluetooth ESPHome). Consultez la documentation pour l'appairage.",
+        "description": "Choisissez un thermostat BRC1H détecté ou saisissez son adresse MAC Bluetooth. Relancez ce flux pour ajouter d'autres thermostats.\n\nLa connexion est testée avant l'ajout de l'appareil. Restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée. Consultez la documentation pour l'appairage.",
         "data": {
           "address": "Thermostat BRC1H",
           "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
@@ -19,7 +22,7 @@
       },
       "bluetooth_confirm": {
         "title": "Thermostat Daikin Madoka détecté",
-        "description": "Ajouter {name} à Home Assistant ?",
+        "description": "Ajouter {name} à Home Assistant ?\n\nLa connexion est d'abord testée. Restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée.",
         "data": {
           "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
         }

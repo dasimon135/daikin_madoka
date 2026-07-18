@@ -3,15 +3,18 @@
     "flow_title": "{name}",
     "abort": {
       "already_configured": "This thermostat is already configured",
-      "already_in_progress": "Configuration flow is already in progress"
+      "already_in_progress": "Configuration flow is already in progress",
+      "weak_signal": "Signal too weak — the device is probably outside your home."
     },
     "error": {
-      "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)"
+      "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)",
+      "cannot_connect": "Could not connect to the thermostat. Check it is powered and in Bluetooth range of a proxy, then try again.",
+      "pairing_failed": "The thermostat refused the connection: a pairing prompt is probably waiting on its screen. Stay near the thermostat, confirm the prompt, then try again."
     },
     "step": {
       "user": {
         "title": "Configure Daikin Madoka",
-        "description": "Pick a discovered BRC1H thermostat or enter its Bluetooth MAC address. Run this flow again to add additional thermostats.\n\nThe device must be paired with the Home Assistant host (or reachable through an ESPHome Bluetooth proxy). See the documentation for pairing steps.",
+        "description": "Pick a discovered BRC1H thermostat or enter its Bluetooth MAC address. Run this flow again to add additional thermostats.\n\nThe connection is tested before the device is added. Stay near the thermostat: a pairing prompt may appear on its screen and need to be confirmed. See the documentation for pairing steps.",
         "data": {
           "address": "BRC1H thermostat",
           "friendly_name": "Friendly name (optional, e.g. 'Living room')"
@@ -19,7 +22,7 @@
       },
       "bluetooth_confirm": {
         "title": "Daikin Madoka thermostat found",
-        "description": "Add {name} to Home Assistant?",
+        "description": "Add {name} to Home Assistant?\n\nThe connection is tested first. Stay near the thermostat: a pairing prompt may appear on its screen and need to be confirmed.",
         "data": {
           "friendly_name": "Friendly name (optional, e.g. 'Living room')"
         }
