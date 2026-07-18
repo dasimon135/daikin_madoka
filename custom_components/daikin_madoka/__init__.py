@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
@@ -30,6 +31,27 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
+    """Remove registry devices left behind by deleted config entries.
+
+    A delete/recreate cycle can leave devices pointing at a config entry id
+    that no longer exists ("Can't link device to unknown config entry ..."
+    at startup). Purge only devices that are ours AND whose every linked
+    entry id is dangling — a device still linked to any live entry (ours or
+    another integration's) is left alone.
+    """
+    dev_reg = dr.async_get(hass)
+    for device in list(dev_reg.devices.values()):
+        if not any(domain == DOMAIN for domain, _ in device.identifiers):
+            continue
+        if any(
+            hass.config_entries.async_get_entry(entry_id) is not None
+            for entry_id in device.config_entries
+        ):
+            continue
+        dev_reg.async_remove_device(device.id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Madoka thermostat(s) from a config entry.
 
@@ -44,6 +66,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     refresh connects, and every later poll doubles as a reconnect attempt. The
     legacy ``adapter``/``force_update`` entry options are ignored.
     """
+    # Idempotent and cheap (one pass over the registry), so running it on
+    # every entry setup is fine.
+    _async_purge_orphan_devices(hass)
+
     await async_register_card(hass)
 
     if CONF_MAC in entry.data:
@@ -145,3 +171,20 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
                 await _safe_stop(coordinator.controller)
 
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow deleting a device that the entry no longer serves.
+
+    HA calls this when the user hits "Delete device" in the UI. A device
+    whose MAC is still backed by a live coordinator is in active use and
+    must not be removable; anything else (stale MAC after an entry rewrite,
+    leftover from a legacy multi-MAC entry) may go.
+    """
+    coordinators = (
+        hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {}).get(COORDINATORS, {})
+    )
+    macs = {mac for domain, mac in device_entry.identifiers if domain == DOMAIN}
+    return not (macs & set(coordinators))
