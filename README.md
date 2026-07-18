@@ -47,9 +47,12 @@ Each thermostat creates:
 - `climate.*` — thermostat (mode, setpoint, fan speed, current temperature; separate heating/cooling setpoints in AUTO mode when the device has range mode enabled)
 - `sensor.*_indoor_temperature` — indoor temperature
 - `sensor.*_outdoor_temperature` — outdoor temperature
+- `sensor.*_operating_time` — cumulative hours the unit has been running (coarse, poll-interval granularity; persisted across restarts)
 - `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
+- `sensor.*_connection_source` — which BLE path serves the thermostat: active proxy while connected, preferred (bonded) proxy otherwise (diagnostic, disabled by default)
 - `binary_sensor.*_clean_filter` — filter alert (device_class: problem)
 - `button.*_reset_filter` — reset filter timer
+- `button.*_reconnect` — drop and re-establish the Bluetooth connection (diagnostic)
 - `number.*_eye_brightness` — display LED brightness 0–19
 
 ### Requirements
