@@ -1,6 +1,9 @@
 # Changelog
 
-## v3.2.0 - Unreleased
+## v3.2.0 - July 2026
+
+Validated on hardware (4 thermostats, 4 proxies) — including a live replay of
+the incident that motivated this release.
 
 Multi-proxy robustness: reliable in homes with several Bluetooth proxies and several thermostats.
 
@@ -9,7 +12,7 @@ Multi-proxy robustness: reliable in homes with several Bluetooth proxies and sev
 - **Stale-value grace**: 1–2 transient poll failures no longer punch holes in graphs or flicker entities to unavailable — sensors keep their last value for a short grace period while the connection recovers. Real outages (and pairing failures) still surface immediately.
 - **Saner discovery & onboarding**: discovery ignores advertisements below −90 dBm (no more discovery cards for out-of-home devices at the edge of range), and the config flow now tests the connection — including pairing — before creating the entry, so a misconfigured setup fails in the flow instead of producing a dead device.
 - **Registry hygiene**: orphaned devices left behind by removed entries are cleaned up at startup, and devices can now be deleted individually from the device page.
-- Requires **pymadoka-ng 0.3.6** (typed connection errors, candidate proxy list, preferred-proxy support; installed automatically).
+- Requires **pymadoka-ng 0.3.7** (typed connection errors, candidate proxy list, preferred-proxy support; 0.3.7 additionally makes each connection attempt a single path decision, so a mid-retry failover can no longer hand the device to an unbonded proxy; installed automatically).
 
 ## v3.1.1 - July 2026
 
