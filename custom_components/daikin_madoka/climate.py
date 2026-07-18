@@ -1,5 +1,6 @@
 """Support for the Daikin Madoka HVAC."""
 import copy
+from typing import Any
 
 from pymadoka import (
     FanSpeedEnum,
@@ -97,7 +98,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
     _attr_fan_modes = list(HA_FAN_MODE_TO_DAIKIN)
 
     @property
-    def _set_point(self):
+    def _set_point(self) -> SetPointStatus | None:
         return self.controller.set_point.status
 
     @property
@@ -110,7 +111,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         )
 
     @property
-    def supported_features(self):
+    def supported_features(self) -> ClimateEntityFeature:
         """Return the list of supported features."""
         features = (
             ClimateEntityFeature.FAN_MODE
@@ -124,14 +125,14 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         return features
 
     @property
-    def current_temperature(self):
+    def current_temperature(self) -> float | None:
         """Return the current temperature."""
         if self.controller.temperatures.status is None:
             return None
         return self.controller.temperatures.status.indoor
 
     @property
-    def target_temperature(self):
+    def target_temperature(self) -> float | None:
         """Return the temperature we try to reach."""
         if self._set_point is None or self._range_active:
             return None
@@ -140,21 +141,21 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         return self._set_point.cooling_set_point
 
     @property
-    def target_temperature_low(self):
+    def target_temperature_low(self) -> float | None:
         """Return the lower (heating) setpoint in AUTO range mode."""
         if not self._range_active:
             return None
         return self._set_point.heating_set_point
 
     @property
-    def target_temperature_high(self):
+    def target_temperature_high(self) -> float | None:
         """Return the upper (cooling) setpoint in AUTO range mode."""
         if not self._range_active:
             return None
         return self._set_point.cooling_set_point
 
     @property
-    def min_temp(self):
+    def min_temp(self) -> float:
         """Return the minimum temperature, read from the device when reported."""
         if self._set_point is not None:
             limits = [
@@ -170,7 +171,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         return MIN_TEMP
 
     @property
-    def max_temp(self):
+    def max_temp(self) -> float:
         """Return the maximum temperature, read from the device when reported."""
         if self._set_point is not None:
             limits = [
@@ -185,7 +186,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
                 return max(limits)
         return MAX_TEMP
 
-    async def async_set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature (single setpoint or AUTO range)."""
         if self._set_point is None or self.controller.operation_mode.status is None:
             return
@@ -216,7 +217,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         )
 
     @property
-    def hvac_mode(self):
+    def hvac_mode(self) -> HVACMode | None:
         """Return current operation ie. heat, cool, idle."""
         if self.controller.power_state.status is None:
             return None
@@ -231,7 +232,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         )
 
     @property
-    def hvac_action(self):
+    def hvac_action(self) -> HVACAction | None:
         """Return the HVAC current action."""
         if self.controller.power_state.status is None:
             return None
@@ -268,7 +269,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             self.controller.operation_mode.status.operation_mode
         )
 
-    async def async_set_hvac_mode(self, hvac_mode):
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode.
 
         OFF is a power-state write only (the device keeps its last operation
@@ -290,7 +291,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         await self._async_execute("set HVAC mode", *calls)
 
     @property
-    def fan_mode(self):
+    def fan_mode(self) -> str | None:
         """Return the fan setting."""
         if self.controller.fan_speed.status is None:
             return None
@@ -302,7 +303,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             self.controller.fan_speed.status.cooling_fan_speed
         )
 
-    async def async_set_fan_mode(self, fan_mode):
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set fan mode."""
         await self._async_execute(
             "set fan mode",
@@ -314,13 +315,13 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             ),
         )
 
-    async def async_turn_on(self):
+    async def async_turn_on(self) -> None:
         """Turn device on."""
         await self._async_execute(
             "turn on", lambda: self.controller.power_state.update(PowerStateStatus(True))
         )
 
-    async def async_turn_off(self):
+    async def async_turn_off(self) -> None:
         """Turn device off."""
         await self._async_execute(
             "turn off",

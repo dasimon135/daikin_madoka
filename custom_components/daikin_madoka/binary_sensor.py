@@ -33,7 +33,7 @@ class MadokaFilterBinarySensor(MadokaEntity, BinarySensorEntity):
         super().__init__(coordinator, "clean_filter")
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool | None:
         """Return True when the filter needs cleaning."""
         if self.controller.clean_filter_indicator.status is None:
             return None

@@ -37,7 +37,7 @@ class MadokaEyeBrightnessNumber(MadokaEntity, NumberEntity):
         super().__init__(coordinator, "eye_brightness")
 
     @property
-    def native_value(self):
+    def native_value(self) -> int | None:
         """Return the current LED brightness."""
         if self.controller.eye_brightness.status is None:
             return None

@@ -1,5 +1,7 @@
 """Support for Daikin Madoka sensors."""
 
+from datetime import datetime
+
 from pymadoka.connection import ConnectionStatus
 
 from homeassistant.components import bluetooth
@@ -57,7 +59,7 @@ class MadokaIndoorSensor(MadokaTemperatureSensor):
         super().__init__(coordinator, "indoor_temperature")
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the indoor temperature."""
         if self.controller.temperatures.status is None:
             return None
@@ -73,7 +75,7 @@ class MadokaOutdoorSensor(MadokaTemperatureSensor):
         super().__init__(coordinator, "outdoor_temperature")
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the outdoor temperature."""
         if self.controller.temperatures.status is None:
             return None
@@ -94,7 +96,7 @@ class MadokaRssiSensor(MadokaEntity, SensorEntity):
         super().__init__(coordinator, "rssi")
 
     @property
-    def native_value(self):
+    def native_value(self) -> int | None:
         """Return the RSSI of the last advertisement seen by HA."""
         service_info = bluetooth.async_last_service_info(
             self.hass, self.coordinator.address, connectable=True
@@ -156,7 +158,7 @@ class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
     def __init__(self, coordinator: MadokaCoordinator) -> None:
         super().__init__(coordinator, "operating_time")
         self._hours = 0.0
-        self._last_ts = None
+        self._last_ts: datetime | None = None
         self._prev_on = False
 
     async def async_added_to_hass(self) -> None:
