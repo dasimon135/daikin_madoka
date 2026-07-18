@@ -4,7 +4,9 @@
     "abort": {
       "already_configured": "Este termostato ya está configurado",
       "already_in_progress": "Ya hay un flujo de configuración en curso",
-      "weak_signal": "Señal demasiado débil — el dispositivo probablemente está fuera de tu casa."
+      "weak_signal": "Señal demasiado débil — el dispositivo probablemente está fuera de tu casa.",
+      "reconfigure_successful": "Reconfiguración completada",
+      "reconfigure_legacy": "Esta entrada heredada cubre varios termostatos y no se puede reconfigurar. Elimínala y añade cada termostato individualmente."
     },
     "error": {
       "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)",
@@ -24,6 +26,14 @@
         "title": "Termostato Daikin Madoka encontrado",
         "description": "¿Añadir {name} a Home Assistant?\n\nLa conexión se prueba primero. Quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar.",
         "data": {
+          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar Daikin Madoka",
+        "description": "Actualiza la dirección MAC Bluetooth del termostato o su nombre descriptivo. Un cambio de MAC se valida primero con una prueba de conexión — quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar.",
+        "data": {
+          "address": "Dirección MAC Bluetooth",
           "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
         }
       }
@@ -57,6 +67,9 @@
       },
       "operating_time": {
         "name": "Tiempo de funcionamiento"
+      },
+      "connection_source": {
+        "name": "Fuente de conexión"
       }
     },
     "binary_sensor": {

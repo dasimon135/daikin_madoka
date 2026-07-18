@@ -1,5 +1,9 @@
 """Support for Daikin Madoka sensors."""
 
+from datetime import datetime
+
+from pymadoka.connection import ConnectionStatus
+
 from homeassistant.components import bluetooth
 from homeassistant.components.sensor import (
     RestoreSensor,
@@ -13,23 +17,28 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import COORDINATORS, DOMAIN
-from .coordinator import MadokaCoordinator
+from .const import CONF_PREFERRED_SOURCE
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin sensors based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
-    entities = []
-    for coordinator in coordinators.values():
+    entities: list[MadokaEntity] = []
+    for coordinator in entry.runtime_data.values():
         entities.append(MadokaIndoorSensor(coordinator))
         entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
+        entities.append(MadokaConnectionSourceSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -50,7 +59,7 @@ class MadokaIndoorSensor(MadokaTemperatureSensor):
         super().__init__(coordinator, "indoor_temperature")
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the indoor temperature."""
         if self.controller.temperatures.status is None:
             return None
@@ -66,7 +75,7 @@ class MadokaOutdoorSensor(MadokaTemperatureSensor):
         super().__init__(coordinator, "outdoor_temperature")
 
     @property
-    def native_value(self):
+    def native_value(self) -> float | None:
         """Return the outdoor temperature."""
         if self.controller.temperatures.status is None:
             return None
@@ -87,7 +96,7 @@ class MadokaRssiSensor(MadokaEntity, SensorEntity):
         super().__init__(coordinator, "rssi")
 
     @property
-    def native_value(self):
+    def native_value(self) -> int | None:
         """Return the RSSI of the last advertisement seen by HA."""
         service_info = bluetooth.async_last_service_info(
             self.hass, self.coordinator.address, connectable=True
@@ -95,6 +104,41 @@ class MadokaRssiSensor(MadokaEntity, SensorEntity):
         if service_info is None:
             return None
         return service_info.rssi
+
+
+class MadokaConnectionSourceSensor(MadokaEntity, SensorEntity):
+    """Which BLE path (ESPHome proxy or local adapter) serves the thermostat.
+
+    While connected, reports the live connection's source scanner; otherwise
+    falls back to the persisted preferred source (the proxy that last
+    authenticated, primed for the next reconnect). Useful in multi-proxy
+    homes to see which proxy each thermostat is bonded through.
+    """
+
+    _attr_translation_key = "connection_source"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "connection_source")
+
+    def _display_name(self, source: str) -> str:
+        """Resolve a proxy source MAC to its scanner name when known."""
+        scanner = bluetooth.async_scanner_by_source(self.hass, source)
+        return getattr(scanner, "name", None) or source
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the active or preferred BLE source."""
+        connection = self.controller.connection
+        if connection.connection_status is ConnectionStatus.CONNECTED:
+            source = connection.connected_source
+            # None means the local adapter (or a backend that does not
+            # report a source).
+            return self._display_name(source) if source else "Local adapter"
+        entry = self.coordinator.config_entry
+        preferred = entry.data.get(CONF_PREFERRED_SOURCE) if entry else None
+        return self._display_name(preferred) if preferred else None
 
 
 class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
@@ -114,7 +158,7 @@ class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
     def __init__(self, coordinator: MadokaCoordinator) -> None:
         super().__init__(coordinator, "operating_time")
         self._hours = 0.0
-        self._last_ts = None
+        self._last_ts: datetime | None = None
         self._prev_on = False
 
     async def async_added_to_hass(self) -> None:
@@ -123,7 +167,7 @@ class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
         last = await self.async_get_last_sensor_data()
         if last is not None and last.native_value is not None:
             try:
-                self._hours = float(last.native_value)
+                self._hours = float(str(last.native_value))
             except (TypeError, ValueError):
                 self._hours = 0.0
         self._last_ts = dt_util.utcnow()

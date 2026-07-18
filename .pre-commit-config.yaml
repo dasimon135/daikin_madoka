@@ -1,0 +1,16 @@
+# Mirrors the CI lint job (ruff check + syntax) plus cheap file hygiene.
+# ruff-format is deliberately not enabled: CI only enforces `ruff check`.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict

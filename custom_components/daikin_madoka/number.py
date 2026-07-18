@@ -4,17 +4,22 @@ from pymadoka.features.eye_brightness import EyeBrightnessStatus
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import COORDINATORS, DOMAIN
-from .coordinator import MadokaCoordinator
+from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: MadokaConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
     """Set up Daikin Madoka numbers based on config_entry."""
-    coordinators = hass.data[DOMAIN][entry.entry_id][COORDINATORS]
     async_add_entities(
-        MadokaEyeBrightnessNumber(coordinator) for coordinator in coordinators.values()
+        MadokaEyeBrightnessNumber(coordinator)
+        for coordinator in entry.runtime_data.values()
     )
 
 
@@ -32,7 +37,7 @@ class MadokaEyeBrightnessNumber(MadokaEntity, NumberEntity):
         super().__init__(coordinator, "eye_brightness")
 
     @property
-    def native_value(self):
+    def native_value(self) -> int | None:
         """Return the current LED brightness."""
         if self.controller.eye_brightness.status is None:
             return None

@@ -4,7 +4,9 @@
     "abort": {
       "already_configured": "Ce thermostat est déjà configuré",
       "already_in_progress": "Une configuration est déjà en cours",
-      "weak_signal": "Signal trop faible — l'appareil est probablement en dehors de votre domicile."
+      "weak_signal": "Signal trop faible — l'appareil est probablement en dehors de votre domicile.",
+      "reconfigure_successful": "Reconfiguration réussie",
+      "reconfigure_legacy": "Cette entrée héritée couvre plusieurs thermostats et ne peut pas être reconfigurée. Supprimez-la et ajoutez chaque thermostat individuellement."
     },
     "error": {
       "not_a_mac": "Format d'adresse MAC incorrect (ex. AA:BB:CC:DD:EE:FF)",
@@ -24,6 +26,14 @@
         "title": "Thermostat Daikin Madoka détecté",
         "description": "Ajouter {name} à Home Assistant ?\n\nLa connexion est d'abord testée. Restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée.",
         "data": {
+          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurer Daikin Madoka",
+        "description": "Modifiez l'adresse MAC Bluetooth du thermostat ou son nom convivial. Un changement d'adresse MAC est d'abord validé par un test de connexion — restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée.",
+        "data": {
+          "address": "Adresse MAC Bluetooth",
           "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
         }
       }
@@ -57,6 +67,9 @@
       },
       "operating_time": {
         "name": "Temps de fonctionnement"
+      },
+      "connection_source": {
+        "name": "Source de connexion"
       }
     },
     "binary_sensor": {

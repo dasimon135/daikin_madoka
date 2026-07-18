@@ -8,6 +8,7 @@ from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
 
 from homeassistant.components import bluetooth
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -32,6 +33,9 @@ UNREACHABLE_THRESHOLD = 5
 # without waiting a whole poll interval.
 BOOST_DELAY = 4
 DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
+
+# Typed config entry: runtime_data maps each normalized MAC to its coordinator.
+type MadokaConfigEntry = ConfigEntry[dict[str, "MadokaCoordinator"]]
 
 
 class MadokaCoordinator(DataUpdateCoordinator[dict]):
@@ -296,6 +300,21 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             self._boost_unsub()
             self._boost_unsub = None
         self._clear_issues()
+
+    @property
+    def fail_count(self) -> int:
+        """Consecutive failed polls (reset to 0 by a successful poll)."""
+        return self._fail_count
+
+    @property
+    def unreachable_issue_active(self) -> bool:
+        """True while this coordinator has a device_unreachable repair open."""
+        return self._issue_active
+
+    @property
+    def pairing_issue_active(self) -> bool:
+        """True while this coordinator has a pairing_required repair open."""
+        return self._pairing_issue_active
 
     @property
     def address(self) -> str:

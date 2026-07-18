@@ -8,8 +8,6 @@ CONF_FRIENDLY_NAME = "friendly_name"
 # proxy instead of whichever proxy wins on RSSI.
 CONF_PREFERRED_SOURCE = "preferred_source"
 
-COORDINATORS = "coordinators"
-
 BRC1H_NAME_PREFIX = "BRC1H"
 
 # Advertised by the BRC1H (local_name is just "Daikin", so the service UUID is
