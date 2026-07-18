@@ -67,6 +67,9 @@
       },
       "operating_time": {
         "name": "Operating time"
+      },
+      "connection_source": {
+        "name": "Connection source"
       }
     },
     "binary_sensor": {

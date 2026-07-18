@@ -1,5 +1,7 @@
 """Support for Daikin Madoka sensors."""
 
+from pymadoka.connection import ConnectionStatus
+
 from homeassistant.components import bluetooth
 from homeassistant.components.sensor import (
     RestoreSensor,
@@ -17,6 +19,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
+from .const import CONF_PREFERRED_SOURCE
 from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
@@ -33,6 +36,7 @@ async def async_setup_entry(
         entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
+        entities.append(MadokaConnectionSourceSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -98,6 +102,41 @@ class MadokaRssiSensor(MadokaEntity, SensorEntity):
         if service_info is None:
             return None
         return service_info.rssi
+
+
+class MadokaConnectionSourceSensor(MadokaEntity, SensorEntity):
+    """Which BLE path (ESPHome proxy or local adapter) serves the thermostat.
+
+    While connected, reports the live connection's source scanner; otherwise
+    falls back to the persisted preferred source (the proxy that last
+    authenticated, primed for the next reconnect). Useful in multi-proxy
+    homes to see which proxy each thermostat is bonded through.
+    """
+
+    _attr_translation_key = "connection_source"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "connection_source")
+
+    def _display_name(self, source: str) -> str:
+        """Resolve a proxy source MAC to its scanner name when known."""
+        scanner = bluetooth.async_scanner_by_source(self.hass, source)
+        return getattr(scanner, "name", None) or source
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the active or preferred BLE source."""
+        connection = self.controller.connection
+        if connection.connection_status is ConnectionStatus.CONNECTED:
+            source = connection.connected_source
+            # None means the local adapter (or a backend that does not
+            # report a source).
+            return self._display_name(source) if source else "Local adapter"
+        entry = self.coordinator.config_entry
+        preferred = entry.data.get(CONF_PREFERRED_SOURCE) if entry else None
+        return self._display_name(preferred) if preferred else None
 
 
 class MadokaRuntimeSensor(MadokaEntity, RestoreSensor):
