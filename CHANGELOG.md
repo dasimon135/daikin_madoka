@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.3.0 - July 2026
+
+Quality release: easier reconfiguration, better observability, and a big step up in internal quality (typing, CI, test coverage).
+
+- **Reconfigure flow**: rename a thermostat or change its MAC address from the entry's ⋮ menu — no more delete + re-add. A MAC change runs the full authenticated connection test before being accepted.
+- **New "Connection source" diagnostic sensor** (disabled by default — enable it on the device page): shows which Bluetooth proxy each thermostat is currently connected through. In multi-proxy homes this answers the #1 debugging question at a glance.
+- **Richer diagnostics download**: now includes coordinator health (last update success, failure count, update interval, active repair flags and the resolved preferred proxy) — much more useful bug reports.
+- **Fixes**: removed a latent `HVACMode.OFF → AUTO` mapping that could have silently switched the unit to AUTO; README entity list updated (operating time sensor, reconnect button).
+- **Internal quality**: migration to `ConfigEntry.runtime_data`, full type annotations with mypy in CI, test coverage measured in CI (40% → 81%, climate 90%), Dependabot, pinned CI actions, pre-commit hooks.
+
 ## v3.2.0 - July 2026
 
 Validated on hardware (4 thermostats, 4 proxies) — including a live replay of
