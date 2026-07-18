@@ -302,6 +302,21 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._clear_issues()
 
     @property
+    def fail_count(self) -> int:
+        """Consecutive failed polls (reset to 0 by a successful poll)."""
+        return self._fail_count
+
+    @property
+    def unreachable_issue_active(self) -> bool:
+        """True while this coordinator has a device_unreachable repair open."""
+        return self._issue_active
+
+    @property
+    def pairing_issue_active(self) -> bool:
+        """True while this coordinator has a pairing_required repair open."""
+        return self._pairing_issue_active
+
+    @property
     def address(self) -> str:
         """Return the MAC address of the device."""
         return self.controller.connection.address
