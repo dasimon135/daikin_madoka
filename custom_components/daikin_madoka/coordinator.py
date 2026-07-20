@@ -1,7 +1,7 @@
 """Data update coordinator for Daikin Madoka thermostats."""
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 
 from pymadoka import ConnectionException, Controller, PairingRequiredError
@@ -14,6 +14,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     BRC1H_NAME_PREFIX,
@@ -33,6 +34,27 @@ UNREACHABLE_THRESHOLD = 5
 # without waiting a whole poll interval.
 BOOST_DELAY = 4
 DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
+
+# Every connect attempt against an unbonded BRC1H re-initiates an SMP
+# exchange, which puts a pairing prompt on its screen. Retrying that each poll
+# jams the thermostat's Bluetooth stack until the user toggles it off and on,
+# so a reported pairing refusal backs off: PAIRING_RETRY_BASE seconds,
+# doubling, capped at PAIRING_RETRY_MAX. The cap matters as much as the
+# backoff — a user standing at the thermostat still needs a prompt to confirm
+# within a reasonable wait.
+PAIRING_RETRY_BASE = 60
+PAIRING_RETRY_MAX = 300
+
+# One BLE connect at a time across every Madoka device. Several thermostats
+# reconnecting at once (as they do after a restart) contend for the same
+# ESPHome proxies, and the resulting delays push the pairing handshake of
+# perfectly valid bonds past its timeout.
+CONNECT_LOCK_KEY = f"{DOMAIN}_connect_lock"
+
+
+def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """Return the connect lock shared by every Madoka coordinator."""
+    return hass.data.setdefault(CONNECT_LOCK_KEY, asyncio.Lock())
 
 # Typed config entry: runtime_data maps each normalized MAC to its coordinator.
 type MadokaConfigEntry = ConfigEntry[dict[str, "MadokaCoordinator"]]
@@ -57,6 +79,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._issue_active = False
         self._pairing_issue_active = False
         self._boost_unsub: CALLBACK_TYPE | None = None
+        # Pairing backoff: current delay and the instant the next attempt is
+        # allowed. _last_pairing_error is chained onto the skipped polls'
+        # UpdateFailed so the stale-value grace keeps recognising them as a
+        # pairing situation rather than an ordinary dropout.
+        self._pairing_retry_delay = 0.0
+        self._pairing_retry_at: datetime | None = None
+        self._last_pairing_error: PairingRequiredError | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -123,9 +152,25 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 self.hass, self.address, connectable=True
             ):
                 raise UpdateFailed(f"Device {self.address} is not advertising")
+            if (
+                self._pairing_retry_at is not None
+                and dt_util.utcnow() < self._pairing_retry_at
+            ):
+                # Deliberately do NOT touch the device: re-initiating SMP now
+                # would re-prompt the screen and keep its stack jammed.
+                raise UpdateFailed(
+                    f"{self.address} is waiting for pairing; next attempt at "
+                    f"{self._pairing_retry_at.isoformat()}"
+                ) from self._last_pairing_error
             try:
-                await asyncio.wait_for(self.controller.start(), timeout=CONNECT_TIMEOUT)
+                # Serialized: a connect storm across devices is what pushes
+                # valid bonds past their pairing timeout in the first place.
+                async with _async_connect_lock(self.hass):
+                    await asyncio.wait_for(
+                        self.controller.start(), timeout=CONNECT_TIMEOUT
+                    )
             except PairingRequiredError as err:
+                self._note_pairing_failure(err)
                 self._raise_pairing_issue(err)
                 raise UpdateFailed(str(err)) from err
             except Exception as err:  # noqa: BLE001
@@ -197,6 +242,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         conn._closing = False
         conn._paired = False
         conn.connection_status = ConnectionStatus.DISCONNECTED
+        # Pressing reconnect is the user saying they just dealt with the
+        # thermostat, so honour it now instead of sitting out the backoff.
+        self._clear_pairing_backoff()
         # The BRC1H stops advertising while connected and takes a moment to
         # resume after a disconnect; refreshing instantly would fail fast with
         # "not advertising" and defer the reconnect to the next poll.
@@ -251,6 +299,25 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         )
 
     @callback
+    def _note_pairing_failure(self, err: PairingRequiredError) -> None:
+        """Grow the backoff so the next attempt does not re-prompt at once."""
+        self._last_pairing_error = err
+        self._pairing_retry_delay = min(
+            max(self._pairing_retry_delay * 2, PAIRING_RETRY_BASE),
+            PAIRING_RETRY_MAX,
+        )
+        self._pairing_retry_at = dt_util.utcnow() + timedelta(
+            seconds=self._pairing_retry_delay
+        )
+
+    @callback
+    def _clear_pairing_backoff(self) -> None:
+        """Allow the next poll to connect immediately."""
+        self._pairing_retry_delay = 0.0
+        self._pairing_retry_at = None
+        self._last_pairing_error = None
+
+    @callback
     def _raise_pairing_issue(self, err: PairingRequiredError) -> None:
         """Raise an immediate repair: an auth refusal never heals on its own."""
         # No idempotence guard: async_create_issue updates in place, and
@@ -290,6 +357,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # the fresh coordinator instance.
         self._issue_active = False
         self._pairing_issue_active = False
+        self._clear_pairing_backoff()
         ir.async_delete_issue(self.hass, DOMAIN, f"unreachable_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_required_{self.address}")
 
@@ -305,6 +373,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def fail_count(self) -> int:
         """Consecutive failed polls (reset to 0 by a successful poll)."""
         return self._fail_count
+
+    @property
+    def pairing_retry_delay(self) -> float:
+        """Current pairing backoff in seconds (0 when not backing off)."""
+        return self._pairing_retry_delay
 
     @property
     def unreachable_issue_active(self) -> bool:
