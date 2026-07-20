@@ -2,7 +2,7 @@
 # sends pip's resolver backtracking through every release against the
 # component pins below.
 pytest-homeassistant-custom-component==0.13.346
-pymadoka-ng==0.3.8
+pymadoka-ng==0.3.9
 # Coverage flags in CI; the plugin already pins the compatible version, the
 # explicit line just documents the direct dependency.
 pytest-cov
