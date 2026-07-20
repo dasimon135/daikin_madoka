@@ -11,13 +11,18 @@ from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_BONDED_SOURCES,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
-from .coordinator import MadokaConfigEntry, MadokaCoordinator
+from .coordinator import (
+    MadokaConfigEntry,
+    MadokaCoordinator,
+    async_pairing_state,
+)
 from .frontend import async_register_card
 from .util import build_candidates, normalize_mac
 
@@ -96,7 +101,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             preferred = (
                 entry.data.get(CONF_PREFERRED_SOURCE) if single_device else None
             )
-            return build_candidates(hass, mac, preferred)
+            # Automatic reconnects only reach proxies known to hold a bond:
+            # touching an unbonded one starts a real numeric-comparison
+            # pairing that no unattended retry can complete, and repeating it
+            # jams the thermostat. A user-opened pairing window lifts the
+            # restriction, and so does having no bond on record yet (fresh
+            # install), where an unrestricted first connect is the only way in.
+            allowed = None
+            if single_device and not async_pairing_state(hass, mac).pairing_window:
+                allowed = entry.data.get(CONF_BONDED_SOURCES) or (
+                    [preferred] if preferred else None
+                )
+            return build_candidates(hass, mac, preferred, allowed_sources=allowed)
 
         # reconnect=False: the coordinator is the single reconnect owner; a
         # library-side background reconnect task would race it.

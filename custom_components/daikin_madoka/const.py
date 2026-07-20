@@ -7,6 +7,18 @@ CONF_FRIENDLY_NAME = "friendly_name"
 # candidates list is ordered sticky-first so reconnects go back to the bonded
 # proxy instead of whichever proxy wins on RSSI.
 CONF_PREFERRED_SOURCE = "preferred_source"
+# Every proxy that has completed an authenticated session with this device, so
+# it is known to hold a bond. Automatic reconnects are restricted to these:
+# connecting through an unbonded proxy starts a real numeric-comparison
+# pairing, which no unattended retry can ever complete and which jams the
+# BRC1H when repeated. Empty/absent means "not known yet" — treated as
+# unrestricted so a fresh install can still find its first path.
+CONF_BONDED_SOURCES = "bonded_sources"
+
+# Pairing budget while a user-initiated pairing window is open. Long enough to
+# walk to the thermostat, compare the 6-digit code and accept; the default 8s
+# used by automatic reconnects cannot accommodate a human.
+PAIRING_WINDOW_TIMEOUT = 60.0
 
 BRC1H_NAME_PREFIX = "BRC1H"
 
