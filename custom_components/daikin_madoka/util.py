@@ -25,7 +25,10 @@ def normalize_mac(mac: str) -> str | None:
 
 
 def build_candidates(
-    hass: HomeAssistant, address: str, preferred_source: str | None
+    hass: HomeAssistant,
+    address: str,
+    preferred_source: str | None,
+    allowed_sources: list[str] | None = None,
 ) -> list[BLEDevice]:
     """Ordered BLEDevice paths to the device: preferred proxy first, then RSSI.
 
@@ -33,10 +36,25 @@ def build_candidates(
     that last authenticated successfully before letting signal strength pick.
     Without the sticky ordering, an unbonded proxy that happens to win on RSSI
     is tried first and the BRC1H silently refuses it.
+
+    ``allowed_sources`` restricts the result to proxies known to hold a bond.
+    Reaching an unbonded proxy starts a real pairing, which needs a human at
+    the thermostat to accept a numeric code — so an unattended reconnect must
+    never get there. None means unrestricted, for a fresh install that has no
+    bond recorded yet and for a user-opened pairing window.
     """
     scanner_devices = bluetooth.async_scanner_devices_by_address(
         hass, address, connectable=True
     )
+
+    if allowed_sources:
+        allowed = set(allowed_sources)
+        scanner_devices = [
+            sd
+            for sd in scanner_devices
+            if isinstance(getattr(sd.ble_device, "details", None), dict)
+            and sd.ble_device.details.get("source") in allowed
+        ]
 
     def sort_key(sd: bluetooth.BluetoothScannerDevice) -> tuple[int, int]:
         # details is backend-specific: ESPHome proxies expose their source MAC
