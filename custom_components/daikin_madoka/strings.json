@@ -98,7 +98,7 @@
     },
     "pairing_required": {
       "title": "{device} refuses the Bluetooth connection",
-      "description": "Every Bluetooth path to {device} was refused because the proxy is not paired with it (tried via: {proxies}). Confirm the pairing prompt on the thermostat screen — required once per proxy — or set the unpaired proxy to passive mode. See the pairing documentation for details."
+      "description": "Every Bluetooth path to {device} was refused because the proxy is not paired with it (tried via: {proxies}). Automatic connection attempts are now paused so the thermostat is not flooded with pairing prompts it cannot complete. Stand at the thermostat, press the device's Reconnect button in Home Assistant, and confirm the pairing prompt on its screen — required once per proxy. See the pairing documentation for details."
     }
   }
 }

@@ -34,7 +34,6 @@ from custom_components.daikin_madoka.const import (
     PAIRING_WINDOW_TIMEOUT,
 )
 from custom_components.daikin_madoka.coordinator import (
-    PAIRING_RETRY_BASE,
     MadokaCoordinator,
     async_pairing_state,
 )
@@ -134,43 +133,9 @@ def _patched_bluetooth():
     )
 
 
-async def test_pairing_backoff_survives_a_config_entry_retry(
-    hass: HomeAssistant,
-) -> None:
-    """The bug that let the storm run: HA rebuilds everything on each retry.
-
-    A failed setup raises ConfigEntryNotReady, and HA then calls
-    async_setup_entry again with a brand-new Controller, Connection and
-    coordinator. Backoff state held on those objects resets every time, so it
-    never accumulates and the device is hammered forever.
-    """
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
-    entry.add_to_hass(hass)
-    present, scanner = _patched_bluetooth()
-
-    first = _coordinator(hass, entry, _controller(ConnectionStatus.DISCONNECTED))
-    first.controller.start = AsyncMock(
-        side_effect=PairingRequiredError(MAC, [BONDED])
-    )
-    with present, scanner:
-        await first.async_refresh()
-    assert first.pairing_retry_delay == PAIRING_RETRY_BASE
-
-    # HA retries the entry: everything is rebuilt from scratch.
-    second = _coordinator(hass, entry, _controller(ConnectionStatus.DISCONNECTED))
-    second.controller.start = AsyncMock(
-        side_effect=PairingRequiredError(MAC, [BONDED])
-    )
-
-    assert second.pairing_retry_delay == PAIRING_RETRY_BASE
-
-    present2, scanner2 = _patched_bluetooth()
-    with present2, scanner2:
-        await second.async_refresh()
-
-    # Still inside the window inherited from the first coordinator: the new
-    # one must not touch the device either.
-    second.controller.start.assert_not_awaited()
+# The retry-survival guarantee itself (a rebuilt coordinator must not touch
+# the device) lives in test_dead_bond_quarantine.py, where the suspension
+# that provides it is specified.
 
 
 async def test_reconnect_opens_a_pairing_window(hass: HomeAssistant) -> None:

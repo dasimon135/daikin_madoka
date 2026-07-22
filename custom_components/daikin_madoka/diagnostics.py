@@ -49,6 +49,7 @@ async def async_get_config_entry_diagnostics(
                 "device_unreachable": coordinator.unreachable_issue_active,
                 "pairing_required": coordinator.pairing_issue_active,
             },
+            "pairing_suspended": coordinator.pairing_suspended,
         }
 
     return {

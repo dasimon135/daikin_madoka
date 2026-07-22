@@ -64,14 +64,10 @@ The BRC1H requires an **authenticated (MITM) pairing** — it silently ignores e
 The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_capability: none` and nothing answers the numeric-comparison confirmation). Add this to the proxy's YAML and reflash:
 
 ```yaml
-esp32:
-  framework:
-    type: esp-idf   # sdkconfig_options requires the esp-idf framework
-    sdkconfig_options:
-      CONFIG_BT_BLE_SMP_ENABLE: y
-      CONFIG_BLE_SM_SC: y
-      CONFIG_BLE_SM_LEGACY: y
-
+# io_capability is the only required change: the Bluedroid stack already
+# ships with SMP enabled and persists bonds to NVS by default
+# (CONFIG_BT_BLE_SMP_ENABLE and CONFIG_BT_BLE_SMP_BOND_NVS_FLASH are
+# both default y).
 esp32_ble:
   io_capability: display_yes_no
 

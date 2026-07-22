@@ -49,19 +49,14 @@ packages:
   esphome.bluetooth-proxy: github://esphome/bluetooth-proxies/m5stack/m5stack-atom-s3.yaml@main
 
 # --- Pairing support for the Daikin BRC1H (Madoka) ---
-# Enables the BLE Security Manager (SMP) so the proxy can perform the
-# authenticated pairing the BRC1H requires, and persist the bond in NVS
-# across reboots. Requires the esp-idf framework.
-esp32:
-  framework:
-    type: esp-idf   # sdkconfig_options requires esp-idf (most proxy packages already use it)
-    sdkconfig_options:
-      CONFIG_BT_BLE_SMP_ENABLE: y   # BLE Security Manager (pairing/bonding)
-      CONFIG_BLE_SM_SC: y           # Secure Connections pairing
-      CONFIG_BLE_SM_LEGACY: y       # Legacy pairing (the BRC1H uses this path)
-
-# MITM-capable pairing (display + yes/no confirmation). Overrides the
-# esp32_ble default (io_capability: none), which the BRC1H rejects.
+# io_capability is the only change the stock proxy package needs: it enables
+# the MITM-capable pairing (display + yes/no confirmation) the BRC1H
+# requires, overriding the esp32_ble default (io_capability: none), which
+# the BRC1H rejects. No sdkconfig_options are needed — the Bluedroid stack
+# already ships with SMP enabled and persists bonds to NVS across reboots
+# by default (CONFIG_BT_BLE_SMP_ENABLE and CONFIG_BT_BLE_SMP_BOND_NVS_FLASH
+# are both default y; the CONFIG_BLE_SM_* options previously listed here
+# are NimBLE symbols that Bluedroid never reads).
 esp32_ble:
   io_capability: display_yes_no
 

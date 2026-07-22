@@ -98,7 +98,7 @@
     },
     "pairing_required": {
       "title": "{device} rechaza la conexión Bluetooth",
-      "description": "Todas las rutas Bluetooth hacia {device} fueron rechazadas porque el proxy no está emparejado con él (intentado a través de: {proxies}). Confirma la solicitud de emparejamiento en la pantalla del termostato — necesaria una vez por proxy — o pon el proxy sin emparejar en modo pasivo. Consulta la documentación de emparejamiento para más detalles."
+      "description": "Todas las rutas Bluetooth hacia {device} fueron rechazadas porque el proxy no está emparejado con él (intentado a través de: {proxies}). Los intentos de conexión automáticos quedan en pausa para no inundar el termostato con solicitudes de emparejamiento imposibles de completar. Colócate frente al termostato, pulsa el botón Reconectar del dispositivo en Home Assistant y confirma la solicitud de emparejamiento en su pantalla — necesaria una vez por proxy. Consulta la documentación de emparejamiento para más detalles."
     }
   }
 }
