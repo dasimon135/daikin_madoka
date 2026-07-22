@@ -11,13 +11,12 @@ permanently unreachable and to jam its Bluetooth stack:
    the connect, and each attempt re-initiated an SMP exchange. Repeated
    prompts jam the BRC1H until its Bluetooth is toggled off and on by hand.
 
-So connects are serialized across devices, and a pairing refusal backs off
-instead of hammering — while still retrying often enough that a user standing
-at the thermostat gets a prompt to confirm.
+So connects are serialized across devices, and a pairing refusal suspends
+automatic reconnects entirely (see test_dead_bond_quarantine.py) — a prompt
+only ever appears again when the user asks for one via the reconnect button.
 """
 
 import asyncio
-from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,11 +28,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
 from custom_components.daikin_madoka.const import CONF_MAC, DOMAIN
-from custom_components.daikin_madoka.coordinator import (
-    PAIRING_RETRY_BASE,
-    PAIRING_RETRY_MAX,
-    MadokaCoordinator,
-)
+from custom_components.daikin_madoka.coordinator import MadokaCoordinator
 
 MAC = "D0:CF:13:0F:11:F6"
 OTHER_MAC = "D0:CF:13:0F:11:F7"
@@ -85,7 +80,7 @@ def _pairing_coordinator(hass: HomeAssistant) -> MadokaCoordinator:
 async def test_pairing_refusal_does_not_reattempt_on_the_very_next_poll(
     hass: HomeAssistant,
 ) -> None:
-    """Each re-attempt re-initiates SMP; back off instead of hammering."""
+    """Each re-attempt re-initiates SMP; suspend instead of hammering."""
     coordinator = _pairing_coordinator(hass)
     present, scanner = _patched_bluetooth()
 
@@ -99,88 +94,9 @@ async def test_pairing_refusal_does_not_reattempt_on_the_very_next_poll(
     assert not coordinator.last_update_success
 
 
-async def test_pairing_backoff_expires_so_the_user_still_gets_a_prompt(
-    hass: HomeAssistant, freezer
-) -> None:
-    """Backing off forever would leave no way to confirm a pairing prompt."""
-    coordinator = _pairing_coordinator(hass)
-    present, scanner = _patched_bluetooth()
-
-    with present, scanner:
-        await coordinator.async_refresh()
-        assert coordinator.controller.start.await_count == 1
-
-        freezer.tick(timedelta(seconds=PAIRING_RETRY_BASE + 1))
-        await coordinator.async_refresh()
-
-    assert coordinator.controller.start.await_count == 2
-
-
-async def test_pairing_backoff_grows_and_stays_capped(
-    hass: HomeAssistant, freezer
-) -> None:
-    """A device left unpaired for hours must not retry every minute forever."""
-    coordinator = _pairing_coordinator(hass)
-    present, scanner = _patched_bluetooth()
-
-    with present, scanner:
-        await coordinator.async_refresh()
-        assert coordinator.pairing_retry_delay == PAIRING_RETRY_BASE
-
-        for _ in range(10):
-            freezer.tick(timedelta(seconds=PAIRING_RETRY_MAX + 1))
-            await coordinator.async_refresh()
-
-    assert coordinator.pairing_retry_delay == PAIRING_RETRY_MAX
-
-
-async def test_successful_poll_clears_the_pairing_backoff(
-    hass: HomeAssistant, freezer
-) -> None:
-    coordinator = _pairing_coordinator(hass)
-    present, scanner = _patched_bluetooth()
-
-    with present, scanner:
-        await coordinator.async_refresh()
-        assert coordinator.pairing_retry_delay == PAIRING_RETRY_BASE
-
-        coordinator.controller.connection.connection_status = (
-            ConnectionStatus.CONNECTED
-        )
-        freezer.tick(timedelta(seconds=PAIRING_RETRY_BASE + 1))
-        await coordinator.async_refresh()
-
-    assert coordinator.last_update_success
-    assert coordinator.pairing_retry_delay == 0
-
-
-async def test_manual_reconnect_bypasses_the_pairing_backoff(
-    hass: HomeAssistant,
-) -> None:
-    """The reconnect button is the user saying "I just confirmed the prompt".
-
-    It must attempt straight away rather than sit out the backoff. (A renewed
-    refusal legitimately re-arms the backoff, so what proves the bypass is the
-    extra connect attempt, not the delay afterwards.)
-    """
-    coordinator = _pairing_coordinator(hass)
-    present, scanner = _patched_bluetooth()
-
-    with present, scanner:
-        await coordinator.async_refresh()
-        assert coordinator.controller.start.await_count == 1
-        assert coordinator.pairing_retry_delay == PAIRING_RETRY_BASE
-
-        coordinator.controller.stop = AsyncMock()
-        with patch(
-            "custom_components.daikin_madoka.coordinator.asyncio.sleep", AsyncMock()
-        ):
-            await coordinator.async_reconnect()
-
-    assert coordinator.controller.start.await_count == 2
-
-    # async_request_refresh leaves the debouncer's cooldown timer armed.
-    await coordinator.async_shutdown()
+# The suspension that replaced the retry backoff — indefinite, surviving
+# entry retries, lifted by the reconnect button or a successful session — is
+# specified in test_dead_bond_quarantine.py.
 
 
 async def test_connect_attempts_are_serialized_across_devices(

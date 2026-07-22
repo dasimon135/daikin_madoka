@@ -130,15 +130,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
         try:
             await coordinator.async_config_entry_first_refresh()
         except ConfigEntryNotReady as connection_error:
-            await _safe_stop(controller)
-            if single_device:
-                raise
-            # Legacy multi-device entries keep the reachable thermostats
-            # working instead of failing the whole entry.
-            _LOGGER.warning(
-                "Skipping unreachable device %s: %s", mac, connection_error
-            )
-            continue
+            if single_device and async_pairing_state(hass, mac).suspended:
+                # A concluded pairing refusal never heals by retrying, so a
+                # not-ready loop would poll into the void forever — and a
+                # never-ready entry has no entities, hiding the reconnect
+                # button that opens the pairing window: the only remedy.
+                # Load degraded instead: entities unavailable, the
+                # pairing_required repair on screen, the button reachable.
+                _LOGGER.warning(
+                    "Setting up %s without a connection; it needs pairing: %s",
+                    mac,
+                    connection_error,
+                )
+            else:
+                await _safe_stop(controller)
+                if single_device:
+                    raise
+                # Legacy multi-device entries keep the reachable thermostats
+                # working instead of failing the whole entry.
+                _LOGGER.warning(
+                    "Skipping unreachable device %s: %s", mac, connection_error
+                )
+                continue
 
         try:
             await controller.read_info()
