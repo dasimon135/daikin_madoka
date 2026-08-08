@@ -1,13 +1,32 @@
 # Changelog
 
-## Unreleased
+## v3.9.0 - August 2026
 
 Requires **pymadoka-ng 0.3.11** (installed automatically).
 
-- **The proxy shown as carrying a thermostat is now the one that really does.** Home Assistant, not this integration, decides which Bluetooth proxy serves a connection: it keeps only the thermostat's address and re-picks a proxy by signal strength every time. Everything recorded about proxies was therefore an *intention*. Measured on four thermostats in one restart: **three were connected through a different proxy than the one recorded**. That is why proxies already listed as paired kept asking to pair again — nothing was wrong with them, they had simply never carried the session the record claimed. The **Connection source** sensor, the list of paired proxies and the sticky-proxy preference now all report what actually happened.
-- **A proxy is no longer blamed for a failure it may not have been part of.** Home Assistant, not this integration, decides which Bluetooth proxy carries a connection: it keeps only the thermostat's address and re-picks a proxy by signal strength every time. The list of "bonded" proxies therefore shaped what we *asked for*, never what happened — and a refusal could be charged to, and eventually evict, a proxy that was never in the round. Measured over four controlled restarts: a thermostat paired through a proxy that had been excluded from its list entirely. A refusal is now only charged when the round can actually name the proxy that produced it, and a round that cannot name one charges nobody instead of falling back to a guess. ([#53](https://github.com/dasimon135/daikin_madoka/issues/53))
+**Two ways a perfectly healthy thermostat could be declared unpaired and locked out until somebody walked to it.** Both are fixed, and both were confirmed on real hardware rather than reasoned about.
 
-- **A thermostat that just worked is no longer quarantined as unpaired.** After a Home Assistant restart, a thermostat could connect, poll successfully, and then be declared "pairing required" a couple of minutes later — automatic reconnects stopped and it stayed down until somebody walked to the unit and re-paired it (11 hours, in the case that prompted this). Refusals are classified from the Bluetooth error text, and the BRC1H accepts only one central at a time, so a stale proxy link — or simply every thermostat reconnecting at once after a restart — produces exactly the same "insufficient authentication" as a bond that is genuinely gone. A refusal arriving within 10 minutes of a completed, authenticated session is now treated as congestion: reconnects slow to one every 15 minutes and a warning appears, but nothing is quarantined and nobody is summoned to the thermostat. One good session excuses one refusal — a bond that really is dead still surfaces on the next round. ([#51](https://github.com/dasimon135/daikin_madoka/issues/51))
+### A thermostat that just worked is no longer quarantined as unpaired
+
+After a Home Assistant restart, a thermostat could connect, poll successfully, and then be declared "pairing required" a couple of minutes later — automatic reconnects stopped and it stayed down until somebody walked to the unit and re-paired it (11 hours, in the case that prompted this).
+
+Refusals are classified from the Bluetooth error text, and the BRC1H accepts only one central at a time, so a stale proxy link — or simply every thermostat reconnecting at once after a restart — produces exactly the same "insufficient authentication" as a bond that is genuinely gone. A refusal arriving within 10 minutes of a completed, authenticated session is now treated as congestion: reconnects slow to one every 15 minutes and a warning appears, but nothing is quarantined and nobody is summoned to the thermostat. One good session excuses one refusal — a bond that really is dead still surfaces on the next round. ([#51](https://github.com/dasimon135/daikin_madoka/issues/51))
+
+### The proxy shown as carrying a thermostat is now the one that really does
+
+Home Assistant, not this integration, decides which Bluetooth proxy serves a connection: it keeps only the thermostat's address and re-picks a proxy by signal strength on every attempt. Everything this integration recorded about proxies was therefore an *intention*, not an observation.
+
+Measured on four thermostats in a single restart: **three were connected through a different proxy than the one recorded.** That is why proxies already listed as paired kept asking to pair again — nothing was wrong with them, they had simply never carried the session the record claimed.
+
+The **Connection source** sensor, the list of paired proxies and the sticky-proxy preference now all report what actually happened, and the lists repair themselves as real paths are observed. A failed pairing is only charged to a proxy when the attempt can actually name it; one that cannot name a proxy now blames nobody instead of guessing, so a working proxy can no longer be dropped for a failure it had no part in. ([#53](https://github.com/dasimon135/daikin_madoka/issues/53))
+
+### Still open
+
+Home Assistant may route a thermostat through a proxy it has never paired with. This release makes that **visible and harmless** — the connection is reported truthfully and no proxy is blamed for it — but it does not stop it happening. A thermostat that ends up in "pairing not completing" is telling you exactly that: confirm the pairing prompt on its screen once for that proxy, or set the proxy to `bluetooth_proxy: active: false`.
+
+### Upgrading
+
+Update via HACS and restart. Entity IDs and history are preserved. The bundled library moves to **pymadoka-ng 0.3.11** (installed automatically). Expect the list of paired proxies to grow on the first restarts: that is the integration recording paths it was previously blind to.
 
 ## v3.8.1 - July 2026
 
