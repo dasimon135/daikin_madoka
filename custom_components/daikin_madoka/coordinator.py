@@ -838,6 +838,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         makes eviction reachable at all in a home with three or four proxies,
         where a round is never single-path.
 
+        Since 0.3.11 those sources are also REAL. Before it, they were the
+        candidates the library offered to HA, which is not what HA connects
+        through: habluetooth keeps only the address and re-picks a scanner by
+        RSSI, so a refusal could be charged to a proxy that was never in the
+        round (#53). An attempt whose path cannot be proven is now keyed under
+        None and charges nobody.
+
         Without that verdict (pymadoka <= 0.3.9) tried_sources is a flat list:
         a round over three proxies cannot say WHICH of them rejected, so only
         a single-source round is unambiguous and anything else records
@@ -852,18 +859,25 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _attributable_refusals(self, err: PairingRequiredError) -> list[str]:
         """The sources this error PROVES hold no bond, if any."""
         evidence = getattr(err, "evidence", None)
-        if isinstance(evidence, Mapping):
+        if isinstance(evidence, Mapping) and evidence:
+            # A mapping that exists is AUTHORITATIVE, including when it names
+            # nobody. Since pymadoka-ng 0.3.11 an attempt whose path could not
+            # be proven — no link was ever established, so nothing named the
+            # scanner — is keyed under None, so "no proven source" is a
+            # statement ("this round cannot say which proxy failed"), not
+            # silence. Falling through to the legacy rule here would answer it
+            # with a guess, and the guess is the whole defect: under HA the
+            # candidate we offered is not the path that was used (#53).
+            #
             # Only "rejected" counts: a per-path "timeout" is congestion until
             # proven otherwise, exactly as a whole-round timeout streak is.
-            proven = [
+            return [
                 source
                 for source, verdict in evidence.items()
                 if verdict == "rejected" and source
             ]
-            if proven:
-                return proven
-            # An empty/verdict-less mapping says nothing; fall through to the
-            # legacy rule rather than treating silence as exoneration.
+        # No mapping at all: pymadoka <= 0.3.9, where tried_sources is a flat
+        # list and only a single-source round is unambiguous.
         if len(err.tried_sources) != 1 or not err.tried_sources[0]:
             return []
         return [err.tried_sources[0]]

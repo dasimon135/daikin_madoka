@@ -420,3 +420,84 @@ async def test_the_eviction_streak_survives_a_restart(hass: HomeAssistant) -> No
     async_restore_pairing_state(hass, entry)
 
     assert async_pairing_state(hass, MAC).auth_failures == {PROXY_A: 1}
+
+
+# --------------------------------------------------------------------------
+# A round that cannot name the path must charge nobody (#53)
+# --------------------------------------------------------------------------
+#
+# Under HA the candidate handed to establish_connection does not pin the path:
+# habluetooth keeps only the address and re-picks a scanner by RSSI. So a
+# refusal is attributable only when a link existed and the wrapper named the
+# scanner that carried it. pymadoka-ng 0.3.11 keys everything else under None.
+#
+# The trap this closes: a non-empty evidence mapping naming no proven source
+# used to fall through to the legacy "exactly one tried source" rule, which
+# would answer "which proxy refused?" with the candidate we merely aimed at —
+# reinstating the very guess the library stopped making.
+
+
+async def test_an_unattributable_refusal_charges_nobody(hass: HomeAssistant) -> None:
+    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
+    coordinator = _coordinator(hass, entry, _controller())
+
+    await _refuse_with_evidence_repeatedly(
+        hass,
+        coordinator,
+        [PROXY_A],
+        {None: "rejected"},
+        BOND_EVICTION_FAILURES + 2,
+    )
+
+    assert entry.data[CONF_BONDED_SOURCES] == [PROXY_A, PROXY_B]
+    assert async_pairing_state(hass, MAC).auth_failures == {}
+
+
+async def test_a_single_source_round_no_longer_overrides_the_evidence(
+    hass: HomeAssistant,
+) -> None:
+    """The legacy rule is for libraries that carry no evidence at all.
+
+    One candidate and one unattributable verdict is exactly the shape the old
+    fall-through mistook for proof. Asserted on the FIRST refusal, before the
+    eviction threshold: eviction pops the counter it acted on, so counting at
+    the threshold cannot tell "never charged" from "charged, then evicted".
+    """
+    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
+    coordinator = _coordinator(hass, entry, _controller())
+
+    await _refuse_with_evidence_repeatedly(
+        hass, coordinator, [PROXY_A], {None: "rejected"}, 1
+    )
+
+    assert async_pairing_state(hass, MAC).auth_failures == {}
+
+
+async def test_a_proven_source_is_still_charged_alongside_an_unknown_one(
+    hass: HomeAssistant,
+) -> None:
+    """Partial knowledge is still knowledge: the named path answers for itself."""
+    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
+    coordinator = _coordinator(hass, entry, _controller())
+
+    await _refuse_with_evidence_repeatedly(
+        hass,
+        coordinator,
+        [PROXY_A, PROXY_B],
+        {PROXY_A: "rejected", None: "rejected"},
+        BOND_EVICTION_FAILURES,
+    )
+
+    assert entry.data[CONF_BONDED_SOURCES] == [PROXY_B]
+
+
+async def test_a_library_with_no_evidence_still_uses_the_legacy_rule(
+    hass: HomeAssistant,
+) -> None:
+    """pymadoka <= 0.3.9 has no mapping, and a single-source round is unambiguous."""
+    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
+    coordinator = _coordinator(hass, entry, _controller())
+
+    await _refuse_repeatedly(hass, coordinator, [PROXY_A], BOND_EVICTION_FAILURES)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [PROXY_B]
