@@ -36,6 +36,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.daikin_madoka.const import (
+    AUTH_CORROBORATION_WINDOW_S,
     CONF_MAC,
     DOMAIN,
     TIMEOUT_BACKOFF_INTERVAL_S,
@@ -51,6 +52,7 @@ SOURCE = "AA:BB:CC:11:22:33"
 STREAK = 3
 
 BLUETOOTH = "homeassistant.components.bluetooth"
+COORDINATOR = "custom_components.daikin_madoka.coordinator"
 
 
 def _error(reason: str | None = None, sources: list[str | None] | None = None):
@@ -451,3 +453,159 @@ async def test_backoff_survives_a_coordinator_rebuild(hass: HomeAssistant) -> No
     second = _coordinator(hass, entry, _controller(rounds=STREAK))
 
     assert second.update_interval == timedelta(seconds=TIMEOUT_BACKOFF_INTERVAL_S)
+
+
+# --------------------------------------------------------------------------
+# Tier 1b: a rejection that contradicts a fresh success is not proof
+# --------------------------------------------------------------------------
+#
+# Field incident 2026-08-07 (issue #51). After an HA restart the Salon
+# thermostat connected and polled successfully at 22:11:44, then at 22:14:00
+# BOTH of its proxies "refused the authenticated bond" and it was quarantined
+# for 11 hours until someone walked to it.
+#
+# A device that authenticates at 22:11:44 has not lost its bond on two separate
+# proxies at 22:14:00. pymadoka classifies refusals from error TEXT
+# ("insufficient authentication", ATT error=5), and the BRC1H accepts a single
+# central: a stale proxy link, or contention while every coordinator reconnects
+# at once after a restart, produces that exact text without the bond being
+# gone. So a rejection arriving moments after a proven-good session is
+# downgraded to the timeout tier — the same cost asymmetry the rest of this
+# module rests on: a wrong quarantine needs a human at the thermostat, a wrong
+# backoff only costs time.
+
+
+class _Clock:
+    """A monotonic clock the test moves by hand."""
+
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _connects(controller: MagicMock) -> None:
+    """Make start() succeed the way the library does: status flips to CONNECTED."""
+
+    async def _start() -> None:
+        controller.connection.connection_status = ConnectionStatus.CONNECTED
+
+    controller.start = AsyncMock(side_effect=_start)
+
+
+def _rejects(controller: MagicMock) -> None:
+    """Back to a start() that raises a proven refusal."""
+    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+    controller.start = AsyncMock(side_effect=_error("rejected"))
+
+
+async def test_rejection_soon_after_a_successful_session_does_not_convict(
+    hass: HomeAssistant,
+) -> None:
+    """The 22:11 success refutes the 22:14 refusal: back off, do not quarantine."""
+    entry = _entry(hass)
+    controller = _controller(rounds=0)
+    coordinator = _coordinator(hass, entry, controller)
+    clock = _Clock()
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner, patch(f"{COORDINATOR}.monotonic", new=clock):
+        _connects(controller)
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        clock.now += 136  # 22:11:44 -> 22:14:00
+        _rejects(controller)
+        await coordinator.async_refresh()
+
+    registry = ir.async_get(hass)
+    assert async_pairing_state(hass, MAC).suspended is False
+    assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is None
+    # Downgraded to the timeout tier, not ignored: slow cadence + soft repair.
+    assert registry.async_get_issue(DOMAIN, f"pairing_slow_{MAC}") is not None
+    assert coordinator.update_interval == timedelta(seconds=TIMEOUT_BACKOFF_INTERVAL_S)
+
+
+async def test_the_acquittal_is_spent_so_a_repeat_rejection_convicts(
+    hass: HomeAssistant,
+) -> None:
+    """One session excuses one refusal. A bond that really died still surfaces.
+
+    Deliberately independent of the backoff interval: the acquittal is consumed
+    when it is used, so the second refusal convicts even if it arrives while
+    the corroboration window is still open.
+    """
+    entry = _entry(hass)
+    controller = _controller(rounds=0)
+    coordinator = _coordinator(hass, entry, controller)
+    clock = _Clock()
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner, patch(f"{COORDINATOR}.monotonic", new=clock):
+        _connects(controller)
+        await coordinator.async_refresh()
+        clock.now += 136
+        _rejects(controller)
+        await coordinator.async_refresh()
+        assert async_pairing_state(hass, MAC).suspended is False
+        clock.now += 10
+        await coordinator.async_refresh()
+
+    assert async_pairing_state(hass, MAC).suspended is True
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
+
+
+async def test_rejection_long_after_the_last_success_still_convicts(
+    hass: HomeAssistant,
+) -> None:
+    """The window is what makes the success relevant; outside it, proof stands."""
+    entry = _entry(hass)
+    controller = _controller(rounds=0)
+    coordinator = _coordinator(hass, entry, controller)
+    clock = _Clock()
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner, patch(f"{COORDINATOR}.monotonic", new=clock):
+        _connects(controller)
+        await coordinator.async_refresh()
+        clock.now += AUTH_CORROBORATION_WINDOW_S + 1
+        _rejects(controller)
+        await coordinator.async_refresh()
+
+    assert async_pairing_state(hass, MAC).suspended is True
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
+
+
+async def test_a_rejection_with_no_session_behind_it_convicts(
+    hass: HomeAssistant,
+) -> None:
+    """Nothing to corroborate with — the very first poll after a restart."""
+    entry = _entry(hass)
+    controller = _controller(rounds=0)
+    coordinator = _coordinator(hass, entry, controller)
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner:
+        await coordinator.async_refresh()
+
+    assert async_pairing_state(hass, MAC).suspended is True
+
+
+async def test_the_acquittal_is_never_persisted(hass: HomeAssistant) -> None:
+    """A monotonic stamp means nothing in the next process.
+
+    Restoring one would hand a fresh HA a free pass it did not earn, and the
+    numbers are not even comparable across a reboot.
+    """
+    entry = _entry(hass)
+    controller = _controller(rounds=0)
+    coordinator = _coordinator(hass, entry, controller)
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner:
+        _connects(controller)
+        await coordinator.async_refresh()
+
+    state = async_pairing_state(hass, MAC)
+    assert state.last_success is not None
+    assert "last_success" not in (state.as_stored() or {})

@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.daikin_madoka.const import (
+    AUTH_CORROBORATION_WINDOW_S,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
@@ -25,6 +26,17 @@ OTHER_MAC = "D0:CF:13:0F:11:F7"
 SOURCE = "AA:BB:CC:11:22:33"
 
 BLUETOOTH = "homeassistant.components.bluetooth"
+COORDINATOR = "custom_components.daikin_madoka.coordinator"
+
+
+class _Clock:
+    """A monotonic clock the test moves by hand."""
+
+    def __init__(self, now: float) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
 
 
 def _mock_controller(source: str | None = SOURCE) -> MagicMock:
@@ -257,22 +269,34 @@ async def test_pairing_failure_is_never_masked_by_grace(
     controller = _mock_controller()
     coordinator = _coordinator(hass, entry, controller)
 
-    await coordinator.async_refresh()
-    # Grace precondition holds (existing data, first failure), yet a pairing
-    # refusal must still surface immediately: it never heals on its own.
-    assert coordinator.data
-
-    controller.connection.connection_status = ConnectionStatus.DISCONNECTED
-    controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE]))
-
-    with (
-        patch(f"{BLUETOOTH}.async_address_present", return_value=True),
-        patch(
-            f"{BLUETOOTH}.async_scanner_by_source",
-            return_value=SimpleNamespace(name="Proxy Salon"),
-        ),
-    ):
+    # The clock spans BOTH polls: the acquittal is stamped by the successful
+    # one, so pinning it only around the failing one would compare a pinned
+    # "now" against a real-uptime stamp and land on whichever branch the host
+    # happens to make true.
+    clock = _Clock(1000.0)
+    with patch(f"{COORDINATOR}.monotonic", new=clock):
         await coordinator.async_refresh()
+        # Grace precondition holds (existing data, first failure), yet a pairing
+        # refusal must still surface immediately: it never heals on its own.
+        assert coordinator.data
+
+        controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+        controller.start = AsyncMock(side_effect=PairingRequiredError(MAC, [SOURCE]))
+
+        # Far enough after that successful poll for the refusal to stand as
+        # proof: inside AUTH_CORROBORATION_WINDOW_S it would be downgraded to
+        # the timeout tier, which is a different subject
+        # (test_pairing_verdict_tiers.py). The grace rule under test has to hold
+        # either way, so keep this test on the branch it was written for.
+        clock.now += AUTH_CORROBORATION_WINDOW_S * 2
+        with (
+            patch(f"{BLUETOOTH}.async_address_present", return_value=True),
+            patch(
+                f"{BLUETOOTH}.async_scanner_by_source",
+                return_value=SimpleNamespace(name="Proxy Salon"),
+            ),
+        ):
+            await coordinator.async_refresh()
 
     assert not coordinator.last_update_success
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")

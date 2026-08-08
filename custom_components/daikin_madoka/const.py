@@ -142,6 +142,28 @@ PAIRING_WINDOW_TTL_S = 180.0
 # 15 minutes keeps a real recovery reachable without re-creating the prompt
 # storm; the normal interval comes back on the first successful poll.
 TIMEOUT_BACKOFF_INTERVAL_S = 900.0
+
+# How recently a device must have completed an authenticated session for a
+# "rejected" verdict to be treated as contradicted rather than proven.
+#
+# pymadoka classifies refusals from error TEXT ("insufficient authentication",
+# "pairing failed", ATT error=5), and that text is genuinely ambiguous: the
+# BRC1H accepts a single central, so a stale proxy link — or plain contention
+# while every coordinator reconnects at once after an HA restart — produces it
+# without the bond having gone anywhere. Its own _rejected_sources then retains
+# the accusation until that exact path authenticates again.
+#
+# A bond does not evaporate minutes after it worked, so inside this window the
+# refusal is downgraded to the timeout tier (slow cadence, soft repair) instead
+# of quarantining the device. Field incident 2026-08-07 (issue #51): a
+# thermostat that connected and polled at 22:11:44 was quarantined at 22:14:00
+# and stayed down 11 hours, because the rejection branch was the one place the
+# cost asymmetry stated everywhere else in this file was not applied.
+#
+# 10 minutes covers a post-restart storm settling down while staying far short
+# of "the bond was fine this morning": past it, a refusal is proof again.
+AUTH_CORROBORATION_WINDOW_S = 600.0
+
 # Discovery adverts below this RSSI are almost certainly a neighbour's BRC1H
 # bleeding through a wall: don't offer a discovery card for a device the user
 # can't actually pair with. Manual setup (async_step_user) is the escape

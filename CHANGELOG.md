@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A thermostat that just worked is no longer quarantined as unpaired.** After a Home Assistant restart, a thermostat could connect, poll successfully, and then be declared "pairing required" a couple of minutes later — automatic reconnects stopped and it stayed down until somebody walked to the unit and re-paired it (11 hours, in the case that prompted this). Refusals are classified from the Bluetooth error text, and the BRC1H accepts only one central at a time, so a stale proxy link — or simply every thermostat reconnecting at once after a restart — produces exactly the same "insufficient authentication" as a bond that is genuinely gone. A refusal arriving within 10 minutes of a completed, authenticated session is now treated as congestion: reconnects slow to one every 15 minutes and a warning appears, but nothing is quarantined and nobody is summoned to the thermostat. One good session excuses one refusal — a bond that really is dead still surfaces on the next round. ([#51](https://github.com/dasimon135/daikin_madoka/issues/51))
+
 ## v3.8.1 - July 2026
 
 Requires **pymadoka-ng 0.3.10** (installed automatically). The library now states outright *why* pairing failed instead of leaving it to be inferred from a side effect, which is what v3.8.0 already reads when the attribute is there — this release simply makes it the version you actually run.
