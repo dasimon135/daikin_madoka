@@ -14,9 +14,9 @@ After an HA restart on a 4-thermostat system behind 4 ESPHome BT proxies:
 
 | Device | Symptom | Real cause (established) |
 |---|---|---|
-| Valentine | recovered | — |
+| Bedroom A | recovered | — |
 | Parents | reconnected, then **falsely quarantined** ("refused the authenticated bond") | timeout streak on a *bonded* path; the bond was intact — a manual Reconnect restored it instantly with **no on-screen confirmation** |
-| Manon | never recovered | genuine auth rejection (error 81) on one path, mixed with other failures |
+| Bedroom B | never recovered | genuine auth rejection (error 81) on one path, mixed with other failures |
 | Salon | never recovered; user unpaired it to retry, then **could not re-pair by any means** | nested-timeout incoherence made every pairing path structurally unable to complete |
 
 Independently: one proxy's slot pool was saturated by **stale allocations**
@@ -200,7 +200,7 @@ This is the most plausible mechanism by which Parents (healthy) was dragged down
 
 *Re-verification nuances:* a device that stopped **advertising** fails before the
 lock (`coordinator.py:205-208`) and never takes it — the hazard is confined to
-advertising-but-unconnectable devices (which both Salon and Manon were tonight).
+advertising-but-unconnectable devices (which both Salon and Bedroom B were tonight).
 Worse than first stated: lock **acquisition has no timeout** and the 30 s timer
 starts only after acquisition, so N stuck devices stack N×30 s serially.
 
@@ -347,7 +347,7 @@ boot-time false quarantine. Three statements about it, in order of revision:
    never produces). SMP-initiating `pair()` attempts continue at retry cadence
    forever.
 
-**Direct field consequence (tonight):** Salon and Manon sit in `setup_retry`
+**Direct field consequence (tonight):** Salon and Bedroom B sit in `setup_retry`
 with a fresh coordinator — hence a fresh boot window — on every retry. Their
 failures produce no evidence, `suspended` is never set, so the degraded-load
 escape hatch (`__init__.py:133`) never opens and the Reconnect button never
