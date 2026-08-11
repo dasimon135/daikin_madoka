@@ -23,8 +23,10 @@ from custom_components.daikin_madoka import (
     sensor as sensor_platform,
 )
 from custom_components.daikin_madoka.const import (
+    CONF_DEVICE_TYPE,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
+    DEVICE_TYPE_VENTILATION,
     DOMAIN,
 )
 from custom_components.daikin_madoka.coordinator import MadokaCoordinator
@@ -101,6 +103,22 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
         f"{MAC}_connection_source",
         f"{MAC}_connection_status",
     }
+
+
+async def test_ventilation_setup_skips_the_outdoor_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """A VAM is indoor-only: an outdoor sensor would never leave unknown."""
+    coordinator, entry = _coordinator(
+        hass,
+        _mock_controller(),
+        {CONF_MAC: MAC, CONF_DEVICE_TYPE: DEVICE_TYPE_VENTILATION},
+    )
+    entities = await _setup_platform(sensor_platform, hass, coordinator, entry)
+
+    unique_ids = {entity.unique_id for entity in entities}
+    assert f"{MAC}_indoor_temperature" in unique_ids
+    assert f"{MAC}_outdoor_temperature" not in unique_ids
 
 
 async def test_temperature_sensors_report_controller_values(

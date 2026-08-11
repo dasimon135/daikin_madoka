@@ -1,4 +1,12 @@
 {
+  "selector": {
+    "device_type": {
+      "options": {
+        "thermostat": "Termostato (calefacción / refrigeración)",
+        "ventilation": "Solo ventilación (VAM / HRV)"
+      }
+    }
+  },
   "config": {
     "flow_title": "{name}",
     "abort": {
@@ -20,14 +28,16 @@
         "description": "Elige un termostato BRC1H descubierto o introduce su dirección MAC Bluetooth. Ejecuta este flujo de nuevo para añadir más termostatos.\n\nLa conexión se prueba antes de añadir el dispositivo. Quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar. Consulta la documentación para los pasos de emparejamiento.",
         "data": {
           "address": "Termostato BRC1H",
-          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
+          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')",
+          "device_type": "Tipo de aparato"
         }
       },
       "bluetooth_confirm": {
         "title": "Termostato Daikin Madoka encontrado",
         "description": "¿Añadir {name} a Home Assistant?\n\nLa conexión se prueba primero. Quédate cerca del termostato: puede aparecer una solicitud de emparejamiento en su pantalla que habrá que confirmar.",
         "data": {
-          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')"
+          "friendly_name": "Nombre descriptivo (opcional, p. ej. 'Salón')",
+          "device_type": "Tipo de aparato"
         }
       },
       "reauth_confirm": {
@@ -60,6 +70,19 @@
     }
   },
   "entity": {
+    "climate": {
+      "madoka": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "ventilation_auto": "Auto",
+              "heat_exchange": "Intercambiador de calor",
+              "bypass": "Bypass"
+            }
+          }
+        }
+      }
+    },
     "sensor": {
       "indoor_temperature": {
         "name": "Temperatura interior"

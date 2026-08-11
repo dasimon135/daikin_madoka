@@ -1,0 +1,44 @@
+# Compile-check configuration: madoka_vam climate entity (Daikin VAM
+# ventilation unit behind a BRC1H).
+#
+# This file exists so `esphome config` / `esphome compile` can prove the
+# external component still builds. It is not a deployable configuration:
+# there is no wifi/api/ota block and the MAC address is a placeholder.
+
+esphome:
+  name: madoka-vam
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+  level: DEBUG
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [madoka_vam]
+
+esp32_ble_tracker:
+  id: ble_tracker
+
+ble_client:
+  - mac_address: "F0:B3:1E:87:AF:FE"
+    id: madoka_vam_test
+
+climate:
+  - platform: madoka_vam
+    name: "Madoka VAM"
+    ble_client_id: madoka_vam_test
+    update_interval: 15s
+    clean_filter:
+      name: "VAM Clean Filter"
+    firmware_version:
+      name: "VAM Firmware"
+    eye_brightness:
+      name: "VAM Eye Brightness"
+    reset_filter:
+      name: "VAM Reset Filter"

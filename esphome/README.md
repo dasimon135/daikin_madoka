@@ -13,6 +13,7 @@ Ce dossier contient les composants ESPHome personnalisés pour contrôler les th
 ## Composants inclus
 
 - **madoka** : Composant climate pour contrôler les thermostats Madoka
+- **madoka_vam** : Composant climate pour les unités de ventilation Daikin VAM (VMC double flux / récupération de chaleur), pilotées par le même contrôleur BRC1H
 
 ## Installation
 
@@ -179,15 +180,71 @@ Chaque bloc `climate: - platform: madoka` peut maintenant exposer des entites au
 - `eye_brightness`: number (0-19) pour regler la luminosite de la LED facade
 - `reset_filter`: button pour acquitter l'alerte filtre et reinitialiser le timer
 
+## Composant madoka_vam (ventilation VAM)
+
+Pour une unité de **ventilation Daikin VAM** (VMC double flux / récupération de
+chaleur), utilisez la plateforme dédiée **`madoka_vam`** au lieu de `madoka`. Le
+VAM est piloté par le même contrôleur BRC1H, sur le même service BLE, mais ne
+fait que ventiler : mode d'opération `5` (VENTILATION), sans consigne de
+température.
+
+Entités exposées : modes **Off** / **Fan only**, vitesse de ventilation
+(LOW/HIGH), preset de mode de ventilation (*Auto*, *Heat exchange*, *Bypass*),
+température courante. Le VAM est une unité intérieure : il n'expose pas de
+capteur de température extérieure. Options : `firmware_version` (text sensor),
+`dump_raw` (booléen).
+
+La vitesse et le mode de ventilation sont portés par la fonction BLE `0x0031`
+(arguments `0x21` et `0x20`), et non par la fonction `0x0050` du thermostat.
+
+```yaml
+external_components:
+  - source:
+      type: local
+      path: /config/esphome/esphome_components  # Ajustez le chemin selon votre config
+    components: [ madoka_vam ]
+
+esp32_ble_tracker:
+  max_connections: 2
+
+bluetooth_proxy:
+  active: false
+
+ble_client:
+  - mac_address: "AA:BB:CC:DD:EE:FF"  # Adresse MAC de votre VAM
+    id: vam_client
+    on_disconnect:
+      then:
+        - ble_client.connect: vam_client
+
+climate:
+  - platform: madoka_vam
+    name: "Ventilation VAM"
+    ble_client_id: vam_client
+    update_interval: 15s
+    firmware_version:
+      name: "VAM Firmware"
+    dump_raw: false  # passez à true pour journaliser les trames BLE (reverse engineering)
+```
+
+Le drapeau `dump_raw: true` journalise en hexadécimal chaque trame BLE ainsi que
+toute fonction inconnue reçue — utile pour cartographier les fonctions
+spécifiques au VAM. Voir [../docs/reverse-engineering-vam.md](../docs/reverse-engineering-vam.md).
+
 ## Structure des fichiers
 
 ```
 esphome_components/
-└── madoka/
+├── madoka/
+│   ├── __init__.py
+│   ├── climate.py
+│   ├── madoka.cpp
+│   └── madoka.h
+└── madoka_vam/
     ├── __init__.py
     ├── climate.py
-    ├── madoka.cpp
-    └── madoka.h
+    ├── madoka_vam.cpp
+    └── madoka_vam.h
 ```
 
 ## Ré-appairage avec le téléphone

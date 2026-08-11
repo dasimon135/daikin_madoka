@@ -1,0 +1,146 @@
+{
+  "selector": {
+    "device_type": {
+      "options": {
+        "thermostat": "Termostato (riscaldamento / raffrescamento)",
+        "ventilation": "Solo ventilazione (VAM / HRV)"
+      }
+    }
+  },
+  "config": {
+    "flow_title": "{name}",
+    "abort": {
+      "already_configured": "Questo termostato è già configurato",
+      "already_in_progress": "Una configurazione è già in corso",
+      "weak_signal": "Segnale troppo debole — il dispositivo è probabilmente fuori dalla tua abitazione.",
+      "reconfigure_successful": "Riconfigurazione riuscita",
+      "reconfigure_legacy": "Questa voce legacy comprende più termostati e non può essere riconfigurata. Rimuovila e aggiungi ogni termostato singolarmente.",
+      "reauth_successful": "Nuova associazione riuscita"
+    },
+    "error": {
+      "not_a_mac": "Formato dell'indirizzo MAC errato (es. AA:BB:CC:DD:EE:FF)",
+      "cannot_connect": "Impossibile connettersi al termostato. Verifica che sia alimentato e a portata di un Bluetooth proxy, quindi riprova.",
+      "pairing_failed": "Il termostato ha rifiutato la connessione: probabilmente una richiesta di associazione è in attesa sul suo schermo. Resta vicino al termostato, conferma la richiesta e riprova."
+    },
+    "step": {
+      "user": {
+        "title": "Configura Daikin Madoka",
+        "description": "Scegli un termostato BRC1H rilevato oppure inserisci il suo indirizzo MAC Bluetooth. Esegui di nuovo questa procedura per aggiungere altri termostati.\n\nLa connessione viene verificata prima di aggiungere il dispositivo. Resta vicino al termostato: sul suo schermo può comparire una richiesta di associazione da confermare. Consulta la documentazione per i passaggi di associazione.",
+        "data": {
+          "address": "Termostato BRC1H",
+          "friendly_name": "Nome descrittivo (facoltativo, es. 'Soggiorno')",
+          "device_type": "Tipo di apparecchio"
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Termostato Daikin Madoka rilevato",
+        "description": "Aggiungere {name} a Home Assistant?\n\nLa connessione viene prima verificata. Resta vicino al termostato: sul suo schermo può comparire una richiesta di associazione da confermare.",
+        "data": {
+          "friendly_name": "Nome descrittivo (facoltativo, es. 'Soggiorno')",
+          "device_type": "Tipo di apparecchio"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Associa di nuovo {name}",
+        "description": "{name} ha rifiutato il collegamento Bluetooth, quindi Home Assistant non riesce più a comunicare con esso. Per associarlo di nuovo devi trovarti davanti al termostato.\n\nMettiti davanti a {name}, premi Invia, quindi accetta la richiesta di associazione che compare sul suo schermo (confronta il codice a 6 cifre). Hai circa un minuto di tempo. Un'associazione vale per un solo proxy Bluetooth, quindi potrebbe essere necessario ripeterla in seguito per un altro proxy."
+      },
+      "reconfigure": {
+        "title": "Riconfigura Daikin Madoka",
+        "description": "Aggiorna l'indirizzo MAC Bluetooth del termostato o il suo nome descrittivo. Se il MAC cambia, viene prima convalidato con una prova di connessione — resta vicino al termostato: sul suo schermo può comparire una richiesta di associazione da confermare.",
+        "data": {
+          "address": "Indirizzo MAC Bluetooth",
+          "friendly_name": "Nome descrittivo (facoltativo, es. 'Soggiorno')"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni Daikin Madoka",
+        "data": {
+          "scan_interval": "Intervallo di interrogazione (secondi)"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Impossibile eseguire «{action}» su {device}: connessione Bluetooth non disponibile"
+    }
+  },
+  "entity": {
+    "climate": {
+      "madoka": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "ventilation_auto": "Auto",
+              "heat_exchange": "Recupero energetico",
+              "bypass": "Bypass"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "indoor_temperature": {
+        "name": "Temperatura interna"
+      },
+      "outdoor_temperature": {
+        "name": "Temperatura esterna"
+      },
+      "rssi": {
+        "name": "Potenza del segnale"
+      },
+      "operating_time": {
+        "name": "Tempo di funzionamento"
+      },
+      "connection_source": {
+        "name": "Origine della connessione"
+      },
+      "connection_status": {
+        "name": "Stato della connessione",
+        "state": {
+          "connected": "Connesso",
+          "retrying": "Nuovo tentativo",
+          "pairing_slow": "Associazione non completata",
+          "needs_pairing": "Associazione necessaria",
+          "not_advertising": "Non rilevato da alcun proxy"
+        }
+      }
+    },
+    "binary_sensor": {
+      "clean_filter": {
+        "name": "Pulizia filtro"
+      }
+    },
+    "button": {
+      "reset_filter": {
+        "name": "Azzera contatore filtro"
+      },
+      "reconnect": {
+        "name": "Riconnetti"
+      }
+    },
+    "number": {
+      "eye_brightness": {
+        "name": "Luminosità della spia"
+      }
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "{device} non è raggiungibile",
+      "description": "Da un po' di tempo Home Assistant non riesce a raggiungere il termostato {device}. Verifica che sia alimentato e a portata Bluetooth. Se ti colleghi tramite un proxy Bluetooth ESPHome, il proxy deve essere flashato con il supporto all'associazione e il termostato deve essere associato ad esso — vedi la documentazione. Puoi anche provare il pulsante Riconnetti del dispositivo."
+    },
+    "pairing_required": {
+      "title": "{device} rifiuta la connessione Bluetooth",
+      "description": "Tutti i percorsi Bluetooth verso {device} sono stati rifiutati perché il proxy non è associato ad esso (tentativi tramite: {proxies}). I tentativi di connessione automatici sono ora sospesi per non sommergere il termostato di richieste di associazione che non può completare. Mettiti davanti al termostato, premi il pulsante Riconnetti del dispositivo in Home Assistant e conferma la richiesta di associazione sul suo schermo — necessaria una volta per ogni proxy. Consulta la documentazione sull'associazione per i dettagli."
+    },
+    "pairing_slow": {
+      "title": "{device} non completa l'associazione Bluetooth",
+      "description": "Le connessioni verso {device} scadono di continuo mentre viene stabilita l'associazione Bluetooth (tentativi tramite: {proxies}). Questo non dimostra che il termostato abbia rifiutato qualcosa — anche un proxy sovraccarico produce lo stesso sintomo — perciò Home Assistant continua a provare, ma molto più di rado, per non sommergere il termostato di richieste di associazione. Se non si ripristina da solo: mettiti davanti al termostato, premi il pulsante Riconnetti del dispositivo in Home Assistant e conferma la richiesta di associazione sul suo schermo. Consulta la documentazione sull'associazione per i dettagli."
+    }
+  }
+}

@@ -17,12 +17,14 @@ from homeassistant.components.climate import (
 from homeassistant.components.climate.const import (
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
+    FAN_AUTO,
     FAN_HIGH,
     FAN_LOW,
+    FAN_MEDIUM,
 )
 from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.daikin_madoka.climate import (
     DAIKIN_TO_HA_MODE,
@@ -31,11 +33,17 @@ from custom_components.daikin_madoka.climate import (
 )
 from custom_components.daikin_madoka.const import (
     CONF_MAC,
+    DEFAULT_DEVICE_TYPE,
+    DEVICE_TYPE_VENTILATION,
     DOMAIN,
     MAX_TEMP,
     MIN_TEMP,
 )
 from custom_components.daikin_madoka.coordinator import MadokaCoordinator
+from custom_components.daikin_madoka.ventilation import (
+    VentilationModeEnum,
+    VentilationStatus,
+)
 
 MAC = "D0:CF:13:0F:11:F6"
 
@@ -83,8 +91,28 @@ def _mock_controller() -> MagicMock:
     return controller
 
 
+def _mock_ventilation_controller(
+    ventilation_mode: VentilationModeEnum | None = VentilationModeEnum.AUTO,
+    fan_speed: FanSpeedEnum | None = FanSpeedEnum.LOW,
+    supported_modes: int | None = 0x07,
+) -> MagicMock:
+    """Controller for a VAM: operation mode VENTILATION plus function 0x0031."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.VENTILATION
+    )
+    status = VentilationStatus(ventilation_mode, fan_speed)
+    status.supported_modes = supported_modes
+    controller.ventilation = MagicMock()
+    controller.ventilation.status = status
+    controller.ventilation.update = AsyncMock()
+    return controller
+
+
 def _entity(
-    hass: HomeAssistant, controller: MagicMock
+    hass: HomeAssistant,
+    controller: MagicMock,
+    device_type: str = DEFAULT_DEVICE_TYPE,
 ) -> DaikinMadokaClimate:
     """Climate entity on a coordinator bound to an entry, boost stubbed out."""
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC})
@@ -97,7 +125,7 @@ def _entity(
     # Write tests only assert the device command; the refresh boost would
     # schedule timers and re-poll the mocked controller for nothing.
     coordinator.async_boost = AsyncMock()
-    entity = DaikinMadokaClimate(coordinator)
+    entity = DaikinMadokaClimate(coordinator, device_type)
     entity.hass = hass
     return entity
 
@@ -200,6 +228,144 @@ async def test_set_fan_mode_writes_both_speeds(hass: HomeAssistant) -> None:
     status = controller.fan_speed.update.call_args[0][0]
     assert status.cooling_fan_speed is FanSpeedEnum.LOW
     assert status.heating_fan_speed is FanSpeedEnum.LOW
+
+
+async def test_ventilation_offers_two_fan_speeds(hass: HomeAssistant) -> None:
+    """A VAM runs at LOW or HIGH; it ignores a write of anything else."""
+    entity = _entity(hass, _mock_controller(), DEVICE_TYPE_VENTILATION)
+
+    assert entity.fan_modes == [FAN_LOW, FAN_HIGH]
+
+
+async def test_thermostat_keeps_all_fan_speeds(hass: HomeAssistant) -> None:
+    """Restricting the VAM must not narrow a thermostat's fan modes."""
+    entity = _entity(hass, _mock_controller())
+
+    assert entity.fan_modes == [FAN_LOW, FAN_MEDIUM, FAN_HIGH, FAN_AUTO]
+
+
+# --- Ventilation (VAM, function 0x0031) ------------------------------------
+
+
+async def test_ventilation_fan_mode_reads_function_0031(
+    hass: HomeAssistant,
+) -> None:
+    """Fan speed must come from 0x0031, not from the inert 0x0050."""
+    controller = _mock_ventilation_controller(fan_speed=FanSpeedEnum.HIGH)
+    # 0x0050 answers on a VAM but never changes; reading it would report LOW.
+    controller.fan_speed.status = SimpleNamespace(
+        cooling_fan_speed=FanSpeedEnum.LOW, heating_fan_speed=FanSpeedEnum.LOW
+    )
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    assert entity.fan_mode == FAN_HIGH
+
+
+async def test_ventilation_fan_mode_is_unknown_without_a_status(
+    hass: HomeAssistant,
+) -> None:
+    controller = _mock_ventilation_controller()
+    controller.ventilation.status = None
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    assert entity.fan_mode is None
+
+
+async def test_ventilation_fan_mode_ignores_a_speed_it_does_not_offer(
+    hass: HomeAssistant,
+) -> None:
+    """Reporting a mode outside fan_modes makes HA log an invalid state."""
+    controller = _mock_ventilation_controller(fan_speed=FanSpeedEnum.MID)
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    assert entity.fan_mode is None
+
+
+async def test_ventilation_set_hvac_mode_rejects_an_unsupported_mode(
+    hass: HomeAssistant,
+) -> None:
+    """A mode with no Daikin equivalent must fail, not write a null mode."""
+    controller = _mock_ventilation_controller()
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    with pytest.raises(ServiceValidationError):
+        await entity.async_set_hvac_mode(HVACMode.HEAT)
+
+    controller.operation_mode.update.assert_not_called()
+    controller.power_state.update.assert_not_called()
+
+
+async def test_ventilation_set_fan_mode_writes_only_the_speed(
+    hass: HomeAssistant,
+) -> None:
+    """The unit applies whatever it is sent, so the mode must not ride along."""
+    controller = _mock_ventilation_controller()
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    await entity.async_set_fan_mode(FAN_HIGH)
+
+    controller.fan_speed.update.assert_not_called()
+    status = controller.ventilation.update.call_args[0][0]
+    assert status.fan_speed is FanSpeedEnum.HIGH
+    assert status.ventilation_mode is None
+
+
+async def test_ventilation_exposes_the_mode_as_a_preset(
+    hass: HomeAssistant,
+) -> None:
+    entity = _entity(
+        hass,
+        _mock_ventilation_controller(VentilationModeEnum.BYPASS),
+        DEVICE_TYPE_VENTILATION,
+    )
+
+    assert entity.preset_mode == "bypass"
+    assert entity.preset_modes == ["ventilation_auto", "heat_exchange", "bypass"]
+    assert ClimateEntityFeature.PRESET_MODE in entity.supported_features
+
+
+async def test_ventilation_presets_follow_the_supported_mask(
+    hass: HomeAssistant,
+) -> None:
+    """Argument 0x12 says which modes the unit actually has."""
+    entity = _entity(
+        hass,
+        _mock_ventilation_controller(supported_modes=0x03),
+        DEVICE_TYPE_VENTILATION,
+    )
+
+    assert entity.preset_modes == ["ventilation_auto", "heat_exchange"]
+
+
+async def test_ventilation_set_preset_writes_only_the_mode(
+    hass: HomeAssistant,
+) -> None:
+    controller = _mock_ventilation_controller()
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    await entity.async_set_preset_mode("heat_exchange")
+
+    status = controller.ventilation.update.call_args[0][0]
+    assert status.ventilation_mode is VentilationModeEnum.HEAT_EXCHANGE
+    assert status.fan_speed is None
+
+
+async def test_ventilation_ignores_an_unknown_preset(hass: HomeAssistant) -> None:
+    controller = _mock_ventilation_controller()
+    entity = _entity(hass, controller, DEVICE_TYPE_VENTILATION)
+
+    await entity.async_set_preset_mode("turbo")
+
+    controller.ventilation.update.assert_not_called()
+
+
+async def test_thermostat_has_no_preset(hass: HomeAssistant) -> None:
+    """Presets are the VAM's air routing; a thermostat has nothing to put there."""
+    entity = _entity(hass, _mock_controller())
+
+    assert entity.preset_modes is None
+    assert entity.preset_mode is None
+    assert ClimateEntityFeature.PRESET_MODE not in entity.supported_features
 
 
 # --- AUTO range / supported features ---------------------------------------

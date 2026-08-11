@@ -37,7 +37,7 @@ Copy `custom_components/daikin_madoka/` into your HA `custom_components/` direct
 
 ### Setup
 
-If a thermostat is advertising nearby (directly or via a Bluetooth proxy), Home Assistant will discover it and offer to add it — just confirm and optionally give it a name. Otherwise go to **Settings → Devices & Services → Add Integration → Daikin Madoka** and pick it from the dropdown (or type its MAC address).
+If a thermostat is advertising nearby (directly or via a Bluetooth proxy), Home Assistant will discover it and offer to add it — just confirm, optionally give it a name, and pick the **appliance type** (*thermostat* for a regular heat/cool unit, or *ventilation* for a VAM/HRV). Otherwise go to **Settings → Devices & Services → Add Integration → Daikin Madoka** and pick it from the dropdown (or type its MAC address).
 
 The poll interval (default 60 s) can be changed from the integration's **Configure** dialog.
 
@@ -46,7 +46,7 @@ The poll interval (default 60 s) can be changed from the integration's **Configu
 Each thermostat creates:
 - `climate.*` — thermostat (mode, setpoint, fan speed, current temperature; separate heating/cooling setpoints in AUTO mode when the device has range mode enabled)
 - `sensor.*_indoor_temperature` — indoor temperature
-- `sensor.*_outdoor_temperature` — outdoor temperature
+- `sensor.*_outdoor_temperature` — outdoor temperature (not created for ventilation units, which are indoor-only)
 - `sensor.*_operating_time` — cumulative hours the unit has been running (coarse, poll-interval granularity; persisted across restarts)
 - `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
 - `sensor.*_connection_source` — which BLE path serves the thermostat: active proxy while connected, preferred (bonded) proxy otherwise (diagnostic)
@@ -55,6 +55,18 @@ Each thermostat creates:
 - `button.*_reset_filter` — reset filter timer
 - `button.*_reconnect` — drop and re-establish the Bluetooth connection (diagnostic)
 - `number.*_eye_brightness` — display LED brightness 0–19
+
+### Ventilation units (VAM / HRV)
+
+If you set the appliance type to **ventilation**, the `climate.*` entity adapts
+to a VAM (Ventilation Air Management / heat-recovery unit): it exposes **Off** and
+**Fan only** modes, a **fan speed** (Low/High) and a **preset** selecting how the
+unit routes air — *Auto*, *Heat exchange* or *Bypass*. There is no temperature
+setpoint, since a VAM only ventilates. The unit is indoor-only, so no outdoor
+temperature sensor is created — the indoor temperature is reported by the
+`climate.*` entity and by `sensor.*_indoor_temperature`. Remaining VAM-specific
+features (filter, air quality) are not mapped yet —
+see [docs/reverse-engineering-vam.md](docs/reverse-engineering-vam.md) to help capture them.
 
 ### Requirements
 
@@ -248,6 +260,54 @@ Each thermostat creates:
 - `text_sensor.*_firmware_version` — firmware version (optional)
 - `number.*_eye_brightness` — display LED brightness 0–19 (optional)
 - `button.*_reset_filter` — reset filter timer (optional)
+
+### Ventilation units (VAM / HRV) — `madoka_vam` platform
+
+For a Daikin VAM (ventilation-only unit), use the dedicated **`madoka_vam`**
+platform instead of `madoka`. It exposes **Off** / **Fan only** modes, a fan
+speed (LOW/HIGH), a **preset** for the ventilation mode (*Auto*, *Heat
+exchange*, *Bypass*) and the current temperature — a VAM has no
+temperature setpoint.
+
+A VAM reports its airflow on BLE function `0x0031` (argument `0x21`, with the
+ventilation mode alongside in argument `0x20`), not on the `0x0050` function the
+thermostat uses; see
+[docs/reverse-engineering-vam.md](docs/reverse-engineering-vam.md#2-known-functions).
+
+```yaml
+external_components:
+  - source:
+      type: git
+      url: https://github.com/dasimon135/daikin_madoka
+      ref: v3.2.0        # replace with latest tag
+      path: esphome/components
+    components: [madoka_vam]
+
+esp32_ble:
+  io_capability: display_yes_no
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: "AA:BB:CC:DD:EE:FF"
+    id: vam_client
+    on_disconnect:
+      then:
+        - delay: 10s
+        - ble_client.connect: vam_client
+
+climate:
+  - platform: madoka_vam
+    name: "Ventilation"
+    ble_client_id: vam_client
+    update_interval: 15s
+    firmware_version:
+      name: "Firmware"
+    dump_raw: false        # set true to hex-log BLE frames (reverse engineering)
+```
+
+Set `dump_raw: true` to hex-log every BLE frame and any unhandled function ID —
+useful for mapping VAM-specific features. See [docs/reverse-engineering-vam.md](docs/reverse-engineering-vam.md).
 
 ### Pinning versions
 

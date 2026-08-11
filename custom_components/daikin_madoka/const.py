@@ -3,6 +3,15 @@
 DOMAIN = "daikin_madoka"
 CONF_MAC = "address"
 CONF_FRIENDLY_NAME = "friendly_name"
+
+# Appliance driven by the BRC1H. A "thermostat" is a regular heat/cool indoor
+# unit; a "ventilation" unit is a VAM (Ventilation Air Management / HRV) which
+# only ventilates (operation mode 5 = VENTILATION, no heating/cooling setpoint).
+CONF_DEVICE_TYPE = "device_type"
+DEVICE_TYPE_THERMOSTAT = "thermostat"
+DEVICE_TYPE_VENTILATION = "ventilation"
+DEFAULT_DEVICE_TYPE = DEVICE_TYPE_THERMOSTAT
+
 # Source (proxy) MAC of the path that last authenticated successfully; the
 # candidates list is ordered sticky-first so reconnects go back to the bonded
 # proxy instead of whichever proxy wins on RSSI.

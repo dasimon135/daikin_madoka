@@ -1,4 +1,12 @@
 {
+  "selector": {
+    "device_type": {
+      "options": {
+        "thermostat": "Thermostat (chauffage / climatisation)",
+        "ventilation": "Ventilation seule (VAM / HRV)"
+      }
+    }
+  },
   "config": {
     "flow_title": "{name}",
     "abort": {
@@ -20,14 +28,16 @@
         "description": "Choisissez un thermostat BRC1H détecté ou saisissez son adresse MAC Bluetooth. Relancez ce flux pour ajouter d'autres thermostats.\n\nLa connexion est testée avant l'ajout de l'appareil. Restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée. Consultez la documentation pour l'appairage.",
         "data": {
           "address": "Thermostat BRC1H",
-          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
+          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)",
+          "device_type": "Type d'appareil"
         }
       },
       "bluetooth_confirm": {
         "title": "Thermostat Daikin Madoka détecté",
         "description": "Ajouter {name} à Home Assistant ?\n\nLa connexion est d'abord testée. Restez près du thermostat : une invite d'appairage peut apparaître sur son écran et devoir être confirmée.",
         "data": {
-          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)"
+          "friendly_name": "Nom convivial (optionnel, ex. « Salon »)",
+          "device_type": "Type d'appareil"
         }
       },
       "reauth_confirm": {
@@ -60,6 +70,19 @@
     }
   },
   "entity": {
+    "climate": {
+      "madoka": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "ventilation_auto": "Auto",
+              "heat_exchange": "Échangeur de chaleur",
+              "bypass": "Bypass"
+            }
+          }
+        }
+      }
+    },
     "sensor": {
       "indoor_temperature": {
         "name": "Température intérieure"

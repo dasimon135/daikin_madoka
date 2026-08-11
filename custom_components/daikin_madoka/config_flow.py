@@ -29,11 +29,15 @@ from homeassistant.helpers.selector import (
 from .const import (
     BRC1H_NAME_PREFIX,
     CONF_BONDED_SOURCES,
+    CONF_DEVICE_TYPE,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PAIRING_STATE,
     CONF_PREFERRED_SOURCE,
+    DEFAULT_DEVICE_TYPE,
     DEFAULT_SCAN_INTERVAL,
+    DEVICE_TYPE_THERMOSTAT,
+    DEVICE_TYPE_VENTILATION,
     DOMAIN,
     MADOKA_SERVICE_UUID,
     PAIRING_WINDOW_TIMEOUT,
@@ -58,6 +62,17 @@ CONNECTION_STATE_KEYS = (
     CONF_BONDED_SOURCES,
     CONF_PAIRING_STATE,
 )
+
+
+def _device_type_selector() -> SelectSelector:
+    """Selector for the appliance type (thermostat vs ventilation/VAM)."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[DEVICE_TYPE_THERMOSTAT, DEVICE_TYPE_VENTILATION],
+            translation_key="device_type",
+            mode=SelectSelectorMode.LIST,
+        )
+    )
 
 
 class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -108,17 +123,25 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 ),
                 vol.Optional(CONF_FRIENDLY_NAME, default=""): str,
+                vol.Required(
+                    CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE
+                ): _device_type_selector(),
             }
         )
 
     async def _create_entry(
-        self, mac: str, friendly_name: str, preferred_source: str | None = None
+        self,
+        mac: str,
+        friendly_name: str,
+        device_type: str = DEFAULT_DEVICE_TYPE,
+        preferred_source: str | None = None,
     ) -> ConfigFlowResult:
         """Register new entry."""
         title = friendly_name.strip() or f"{BRC1H_NAME_PREFIX} {mac}"
         data: dict[str, Any] = {
             CONF_MAC: mac,
             CONF_FRIENDLY_NAME: friendly_name.strip(),
+            CONF_DEVICE_TYPE: device_type,
         }
         # Prime the sticky proxy with the path that just validated, so the
         # very first setup reconnects through the bonded proxy instead of
@@ -245,13 +268,21 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._create_entry(
                     mac,
                     user_input.get(CONF_FRIENDLY_NAME, ""),
+                    user_input.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
                     preferred_source=source,
                 )
             errors["base"] = error_key
 
         return self.async_show_form(
             step_id="bluetooth_confirm",
-            data_schema=vol.Schema({vol.Optional(CONF_FRIENDLY_NAME, default=""): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_FRIENDLY_NAME, default=""): str,
+                    vol.Required(
+                        CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE
+                    ): _device_type_selector(),
+                }
+            ),
             errors=errors,
             description_placeholders={
                 "name": self._discovery_info.name or self._discovery_info.address
@@ -281,6 +312,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self._create_entry(
                         mac,
                         user_input.get(CONF_FRIENDLY_NAME, ""),
+                        user_input.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
                         preferred_source=source,
                     )
                 errors["base"] = error_key
@@ -396,6 +428,13 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     data: dict[str, Any] = {
                         CONF_MAC: mac,
                         CONF_FRIENDLY_NAME: friendly,
+                        # Appliance type is a physical trait the reconfigure
+                        # form can't edit, and entry.data is replaced wholesale
+                        # here, so carry it through or a VAM silently reverts to
+                        # a thermostat on a mere rename.
+                        CONF_DEVICE_TYPE: entry.data.get(
+                            CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE
+                        ),
                     }
                     if mac_changed:
                         # A different thermostat: every bond, sticky proxy and

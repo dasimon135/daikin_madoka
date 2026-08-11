@@ -178,3 +178,30 @@ script:
 # 2. Vérifiez que les adresses MAC sont correctes avec 'bluetoothctl scan on'
 # 3. N'oubliez pas de copier le dossier esphome_components dans votre config ESPHome
 # 4. Le chemin 'path: esphome_components' doit être ajusté selon votre structure
+
+# ---------------------------------------------------------------------------
+# Unité de ventilation Daikin VAM (VMC double flux / récupération de chaleur)
+#
+# Un VAM est piloté par le même contrôleur BRC1H, sur le même service BLE, mais
+# ne fait que ventiler (mode 5 = VENTILATION, sans consigne de température).
+# Utilisez la plateforme dédiée 'madoka_vam' et ajoutez-la à la liste
+# 'external_components: components' (ex: components: [ madoka, madoka_vam ]).
+#
+# Exemple (décommentez et adaptez l'adresse MAC) :
+#
+# ble_client:
+#   - mac_address: "AA:BB:CC:DD:EE:FF"  # Adresse MAC de votre VAM
+#     id: vam_client
+#     on_disconnect:
+#       then:
+#         - ble_client.connect: vam_client
+#
+# climate:
+#   - platform: madoka_vam
+#     name: "Ventilation VAM"
+#     ble_client_id: vam_client
+#     update_interval: 15s
+#     firmware_version:
+#       name: "VAM Firmware"
+#     dump_raw: false  # true = journalise les trames BLE (reverse engineering VAM)
+# ---------------------------------------------------------------------------

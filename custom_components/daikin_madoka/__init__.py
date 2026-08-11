@@ -11,10 +11,13 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_BONDED_SOURCES,
+    CONF_DEVICE_TYPE,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
+    DEFAULT_DEVICE_TYPE,
     DEFAULT_SCAN_INTERVAL,
+    DEVICE_TYPE_VENTILATION,
     DOMAIN,
 )
 from .coordinator import (
@@ -26,6 +29,7 @@ from .coordinator import (
 )
 from .frontend import async_register_card
 from .util import build_candidates, entry_macs, normalize_mac
+from .ventilation import Ventilation
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -154,6 +158,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             reconnect=False,
             candidates_callback=_candidates,
         )
+        # pymadoka-ng knows nothing about function 0x0031, so a VAM gets the
+        # feature attached here. Controller.update() walks vars(self) and
+        # queries anything that is a Feature, so this is enough to have it
+        # polled. Not attached to a thermostat: that one does not answer 0x0031
+        # at all, and every unanswered query costs a poll round trip.
+        if entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE) == (
+            DEVICE_TYPE_VENTILATION
+        ):
+            controller.ventilation = Ventilation(controller.connection)
         coordinator = MadokaCoordinator(
             hass, controller, scan_interval, friendly_name=friendly_name
         )
