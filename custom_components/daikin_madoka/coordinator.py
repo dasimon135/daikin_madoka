@@ -37,6 +37,7 @@ from .const import (
     ENERGY_PARAMETERS,
     ENERGY_PRIVILEGE_COMMAND,
     ENERGY_PRIVILEGE_PARAMETER,
+    ENERGY_SCAN_INTERVAL,
     MIN_PAIR_TIMEOUT,
     PAIRING_CONNECT_TIMEOUT,
     PAIRING_WINDOW_TIMEOUT,
@@ -115,6 +116,10 @@ class MadokaEnergyStatus(FeatureStatus):
 class MadokaEnergyConsumption(Feature):
     """Read the Madoka's internal energy counters over the active connection."""
 
+    def __init__(self, connection) -> None:
+        super().__init__(connection)
+        self._next_query = 0.0
+
     def query_cmd_id(self) -> int:
         return ENERGY_CONSUMPTION_COMMAND
 
@@ -124,49 +129,28 @@ class MadokaEnergyConsumption(Feature):
     def new_status(self) -> FeatureStatus:
         return MadokaEnergyStatus()
 
+    @property
+    def cache_is_fresh(self) -> bool:
+        """Return whether the last complete read is still fresh."""
+        return self.status is not None and monotonic() < self._next_query
+
     async def query(self) -> FeatureStatus:
         """Enable energy access, then request every counter separately."""
+        if self.cache_is_fresh:
+            return self.status
         await self._send_command(
             ENERGY_PRIVILEGE_COMMAND,
             bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
         )
         status = MadokaEnergyStatus()
-        for period, parameter in ENERGY_PARAMETERS.items():
-            future = await self.connection.send(
+        for parameter in ENERGY_PARAMETERS.values():
+            response = await self._send_command(
                 ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
             )
-            response = await asyncio.wait_for(future, timeout=8)
-            values = self._parse_values(bytearray(response))
-            raw = values.get(parameter)
-            if raw is None or len(raw) < 4:
-                continue
-            setattr(
-                status,
-                period,
-                tuple(
-                    round(struct.unpack_from("<I", raw, offset)[0] / 10, 1)
-                    for offset in range(0, len(raw) - len(raw) % 4, 4)
-                ),
-            )
+            status.parse(bytearray(response))
         self.status = status
+        self._next_query = monotonic() + ENERGY_SCAN_INTERVAL
         return status
-
-    @staticmethod
-    def _parse_values(response: bytearray) -> dict[int, bytearray]:
-        """Decode the Madoka UART parameter list from a command response."""
-        if len(response) < 4:
-            return {}
-        values: dict[int, bytearray] = {}
-        length = response[0]
-        index = 4
-        while index + 1 < min(len(response), length):
-            parameter = response[index]
-            size = response[index + 1]
-            if size == 0xFF:
-                size = 0
-            values[parameter] = response[index + 2 : index + 2 + size]
-            index += 2 + size
-        return values
 
 
 def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -656,6 +640,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 self._async_close_pairing_window()
                 raise
 
+        energy = self.controller.energy_consumption
+        use_cached_energy = energy.cache_is_fresh
+        if use_cached_energy:
+            # Controller.update() counts every Feature.query() return as a device
+            # answer. A cache hit performs no I/O, so do not let it make a fully
+            # unresponsive device look healthy. Restore it before refresh_status
+            # so the cached counters remain in the coordinator snapshot.
+            self.controller.energy_consumption = None
         try:
             async with asyncio.timeout(POLL_TIMEOUT):
                 await self.controller.update()
@@ -667,6 +659,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed(
                 f"Polling {self.address} exceeded {POLL_TIMEOUT}s"
             ) from err
+        finally:
+            if use_cached_energy:
+                self.controller.energy_consumption = energy
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.
