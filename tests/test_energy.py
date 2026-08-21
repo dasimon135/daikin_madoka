@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from pymadoka import ConnectionException
 from pymadoka.connection import ConnectionStatus
-from pymadoka.feature import ParseException
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
@@ -64,7 +63,8 @@ async def test_energy_query_uses_the_existing_authenticated_connection() -> None
         else:
             parameter = payload[0]
             future.set_result(
-                bytearray((10, 0, 1, 32, parameter, 4, 123, 0, 0, 0))
+                # Real Madoka energy frames overstate their rebuilt length.
+                bytearray((11, 0, 1, 32, parameter, 4, 123, 0, 0, 0))
             )
         return future
 
@@ -131,13 +131,13 @@ async def test_malformed_energy_response_is_not_cached() -> None:
         if command == ENERGY_PRIVILEGE_COMMAND:
             future.set_result(bytearray())
         else:
-            future.set_result(bytearray((11, 0, 1, 32, 64, 4, 123, 0, 0, 0)))
+            future.set_result(bytearray((10, 0, 1, 32, 64, 4, 123, 0, 0)))
         return future
 
     connection.send = AsyncMock(side_effect=_response)
     feature = MadokaEnergyConsumption(connection)
 
-    with pytest.raises(ParseException, match="Message size"):
+    with pytest.raises(ValueError, match="truncated"):
         await feature.query()
 
     assert feature.status is None
