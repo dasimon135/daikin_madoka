@@ -120,24 +120,51 @@ async def test_energy_timeout_discards_the_pending_pymadoka_request() -> None:
     )
 
 
-async def test_malformed_energy_response_is_not_cached() -> None:
-    """An incomplete protocol frame must not become five minutes of empty data."""
+async def test_energy_response_accepts_missing_trailing_breakdown_slots() -> None:
+    """The total remains usable when trailing period slots are omitted."""
     connection = MagicMock()
     connection.connection_status = ConnectionStatus.CONNECTED
     connection._operation_lock = asyncio.Lock()
 
-    def _response(command, _payload) -> asyncio.Future[bytearray]:
+    def _response(command, payload) -> asyncio.Future[bytearray]:
         future = asyncio.get_running_loop().create_future()
         if command == ENERGY_PRIVILEGE_COMMAND:
             future.set_result(bytearray())
         else:
-            future.set_result(bytearray((10, 0, 1, 32, 64, 4, 123, 0, 0)))
+            future.set_result(
+                bytearray((58, 0, 1, 32, payload[0], 52, 123, 0, 0, 0))
+            )
         return future
 
     connection.send = AsyncMock(side_effect=_response)
     feature = MadokaEnergyConsumption(connection)
 
-    with pytest.raises(ValueError, match="truncated"):
+    status = await feature.query()
+
+    assert status.energy_today == (12.3,)
+    assert feature.cache_is_fresh
+
+
+async def test_energy_response_without_complete_total_is_not_cached() -> None:
+    """A partial total must not become five minutes of invalid data."""
+    connection = MagicMock()
+    connection.connection_status = ConnectionStatus.CONNECTED
+    connection._operation_lock = asyncio.Lock()
+
+    def _response(command, payload) -> asyncio.Future[bytearray]:
+        future = asyncio.get_running_loop().create_future()
+        if command == ENERGY_PRIVILEGE_COMMAND:
+            future.set_result(bytearray())
+        else:
+            future.set_result(
+                bytearray((58, 0, 1, 32, payload[0], 52, 123, 0, 0))
+            )
+        return future
+
+    connection.send = AsyncMock(side_effect=_response)
+    feature = MadokaEnergyConsumption(connection)
+
+    with pytest.raises(ValueError, match="omitted parameter"):
         await feature.query()
 
     assert feature.status is None
