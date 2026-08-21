@@ -147,10 +147,33 @@ class MadokaEnergyConsumption(Feature):
             response = await self._send_command(
                 ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
             )
-            status.parse(bytearray(response))
+            values = self._parse_energy_values(bytearray(response))
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                raise ValueError(f"Energy response omitted parameter {parameter:#x}")
+            status.set_values({parameter: raw})
         self.status = status
         self._next_query = monotonic() + ENERGY_SCAN_INTERVAL
         return status
+
+    @staticmethod
+    def _parse_energy_values(response: bytearray) -> dict[int, bytearray]:
+        """Decode energy parameters without trusting the inaccurate size byte."""
+        if len(response) < 6:
+            raise ValueError("Energy response is too short")
+        values: dict[int, bytearray] = {}
+        index = 4
+        while index < len(response):
+            if index + 1 >= len(response):
+                raise ValueError("Energy response has a truncated parameter header")
+            parameter = response[index]
+            size = 0 if response[index + 1] == 0xFF else response[index + 1]
+            end = index + 2 + size
+            if end > len(response):
+                raise ValueError(f"Energy parameter {parameter:#x} is truncated")
+            values[parameter] = response[index + 2 : end]
+            index = end
+        return values
 
 
 def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
