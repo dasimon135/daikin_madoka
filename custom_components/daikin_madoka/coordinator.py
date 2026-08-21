@@ -170,7 +170,12 @@ class MadokaEnergyConsumption(Feature):
             size = 0 if response[index + 1] == 0xFF else response[index + 1]
             end = index + 2 + size
             if end > len(response):
-                raise ValueError(f"Energy parameter {parameter:#x} is truncated")
+                # The thermostat sometimes advertises the complete period
+                # breakdown but omits its trailing, not-yet-populated slots.
+                # Keep the available prefix; callers still require the full
+                # four-byte total before accepting this response.
+                values[parameter] = response[index + 2 :]
+                break
             values[parameter] = response[index + 2 : end]
             index = end
         return values
