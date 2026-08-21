@@ -41,6 +41,21 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
+# Madoka Assistant energy-consumption protocol. The counters are uint32 little
+# endian values in tenths of a kWh and are available only after this privileged
+# request on an authenticated connection.
+ENERGY_CONSUMPTION_COMMAND = 0x0120
+ENERGY_PRIVILEGE_COMMAND = 0x4112
+ENERGY_PRIVILEGE_PARAMETER = 0xFE
+ENERGY_SCAN_INTERVAL = 300
+ENERGY_PARAMETERS = {
+    "energy_today": 0x40,
+    "energy_yesterday": 0x41,
+    "energy_this_week": 0x42,
+    "energy_last_week": 0x43,
+    "energy_this_year": 0x44,
+    "energy_last_year": 0x45,
+}
 # Failed polls masked by serving the last good data instead of raising: a
 # one-off BLE micro-drop should not punch holes in graphs or flip entities
 # unavailable. Kept well below UNREACHABLE_THRESHOLD so a real outage still

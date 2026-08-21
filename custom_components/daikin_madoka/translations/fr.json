@@ -73,6 +73,24 @@
       "operating_time": {
         "name": "Temps de fonctionnement"
       },
+      "energy_today": {
+        "name": "Énergie aujourd'hui"
+      },
+      "energy_yesterday": {
+        "name": "Énergie hier"
+      },
+      "energy_this_week": {
+        "name": "Énergie cette semaine"
+      },
+      "energy_last_week": {
+        "name": "Énergie la semaine dernière"
+      },
+      "energy_this_year": {
+        "name": "Énergie cette année"
+      },
+      "energy_last_year": {
+        "name": "Énergie l'année dernière"
+      },
       "connection_source": {
         "name": "Source de connexion"
       },

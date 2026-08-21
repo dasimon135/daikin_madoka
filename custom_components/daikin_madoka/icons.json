@@ -13,6 +13,24 @@
       "operating_time": {
         "default": "mdi:timer-play-outline"
       },
+      "energy_today": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_yesterday": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_this_week": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_last_week": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_this_year": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_last_year": {
+        "default": "mdi:lightning-bolt"
+      },
       "connection_source": {
         "default": "mdi:transit-connection-variant"
       },

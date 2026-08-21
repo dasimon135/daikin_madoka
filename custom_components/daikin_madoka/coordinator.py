@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import struct
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -10,6 +11,7 @@ from typing import Any
 
 from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
+from pymadoka.feature import Feature, FeatureStatus
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -31,6 +33,11 @@ from .const import (
     CONF_PREFERRED_SOURCE,
     CONNECT_TIMEOUT,
     DOMAIN,
+    ENERGY_CONSUMPTION_COMMAND,
+    ENERGY_PARAMETERS,
+    ENERGY_PRIVILEGE_COMMAND,
+    ENERGY_PRIVILEGE_PARAMETER,
+    ENERGY_SCAN_INTERVAL,
     MIN_PAIR_TIMEOUT,
     PAIRING_CONNECT_TIMEOUT,
     PAIRING_WINDOW_TIMEOUT,
@@ -77,6 +84,101 @@ DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
 # perfectly valid bonds past its timeout.
 CONNECT_LOCK_KEY = f"{DOMAIN}_connect_lock"
 PAIRING_STATE_KEY = f"{DOMAIN}_pairing_state"
+
+
+class MadokaEnergyStatus(FeatureStatus):
+    """Energy counters reported by the Madoka in tenths of a kWh."""
+
+    def __init__(self) -> None:
+        for period in ENERGY_PARAMETERS:
+            setattr(self, period, None)
+
+    def get_values(self) -> dict[int, bytearray]:
+        """Request every counter in a single response."""
+        return {parameter: bytearray() for parameter in ENERGY_PARAMETERS.values()}
+
+    def set_values(self, values: dict[int, bytearray]) -> None:
+        """Decode each counter's total and optional period breakdown."""
+        for period, parameter in ENERGY_PARAMETERS.items():
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                continue
+            setattr(
+                self,
+                period,
+                tuple(
+                    round(struct.unpack_from("<I", raw, offset)[0] / 10, 1)
+                    for offset in range(0, len(raw) - len(raw) % 4, 4)
+                ),
+            )
+
+
+class MadokaEnergyConsumption(Feature):
+    """Read the Madoka's internal energy counters over the active connection."""
+
+    def __init__(self, connection) -> None:
+        super().__init__(connection)
+        self._next_query = 0.0
+
+    def query_cmd_id(self) -> int:
+        return ENERGY_CONSUMPTION_COMMAND
+
+    def update_cmd_id(self) -> int:
+        raise NotImplementedError
+
+    def new_status(self) -> FeatureStatus:
+        return MadokaEnergyStatus()
+
+    @property
+    def cache_is_fresh(self) -> bool:
+        """Return whether the last complete read is still fresh."""
+        return self.status is not None and monotonic() < self._next_query
+
+    async def query(self) -> FeatureStatus:
+        """Enable energy access, then request every counter separately."""
+        if self.cache_is_fresh:
+            return self.status
+        await self._send_command(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        )
+        status = MadokaEnergyStatus()
+        for parameter in ENERGY_PARAMETERS.values():
+            response = await self._send_command(
+                ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
+            )
+            values = self._parse_energy_values(bytearray(response))
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                raise ValueError(f"Energy response omitted parameter {parameter:#x}")
+            status.set_values({parameter: raw})
+        self.status = status
+        self._next_query = monotonic() + ENERGY_SCAN_INTERVAL
+        return status
+
+    @staticmethod
+    def _parse_energy_values(response: bytearray) -> dict[int, bytearray]:
+        """Decode energy parameters without trusting the inaccurate size byte."""
+        if len(response) < 6:
+            raise ValueError("Energy response is too short")
+        values: dict[int, bytearray] = {}
+        index = 4
+        while index < len(response):
+            if index + 1 >= len(response):
+                raise ValueError("Energy response has a truncated parameter header")
+            parameter = response[index]
+            size = 0 if response[index + 1] == 0xFF else response[index + 1]
+            end = index + 2 + size
+            if end > len(response):
+                # The thermostat sometimes advertises the complete period
+                # breakdown but omits its trailing, not-yet-populated slots.
+                # Keep the available prefix; callers still require the full
+                # four-byte total before accepting this response.
+                values[parameter] = response[index + 2 :]
+                break
+            values[parameter] = response[index + 2 : end]
+            index = end
+        return values
 
 
 def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -363,6 +465,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     ) -> None:
         """Initialize the coordinator."""
         self.controller = controller
+        # Make energy another controller feature so Controller.update() queries
+        # it on the authenticated BLE session it already owns.
+        controller.energy_consumption = MadokaEnergyConsumption(controller.connection)
         # The BLE stack overwrites controller.connection.name with the
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
@@ -563,6 +668,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 self._async_close_pairing_window()
                 raise
 
+        energy = self.controller.energy_consumption
+        use_cached_energy = energy.cache_is_fresh
+        if use_cached_energy:
+            # Controller.update() counts every Feature.query() return as a device
+            # answer. A cache hit performs no I/O, so do not let it make a fully
+            # unresponsive device look healthy. Restore it before refresh_status
+            # so the cached counters remain in the coordinator snapshot.
+            self.controller.energy_consumption = None
         try:
             async with asyncio.timeout(POLL_TIMEOUT):
                 await self.controller.update()
@@ -574,6 +687,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed(
                 f"Polling {self.address} exceeded {POLL_TIMEOUT}s"
             ) from err
+        finally:
+            if use_cached_energy:
+                self.controller.energy_consumption = energy
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.

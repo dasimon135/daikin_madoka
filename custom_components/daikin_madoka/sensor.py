@@ -1,6 +1,8 @@
 """Support for Daikin Madoka sensors."""
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Final
 
 from pymadoka.connection import ConnectionStatus
 
@@ -14,6 +16,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
+    UnitOfEnergy,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -21,7 +24,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_PREFERRED_SOURCE
+from .const import CONF_PREFERRED_SOURCE, ENERGY_PARAMETERS
 from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
@@ -38,6 +41,10 @@ async def async_setup_entry(
         entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
+        entities.extend(
+            MadokaEnergySensor(coordinator, description)
+            for description in ENERGY_SENSORS
+        )
         entities.append(MadokaConnectionSourceSensor(coordinator))
         entities.append(MadokaConnectionStatusSensor(coordinator))
     async_add_entities(entities)
@@ -69,6 +76,44 @@ class MadokaTemperatureSensor(MadokaEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+
+@dataclass(frozen=True)
+class MadokaEnergySensorDescription:
+    """Description of one period reported by the Madoka energy counter."""
+
+    key: str
+    translation_key: str
+
+
+ENERGY_SENSORS: Final = tuple(
+    MadokaEnergySensorDescription(key, key) for key in ENERGY_PARAMETERS
+)
+
+
+class MadokaEnergySensor(MadokaEntity, SensorEntity):
+    """A consumption total retained by the thermostat itself."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: MadokaCoordinator,
+        description: MadokaEnergySensorDescription,
+    ) -> None:
+        super().__init__(coordinator, description.key)
+        self._attr_translation_key = description.translation_key
+        self._period = description.key
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the period total, if the controller supports energy data."""
+        energy = (self.coordinator.data or {}).get("energy_consumption", {})
+        values = energy.get(self._period)
+        return values[0] if values else None
 
 
 class MadokaIndoorSensor(MadokaTemperatureSensor):
