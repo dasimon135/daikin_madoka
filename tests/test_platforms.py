@@ -98,6 +98,12 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
         f"{MAC}_outdoor_temperature",
         f"{MAC}_rssi",
         f"{MAC}_operating_time",
+        f"{MAC}_energy_today",
+        f"{MAC}_energy_yesterday",
+        f"{MAC}_energy_this_week",
+        f"{MAC}_energy_last_week",
+        f"{MAC}_energy_this_year",
+        f"{MAC}_energy_last_year",
         f"{MAC}_connection_source",
         f"{MAC}_connection_status",
     }
@@ -117,6 +123,31 @@ async def test_temperature_sensors_report_controller_values(
     controller.temperatures.status = None
     assert by_id[f"{MAC}_indoor_temperature"].native_value is None
     assert by_id[f"{MAC}_outdoor_temperature"].native_value is None
+
+
+async def test_energy_sensors_report_controller_counter_totals(
+    hass: HomeAssistant,
+) -> None:
+    coordinator, entry = _coordinator(hass, _mock_controller())
+    coordinator.data = {
+        "energy_consumption": {
+            "energy_today": (12.3, 1.0),
+            "energy_yesterday": (9.8,),
+            "energy_this_week": (45.6,),
+            "energy_last_week": (41.2,),
+            "energy_this_year": (678.9,),
+            "energy_last_year": (1234.5,),
+        }
+    }
+    entities = await _setup_platform(sensor_platform, hass, coordinator, entry)
+    by_id = {entity.unique_id: entity for entity in entities}
+
+    assert by_id[f"{MAC}_energy_today"].native_value == 12.3
+    assert by_id[f"{MAC}_energy_yesterday"].native_value == 9.8
+    assert by_id[f"{MAC}_energy_this_week"].native_value == 45.6
+    assert by_id[f"{MAC}_energy_last_week"].native_value == 41.2
+    assert by_id[f"{MAC}_energy_this_year"].native_value == 678.9
+    assert by_id[f"{MAC}_energy_last_year"].native_value == 1234.5
 
 
 async def test_connection_source_shows_live_scanner_name(

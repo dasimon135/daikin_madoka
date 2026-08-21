@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import struct
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -10,6 +11,7 @@ from typing import Any
 
 from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
+from pymadoka.feature import Feature, FeatureStatus
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -31,6 +33,10 @@ from .const import (
     CONF_PREFERRED_SOURCE,
     CONNECT_TIMEOUT,
     DOMAIN,
+    ENERGY_CONSUMPTION_COMMAND,
+    ENERGY_PARAMETERS,
+    ENERGY_PRIVILEGE_COMMAND,
+    ENERGY_PRIVILEGE_PARAMETER,
     MIN_PAIR_TIMEOUT,
     PAIRING_CONNECT_TIMEOUT,
     PAIRING_WINDOW_TIMEOUT,
@@ -77,6 +83,90 @@ DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
 # perfectly valid bonds past its timeout.
 CONNECT_LOCK_KEY = f"{DOMAIN}_connect_lock"
 PAIRING_STATE_KEY = f"{DOMAIN}_pairing_state"
+
+
+class MadokaEnergyStatus(FeatureStatus):
+    """Energy counters reported by the Madoka in tenths of a kWh."""
+
+    def __init__(self) -> None:
+        for period in ENERGY_PARAMETERS:
+            setattr(self, period, None)
+
+    def get_values(self) -> dict[int, bytearray]:
+        """Request every counter in a single response."""
+        return {parameter: bytearray() for parameter in ENERGY_PARAMETERS.values()}
+
+    def set_values(self, values: dict[int, bytearray]) -> None:
+        """Decode each counter's total and optional period breakdown."""
+        for period, parameter in ENERGY_PARAMETERS.items():
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                continue
+            setattr(
+                self,
+                period,
+                tuple(
+                    round(struct.unpack_from("<I", raw, offset)[0] / 10, 1)
+                    for offset in range(0, len(raw) - len(raw) % 4, 4)
+                ),
+            )
+
+
+class MadokaEnergyConsumption(Feature):
+    """Read the Madoka's internal energy counters over the active connection."""
+
+    def query_cmd_id(self) -> int:
+        return ENERGY_CONSUMPTION_COMMAND
+
+    def update_cmd_id(self) -> int:
+        raise NotImplementedError
+
+    def new_status(self) -> FeatureStatus:
+        return MadokaEnergyStatus()
+
+    async def query(self) -> FeatureStatus:
+        """Enable energy access, then request every counter separately."""
+        await self._send_command(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        )
+        status = MadokaEnergyStatus()
+        for period, parameter in ENERGY_PARAMETERS.items():
+            future = await self.connection.send(
+                ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
+            )
+            response = await asyncio.wait_for(future, timeout=8)
+            values = self._parse_values(bytearray(response))
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                continue
+            setattr(
+                status,
+                period,
+                tuple(
+                    round(struct.unpack_from("<I", raw, offset)[0] / 10, 1)
+                    for offset in range(0, len(raw) - len(raw) % 4, 4)
+                ),
+            )
+        self.status = status
+        return status
+
+    @staticmethod
+    def _parse_values(response: bytearray) -> dict[int, bytearray]:
+        """Decode the Madoka UART parameter list from a command response."""
+        if len(response) < 4:
+            return {}
+        values: dict[int, bytearray] = {}
+        length = response[0]
+        index = 4
+        while index + 1 < min(len(response), length):
+            parameter = response[index]
+            size = response[index + 1]
+            if size == 0xFF:
+                size = 0
+            values[parameter] = response[index + 2 : index + 2 + size]
+            index += 2 + size
+        return values
 
 
 def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -363,6 +453,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     ) -> None:
         """Initialize the coordinator."""
         self.controller = controller
+        # Make energy another controller feature so Controller.update() queries
+        # it on the authenticated BLE session it already owns.
+        controller.energy_consumption = MadokaEnergyConsumption(controller.connection)
         # The BLE stack overwrites controller.connection.name with the
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name

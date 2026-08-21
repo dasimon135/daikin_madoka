@@ -48,6 +48,7 @@ Each thermostat creates:
 - `sensor.*_indoor_temperature` — indoor temperature
 - `sensor.*_outdoor_temperature` — outdoor temperature
 - `sensor.*_operating_time` — cumulative hours the unit has been running (coarse, poll-interval granularity; persisted across restarts)
+- `sensor.*_energy_*` — daily, weekly and yearly electricity consumption totals retained by the thermostat (when supported)
 - `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
 - `sensor.*_connection_source` — which BLE path serves the thermostat: active proxy while connected, preferred (bonded) proxy otherwise (diagnostic)
 - `sensor.*_connection_status` — `connected` / `retrying` / `pairing_slow` / `needs_pairing` / `not_advertising` (diagnostic). Tells the failures apart at a glance: `not_advertising` means no proxy can see the thermostat (range, power), `needs_pairing` means a proxy was explicitly refused and you must re-pair, `pairing_slow` means the handshake keeps timing out (often just a busy proxy). Like `signal_strength` and `connection_source`, it stays available while the thermostat does not — those three are what you read when everything else is `unavailable`.
