@@ -121,3 +121,29 @@ async def test_remove_device_refused_for_active_mac(hass: HomeAssistant) -> None
     device_entry = SimpleNamespace(identifiers={(DOMAIN, MAC), ("other", "x")})
 
     assert await async_remove_config_entry_device(hass, entry, device_entry) is False
+
+
+async def test_purge_survives_identifiers_with_more_than_two_elements(
+    hass: HomeAssistant,
+) -> None:
+    """A foreign device with a >2-element identifier does not break the sweep.
+
+    Identifier tuples are not fixed at two elements — rfxtrx registers four —
+    so the sweep must never destructure them. Before the fix this raised
+    ``ValueError: too many values to unpack`` and aborted setup entirely.
+    """
+    foreign = _add_entry(hass, domain="rfxtrx")
+    ours = _add_entry(hass)
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=foreign.entry_id,
+        identifiers={("rfxtrx", "11", "0", "1234567:1")},  # type: ignore[arg-type]
+    )
+    device = dev_reg.async_get_or_create(
+        config_entry_id=ours.entry_id, identifiers={(DOMAIN, MAC)}
+    )
+    _make_orphan(hass, ours)
+
+    _async_purge_orphan_devices(hass)
+
+    assert dev_reg.async_get(device.id) is None

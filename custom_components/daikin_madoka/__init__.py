@@ -50,7 +50,11 @@ def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
     """
     dev_reg = dr.async_get(hass)
     for device in list(dev_reg.devices.values()):
-        if not any(domain == DOMAIN for domain, _ in device.identifiers):
+        # Identifier tuples are not fixed at two elements — rfxtrx registers
+        # four — so match on the domain slot instead of destructuring, which
+        # raised ValueError and aborted setup for anyone running such an
+        # integration alongside this one.
+        if not any(identifier[:1] == (DOMAIN,) for identifier in device.identifiers):
             continue
         if any(
             hass.config_entries.async_get_entry(entry_id) is not None
