@@ -298,10 +298,12 @@ async def test_min_max_defaults_without_device_limits(
 # --- Setpoint writes -------------------------------------------------------
 
 
-async def test_set_temperature_in_cool_updates_cooling_only(
+async def test_set_temperature_in_cool_updates_cooling_only_when_range_capable(
     hass: HomeAssistant,
 ) -> None:
+    """A range-capable unit keeps its heating setpoint for AUTO."""
     controller = _mock_controller()
+    controller.set_point.status = _set_point_status(range_enabled=True)
     entity = _entity(hass, controller)
 
     await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.6})
@@ -311,13 +313,15 @@ async def test_set_temperature_in_cool_updates_cooling_only(
     assert status.heating_set_point == 22  # untouched
 
 
-async def test_set_temperature_in_heat_updates_heating_only(
+async def test_set_temperature_in_heat_updates_heating_only_when_range_capable(
     hass: HomeAssistant,
 ) -> None:
+    """A range-capable unit keeps its cooling setpoint for AUTO."""
     controller = _mock_controller()
     controller.operation_mode.status = SimpleNamespace(
         operation_mode=OperationModeEnum.HEAT
     )
+    controller.set_point.status = _set_point_status(range_enabled=True)
     entity = _entity(hass, controller)
 
     await entity.async_set_temperature(**{ATTR_TEMPERATURE: 19})
@@ -360,6 +364,43 @@ async def test_set_temperature_range_updates_both_setpoints(
     assert status.cooling_set_point == 26
     # The write echoes the device's own range mode instead of resetting it.
     assert status.range_enabled is True
+
+
+async def test_set_temperature_on_single_setpoint_unit_writes_both_in_cool(
+    hass: HomeAssistant,
+) -> None:
+    """A unit with range_enabled = 0 only accepts a matching setpoint pair.
+
+    Writing cooling alone leaves the pair mismatched, which the BRC1H rejects
+    silently: the frame is acknowledged and the setpoint never moves.
+    """
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(cooling=24, heating=24)
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 22})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.cooling_set_point == 22
+    assert status.heating_set_point == 22
+
+
+async def test_set_temperature_on_single_setpoint_unit_writes_both_in_heat(
+    hass: HomeAssistant,
+) -> None:
+    """Same in HEAT: the cooling setpoint has to follow, not stay behind."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    controller.set_point.status = _set_point_status(cooling=24, heating=24)
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 19})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.heating_set_point == 19
+    assert status.cooling_set_point == 19
 
 
 async def test_set_temperature_without_status_is_a_noop(

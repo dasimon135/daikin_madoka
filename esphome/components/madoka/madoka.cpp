@@ -116,23 +116,17 @@ void Madoka::control(const ClimateCall &call) {
     float target = *call.get_target_temperature();
     // The setpoint frame always carries both registers (0x20 cooling,
     // 0x21 heating): see the dual branch above and CMD_GET_SETPOINT in
-    // parse_cb_. A single-setpoint write therefore has to fill both slots:
-    // the register(s) the current mode actually uses get the new value, the
-    // other one is echoed back from the last poll so it is left untouched.
+    // parse_cb_. Both slots get the new value.
+    //
+    // Carrying the other register over from the last poll -- which this used
+    // to do, keyed on the active mode -- produces a mismatched pair, and a
+    // BRC1H that is not in range mode rejects that pair silently: the frame is
+    // acknowledged and the setpoint never moves. dual_setpoint is documented
+    // as "only if range mode is enabled on the BRC1H", so reaching this branch
+    // means the unit holds a single setpoint and the two registers must match.
     // Same rule as the native integration's async_set_temperature().
-    ClimateMode mode = this->mode;
-    if (call.get_mode().has_value()) {
-      mode = *call.get_mode();
-    }
-    float cooling = target;
-    float heating = target;
-    if (mode == climate::CLIMATE_MODE_HEAT) {
-      cooling = std::isnan(this->cooling_setpoint_) ? target : this->cooling_setpoint_;
-    } else if (mode == climate::CLIMATE_MODE_COOL) {
-      heating = std::isnan(this->heating_setpoint_) ? target : this->heating_setpoint_;
-    }
-    uint16_t target_cooling = cooling * 128;
-    uint16_t target_heating = heating * 128;
+    uint16_t target_cooling = target * 128;
+    uint16_t target_heating = target * 128;
     this->query_(
         CMD_SET_SETPOINT,
         std::vector<uint8_t>{0x20, 0x02, (uint8_t) ((target_cooling >> 8) & 0xFF), (uint8_t) (target_cooling & 0xFF),
