@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.9.1 - August 2026
+
+Two field reports, two fixes. Both came from users running configurations I do not have here.
+
+### Changing the temperature did nothing on a single-setpoint unit
+
+On a BRC1H configured for single-setpoint logic (*Setpoint logic → Single setpoint*, so `range_enabled = 0`), setting a target temperature from Home Assistant was a no-op: reads were correct, ON/OFF worked, the thermostat accepted the same change from its own screen — only the write from HA was dropped, and dropped in silence. The unit answers with its usual UPDATE frame and the immediate re-read returns the old value.
+
+The setpoint frame carries both registers, cooling and heating, and only the one belonging to the active mode was filled. In COOL that sent cooling = 22 alongside an unchanged heating = 24. A unit with `range_enabled = 0` never holds a mismatched pair and rejects a frame that asks it to — the same silent failure mode as the zeroed limits fixed in v2.4.0, one field over. AUTO was unaffected because both branches fired there, which is why this only ever showed in COOL and HEAT.
+
+Both setpoints are now written to the target whenever the unit is not range-capable. On a range-capable unit outside AUTO the previous behaviour is kept, so the setpoint that unit still uses in AUTO survives. The ESPHome component had the same bug in its single-setpoint branch and is fixed with it. ([#67](https://github.com/dasimon135/daikin_madoka/issues/67))
+
+### Setup no longer fails because of another integration's devices
+
+The orphan-device housekeeping pass assumed every device identifier in the Home Assistant registry held exactly two elements. They can hold more — `rfxtrx` uses four — and unpacking two names out of one raised `ValueError: too many values to unpack`. Since that pass runs on every entry setup, a single such device anywhere in the registry stopped this integration from starting at all. The domain is now read by index. ([#63](https://github.com/dasimon135/daikin_madoka/issues/63))
+
+### Upgrading
+
+Update via HACS and restart. Nothing to reconfigure; entity IDs and history are preserved. The bundled library stays at **pymadoka-ng 0.3.11**. ESPHome component users need to rebuild to pick up the setpoint fix.
+
 ## v3.9.0 - August 2026
 
 Requires **pymadoka-ng 0.3.11** (installed automatically).
