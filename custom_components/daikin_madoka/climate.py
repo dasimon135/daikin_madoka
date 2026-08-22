@@ -206,11 +206,22 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             new_status.cooling_set_point = round(target_high)
 
         if target is not None:
-            operation_mode = self.controller.operation_mode.status.operation_mode
-            if operation_mode != OperationModeEnum.HEAT:
+            if not self._set_point.range_enabled:
+                # A unit configured for single-setpoint logic (range_enabled = 0)
+                # never holds a mismatched pair, and rejects a frame that asks
+                # it to: the write is acknowledged and the setpoint does not
+                # move. Writing only the mode's own setpoint left the other one
+                # behind and made every change from HA a no-op on those units.
                 new_status.cooling_set_point = round(target)
-            if operation_mode != OperationModeEnum.COOL:
                 new_status.heating_set_point = round(target)
+            else:
+                # Range-capable unit outside AUTO: touch only the setpoint the
+                # current mode uses, so the other one survives for AUTO.
+                operation_mode = self.controller.operation_mode.status.operation_mode
+                if operation_mode != OperationModeEnum.HEAT:
+                    new_status.cooling_set_point = round(target)
+                if operation_mode != OperationModeEnum.COOL:
+                    new_status.heating_set_point = round(target)
 
         await self._async_execute(
             "set target temperature",
