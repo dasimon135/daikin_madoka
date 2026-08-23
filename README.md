@@ -330,6 +330,76 @@ entities:
 
 ---
 
+## Known limitations
+
+Things that are expected behaviour rather than defects, and open gaps worth
+knowing about before you open an issue. Connection and pairing problems have
+their own walkthrough above — see [When a thermostat stops connecting](#when-a-thermostat-stops-connecting).
+
+### Only the European BRC1H is validated
+
+Everything here is confirmed against a BRC1H. Other regional variants are **not
+verified**, and at least one behaves differently: on a **BRC1H71 (North
+America)** the Bluetooth link connects and pairs normally, but state reads come
+back wrong and commands have no effect — see
+[#62](https://github.com/dasimon135/daikin_madoka/issues/62), which is open.
+
+If you have a variant that is not a plain BRC1H, say so in your report and
+include the exact model marking. Do not assume a fix that worked on a BRC1H
+transfers.
+
+### An unattended reconnect can pick a proxy that holds no bond
+
+The bond is stored **per proxy**. Home Assistant's Bluetooth stack
+(`habluetooth`) chooses the connection path by signal strength, and that choice
+overrides the integration's preference for a proxy that is actually bonded. A
+reconnect happening while nobody is around can therefore land on an unbonded
+proxy, start a real pairing exchange, and wait for a confirmation on the
+thermostat's screen that never comes.
+
+The practical answer is the one in [Requirements](#requirements): give **every**
+proxy that can reach the thermostat the pairing YAML, and accept its one-time
+prompt. `sensor.*_connection_status` shows `needs_pairing` when this is what
+happened.
+
+Tracked in [#58](https://github.com/dasimon135/daikin_madoka/issues/58). The
+bookkeeping half of this was fixed in v3.9.0; the routing policy is still open.
+
+### State is polled, not pushed
+
+The integration reads the thermostat on a timer (default **60 s**, configurable
+in the **Configure** dialog). A change made at the thermostat itself, or by
+another remote, appears in Home Assistant at the next poll — not immediately.
+Up to one poll interval of staleness is normal and is not a bug.
+
+Shortening the interval means more Bluetooth traffic and more chances to collide
+with another connection; 60 s is a deliberate default.
+
+### Protocol-level behaviour lives upstream
+
+This repository handles the Home Assistant side: entities, discovery, options,
+connection management. The Bluetooth protocol itself — GATT characteristics,
+command and response encoding, the pairing handshake — is implemented in
+[pymadoka](https://github.com/dasimon135/pymadoka), shipped as `pymadoka-ng` and
+pinned in `manifest.json`.
+
+A bug in how a command is encoded, or in how the thermostat's answer is parsed,
+belongs there rather than here. Report it here anyway if you are unsure — it
+gets routed — but include a debug log with **both** loggers enabled:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.daikin_madoka: debug
+    pymadoka: debug
+```
+
+Without `pymadoka: debug` the log says almost nothing about the Bluetooth
+exchange itself.
+
+---
+
 ## Credits
 
 Based on the original work by [@mduran80](https://github.com/mduran80/daikin_madoka).  
