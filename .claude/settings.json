@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s https://raw.githubusercontent.com/esphome/esphome/2026.4.0/esphome/components/esp32_ble_tracker/esp32_ble_tracker.h)"
+    ]
+  }
+}
