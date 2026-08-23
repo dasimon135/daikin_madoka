@@ -84,10 +84,18 @@ class MadokaEnergySensorDescription:
 
     key: str
     translation_key: str
+    state_class: SensorStateClass | None = None
 
 
-ENERGY_SENSORS: Final = tuple(
-    MadokaEnergySensorDescription(key, key) for key in ENERGY_PARAMETERS
+ENERGY_SENSORS: Final = (
+    MadokaEnergySensorDescription(
+        "energy_today", "energy_today", SensorStateClass.TOTAL_INCREASING
+    ),
+    *(
+        MadokaEnergySensorDescription(key, key)
+        for key in ENERGY_PARAMETERS
+        if key != "energy_today"
+    ),
 )
 
 
@@ -95,7 +103,6 @@ class MadokaEnergySensor(MadokaEntity, SensorEntity):
     """A consumption total retained by the thermostat itself."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_suggested_display_precision = 1
 
@@ -106,6 +113,7 @@ class MadokaEnergySensor(MadokaEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator, description.key)
         self._attr_translation_key = description.translation_key
+        self._attr_state_class = description.state_class
         self._period = description.key
 
     @property

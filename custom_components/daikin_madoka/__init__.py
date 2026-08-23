@@ -11,6 +11,7 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_BONDED_SOURCES,
+    CONF_ENABLE_ENERGY,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
@@ -97,6 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
         single_device = False
 
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    energy_enabled = entry.options.get(CONF_ENABLE_ENERGY, False)
 
     coordinators: dict[str, MadokaCoordinator] = {}
     for raw_mac, friendly_name in devices:
@@ -159,7 +161,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             candidates_callback=_candidates,
         )
         coordinator = MadokaCoordinator(
-            hass, controller, scan_interval, friendly_name=friendly_name
+            hass,
+            controller,
+            scan_interval,
+            friendly_name=friendly_name,
+            energy_enabled=energy_enabled,
         )
 
         try:
@@ -227,8 +233,10 @@ async def _async_update_listener(
     update_interval here used to silently disarm an active timeout backoff.
     """
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    energy_enabled = entry.options.get(CONF_ENABLE_ENERGY, False)
     for coordinator in entry.runtime_data.values():
         coordinator.async_apply_scan_interval(scan_interval)
+        coordinator.async_apply_energy_enabled(energy_enabled)
 
 
 async def async_unload_entry(

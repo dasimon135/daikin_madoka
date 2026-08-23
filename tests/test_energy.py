@@ -196,3 +196,20 @@ async def test_cached_energy_does_not_count_as_a_device_response() -> None:
         await coordinator._async_poll()
 
     assert controller.energy_consumption is energy
+
+
+def test_energy_polling_is_opt_in() -> None:
+    """Energy commands are attached to the controller only when enabled."""
+    controller = MagicMock()
+    controller.energy_consumption = None
+    coordinator = object.__new__(MadokaCoordinator)
+    coordinator.controller = controller
+
+    coordinator.async_apply_energy_enabled(False)
+    assert controller.energy_consumption is None
+
+    coordinator.async_apply_energy_enabled(True)
+    assert isinstance(controller.energy_consumption, MadokaEnergyConsumption)
+
+    coordinator.async_apply_energy_enabled(False)
+    assert controller.energy_consumption is None

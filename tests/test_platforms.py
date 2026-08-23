@@ -7,6 +7,7 @@ from pymadoka.connection import ConnectionStatus
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
@@ -93,6 +94,7 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
     coordinator, entry = _coordinator(hass, _mock_controller())
     entities = await _setup_platform(sensor_platform, hass, coordinator, entry)
 
+    assert coordinator.controller.energy_consumption is None
     assert {entity.unique_id for entity in entities} == {
         f"{MAC}_indoor_temperature",
         f"{MAC}_outdoor_temperature",
@@ -148,6 +150,19 @@ async def test_energy_sensors_report_controller_counter_totals(
     assert by_id[f"{MAC}_energy_last_week"].native_value == 41.2
     assert by_id[f"{MAC}_energy_this_year"].native_value == 678.9
     assert by_id[f"{MAC}_energy_last_year"].native_value == 1234.5
+
+    assert (
+        by_id[f"{MAC}_energy_today"].state_class
+        is SensorStateClass.TOTAL_INCREASING
+    )
+    for period in (
+        "energy_yesterday",
+        "energy_this_week",
+        "energy_last_week",
+        "energy_this_year",
+        "energy_last_year",
+    ):
+        assert by_id[f"{MAC}_{period}"].state_class is None
 
 
 async def test_connection_source_shows_live_scanner_name(

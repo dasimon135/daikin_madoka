@@ -49,7 +49,8 @@
       "init": {
         "title": "Daikin Madoka options",
         "data": {
-          "scan_interval": "Poll interval (seconds)"
+          "scan_interval": "Poll interval (seconds)",
+          "enable_energy_consumption": "Read energy consumption (adds seven Bluetooth requests every five minutes)"
         }
       }
     }

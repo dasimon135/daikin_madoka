@@ -41,6 +41,7 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
+CONF_ENABLE_ENERGY = "enable_energy_consumption"
 # Madoka Assistant energy-consumption protocol. The counters are uint32 little
 # endian values in tenths of a kWh and are available only after this privileged
 # request on an authenticated connection.

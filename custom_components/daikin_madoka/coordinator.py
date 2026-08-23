@@ -462,12 +462,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         controller: Controller,
         scan_interval: int,
         friendly_name: str | None = None,
+        energy_enabled: bool = False,
     ) -> None:
         """Initialize the coordinator."""
         self.controller = controller
-        # Make energy another controller feature so Controller.update() queries
-        # it on the authenticated BLE session it already owns.
-        controller.energy_consumption = MadokaEnergyConsumption(controller.connection)
+        controller.energy_consumption = None
+        self.async_apply_energy_enabled(energy_enabled)
         # The BLE stack overwrites controller.connection.name with the
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
@@ -669,7 +669,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 raise
 
         energy = self.controller.energy_consumption
-        use_cached_energy = energy.cache_is_fresh
+        use_cached_energy = energy is not None and energy.cache_is_fresh
         if use_cached_energy:
             # Controller.update() counts every Feature.query() return as a device
             # answer. A cache hit performs no I/O, so do not let it make a fully
@@ -1376,6 +1376,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if self.update_interval != backoff:
             self._normal_interval = self.update_interval
             self.update_interval = backoff
+
+    @callback
+    def async_apply_energy_enabled(self, enabled: bool) -> None:
+        """Add or remove energy polling without rebuilding the BLE session."""
+        if enabled and self.controller.energy_consumption is None:
+            self.controller.energy_consumption = MadokaEnergyConsumption(
+                self.controller.connection
+            )
+        elif not enabled:
+            self.controller.energy_consumption = None
 
     @callback
     def async_apply_scan_interval(self, scan_interval: int) -> None:
