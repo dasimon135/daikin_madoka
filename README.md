@@ -339,10 +339,20 @@ their own walkthrough above — see [When a thermostat stops connecting](#when-a
 ### Only the European BRC1H is validated
 
 Everything here is confirmed against a BRC1H. Other regional variants are **not
-verified**, and at least one behaves differently: on a **BRC1H71 (North
-America)** the Bluetooth link connects and pairs normally, but state reads come
-back wrong and commands have no effect — see
-[#62](https://github.com/dasimon135/daikin_madoka/issues/62), which is open.
+verified**, and one of them cannot be supported over Bluetooth at all.
+
+On a **BRC1H71 (North America)** the Bluetooth link connects and pairs normally,
+state reads come back wrong and commands have no effect — and that is not a gap
+in this integration. The BLE protocol that controller exposes is the one used by
+Daikin's *Quick Set* commissioning app, and it contains no runtime HVAC commands:
+power, mode, setpoints and fan speed are exchanged with the indoor unit over the
+wired **P1P2** bus instead. This was established from the controller's own
+firmware, command whitelist included, in
+[#62](https://github.com/dasimon135/daikin_madoka/issues/62).
+
+There is therefore nothing this integration can add for a BRC1H71 over
+Bluetooth. Driving one from Home Assistant means being on the P1P2 bus, with
+hardware acting as an auxiliary controller — a different project from this one.
 
 If you have a variant that is not a plain BRC1H, say so in your report and
 include the exact model marking. Do not assume a fix that worked on a BRC1H
