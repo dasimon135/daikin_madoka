@@ -206,18 +206,33 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             new_status.cooling_set_point = round(target_high)
 
         if target is not None:
+            operation_mode = self.controller.operation_mode.status.operation_mode
             if not self._set_point.range_enabled:
                 # A unit configured for single-setpoint logic (range_enabled = 0)
-                # never holds a mismatched pair, and rejects a frame that asks
-                # it to: the write is acknowledged and the setpoint does not
-                # move. Writing only the mode's own setpoint left the other one
-                # behind and made every change from HA a no-op on those units.
-                new_status.cooling_set_point = round(target)
-                new_status.heating_set_point = round(target)
+                # applies the whole pair, so both registers have to carry a
+                # value it can accept. Writing only the mode's own setpoint
+                # leaves the other one behind, and the BRC1H rejects that
+                # mismatch silently: the frame is acknowledged and the setpoint
+                # never moves.
+                #
+                # The pair is not always "both equal". min_differential (attr
+                # 0x32) is the minimum gap the unit keeps between cooling and
+                # heating. Units reporting 0 store an equal pair as sent. A unit
+                # reporting 1 cannot hold one: the frame carries cooling first,
+                # so applying heating afterwards breaks the gap and the firmware
+                # restores it by pushing cooling up -- which reads back a degree
+                # high on every change, and makes a one-degree decrease a no-op.
+                # Writing the gap explicitly leaves it nothing to correct.
+                differential = self._set_point.min_differential or 0
+                if operation_mode == OperationModeEnum.HEAT:
+                    new_status.heating_set_point = round(target)
+                    new_status.cooling_set_point = round(target) + differential
+                else:
+                    new_status.cooling_set_point = round(target)
+                    new_status.heating_set_point = round(target) - differential
             else:
                 # Range-capable unit outside AUTO: touch only the setpoint the
                 # current mode uses, so the other one survives for AUTO.
-                operation_mode = self.controller.operation_mode.status.operation_mode
                 if operation_mode != OperationModeEnum.HEAT:
                     new_status.cooling_set_point = round(target)
                 if operation_mode != OperationModeEnum.COOL:

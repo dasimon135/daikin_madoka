@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.9.2 - August 2026
+
+A follow-up to v3.9.1. The setpoint fix released there was right for the units it was reported from and wrong for a unit that keeps a minimum gap between its two setpoints.
+
+### The temperature no longer lands a degree off on units that enforce a setpoint gap
+
+v3.9.1 wrote the same value to both setpoint registers whenever the unit was not range-capable. That is what a `min_differential = 0` unit wants — it stores the pair as sent. A unit reporting a non-zero minimum differential cannot hold an equal pair at all: the frame applies cooling first, heating then breaks the gap, and the firmware restores it by pushing the cooling register up. Every change read back a degree high, and lowering the target by one degree looked like a dead button.
+
+The written pair now carries the unit's own `min_differential` (argument `0x32`): the setpoint the active mode uses gets the target, and the other one is placed a differential away from it, so the controller has nothing to correct. On a unit reporting `0` this is byte for byte what v3.9.1 sent, so the units [#67](https://github.com/dasimon135/daikin_madoka/issues/67) was reported from are unaffected. A controller that does not report the argument keeps the v3.9.1 behaviour.
+
+The ESPHome component now reads and applies the same differential. ([#65](https://github.com/dasimon135/daikin_madoka/issues/65), [#67](https://github.com/dasimon135/daikin_madoka/issues/67))
+
+### Upgrading
+
+Update via HACS and restart. Nothing to reconfigure; entity IDs and history are preserved. The bundled library stays at **pymadoka-ng 0.3.11**. ESPHome component users need to rebuild to pick up the setpoint fix.
+
 ## v3.9.1 - August 2026
 
 Two field reports, two fixes. Both came from users running configurations I do not have here.

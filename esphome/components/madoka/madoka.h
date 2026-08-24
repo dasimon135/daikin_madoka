@@ -78,6 +78,12 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
   // published state can be built to match the advertised traits.
   float cooling_setpoint_ = NAN;
   float heating_setpoint_ = NAN;
+  // Minimum gap the controller keeps between the two setpoints (argument
+  // 0x32). Zero on most units, which then store an equal pair as sent; a unit
+  // reporting a non-zero gap corrects any pair that violates it, so the write
+  // has to carry the gap. Defaults to 0 so a controller that does not report
+  // the argument keeps the equal-pair behaviour.
+  uint8_t min_differential_ = 0;
   std::queue<std::vector<uint8_t>> received_chunks_ = {};
   std::map<uint8_t, std::vector<uint8_t>> pending_chunks_ = {};
   uint16_t notify_handle_;

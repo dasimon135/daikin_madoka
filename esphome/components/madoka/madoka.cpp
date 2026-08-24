@@ -116,17 +116,36 @@ void Madoka::control(const ClimateCall &call) {
     float target = *call.get_target_temperature();
     // The setpoint frame always carries both registers (0x20 cooling,
     // 0x21 heating): see the dual branch above and CMD_GET_SETPOINT in
-    // parse_cb_. Both slots get the new value.
+    // parse_cb_. Both slots have to carry a value the unit can accept.
     //
     // Carrying the other register over from the last poll -- which this used
     // to do, keyed on the active mode -- produces a mismatched pair, and a
     // BRC1H that is not in range mode rejects that pair silently: the frame is
     // acknowledged and the setpoint never moves. dual_setpoint is documented
     // as "only if range mode is enabled on the BRC1H", so reaching this branch
-    // means the unit holds a single setpoint and the two registers must match.
+    // means the unit holds a single setpoint.
+    //
+    // The pair is not always "both equal". min_differential_ (argument 0x32)
+    // is the minimum gap the unit keeps between the two registers. Units
+    // reporting 0 store an equal pair as sent. A unit reporting 1 cannot hold
+    // one: the frame applies cooling first, so heating then breaks the gap and
+    // the firmware restores it by pushing cooling up -- a degree high on every
+    // change, and a one-degree decrease that does nothing. Writing the gap
+    // leaves it nothing to correct.
     // Same rule as the native integration's async_set_temperature().
-    uint16_t target_cooling = target * 128;
-    uint16_t target_heating = target * 128;
+    float differential = (float) this->min_differential_;
+    float cooling = target;
+    float heating = target;
+    // A single call can carry both a mode and a setpoint; the mode being asked
+    // for is the one the pair has to suit.
+    ClimateMode effective_mode = call.get_mode().value_or(this->mode);
+    if (effective_mode == climate::CLIMATE_MODE_HEAT) {
+      cooling = target + differential;
+    } else {
+      heating = target - differential;
+    }
+    uint16_t target_cooling = cooling * 128;
+    uint16_t target_heating = heating * 128;
     this->query_(
         CMD_SET_SETPOINT,
         std::vector<uint8_t>{0x20, 0x02, (uint8_t) ((target_cooling >> 8) & 0xFF), (uint8_t) (target_cooling & 0xFF),
@@ -444,6 +463,16 @@ void Madoka::parse_cb_(std::vector<uint8_t> msg) {
           case 0x21: {
             std::vector<uint8_t> val(msg.begin() + i, msg.begin() + i + len);
             this->heating_setpoint_ = (float) (val[0] << 8 | val[1]) / 128;
+            break;
+          }
+          case 0x32: {
+            // Minimum differential between the two setpoints. Needed when
+            // writing a single setpoint: see control(). Not every controller
+            // reports it; the 0 default is the historical behaviour.
+            if (len >= 1 && msg[i] != this->min_differential_) {
+              this->min_differential_ = msg[i];
+              ESP_LOGD(TAG, "Minimum setpoint differential: %u", this->min_differential_);
+            }
             break;
           }
         }

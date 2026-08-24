@@ -44,6 +44,7 @@ def _set_point_status(
     cooling: int = 25,
     heating: int = 22,
     range_enabled: bool = False,
+    min_differential: int = 0,
     cooling_lowerlimit: int | None = None,
     cooling_upperlimit: int | None = None,
     heating_lowerlimit: int | None = None,
@@ -54,6 +55,7 @@ def _set_point_status(
         cooling_set_point=cooling,
         heating_set_point=heating,
         range_enabled=range_enabled,
+        min_differential=min_differential,
         cooling_lowerlimit=cooling_lowerlimit,
         cooling_upperlimit=cooling_upperlimit,
         heating_lowerlimit=heating_lowerlimit,
@@ -401,6 +403,70 @@ async def test_set_temperature_on_single_setpoint_unit_writes_both_in_heat(
     status = controller.set_point.update.call_args[0][0]
     assert status.heating_set_point == 19
     assert status.cooling_set_point == 19
+
+
+async def test_set_temperature_keeps_the_minimum_differential_in_cool(
+    hass: HomeAssistant,
+) -> None:
+    """A unit reporting a minimum gap cannot hold an equal pair.
+
+    Reported in #65: writing cooling = heating on a unit with
+    min_differential = 1 makes the firmware restore the gap by pushing the
+    cooling register up, so every change read back a degree high and a
+    one-degree decrease did nothing. Carry the gap in the written pair.
+    """
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(
+        cooling=27, heating=26, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 26})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.cooling_set_point == 26
+    assert status.heating_set_point == 25
+
+
+async def test_set_temperature_keeps_the_minimum_differential_in_heat(
+    hass: HomeAssistant,
+) -> None:
+    """In HEAT the gap opens upwards: the heating setpoint is the target."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    controller.set_point.status = _set_point_status(
+        cooling=21, heating=20, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 19})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.heating_set_point == 19
+    assert status.cooling_set_point == 20
+
+
+async def test_set_temperature_ignores_the_differential_when_range_capable(
+    hass: HomeAssistant,
+) -> None:
+    """The gap only applies to the single-setpoint path.
+
+    A range-capable unit keeps the setpoint the active mode does not use, so
+    the differential must not be allowed to overwrite it.
+    """
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(
+        cooling=25, heating=22, range_enabled=True, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 23})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.cooling_set_point == 23
+    assert status.heating_set_point == 22
 
 
 async def test_set_temperature_without_status_is_a_noop(
