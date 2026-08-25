@@ -400,11 +400,12 @@ shows both entries crossed out
 still responds on that firmware. There is nothing to fix here — the write is
 sent, and the unit refuses it.
 
-How to tell the difference yourself: after any write, this integration forces a
-refresh instead of trusting the acknowledgement. So a locked setting **snaps
-back** to the controller's own value within a second or two. A value that
-sticks in the interface and only reverts at the next poll would be a defect
-here; one that reverts immediately is the device having the last word.
+**The interface cannot tell you whether a setting took effect.** After every
+write this integration re-reads the controller rather than trusting the
+acknowledgement, so the entity shows what the controller *reports*. A unit that
+stores a value in its register without acting on it reports that value back,
+and the entity keeps showing it. Judge these settings by the hardware, not by
+Home Assistant.
 
 Note also that the LED intensity is exposed on the protocol's own **0-19**
 scale, while the Daikin app presents 0-100. The two numbers describe the same
