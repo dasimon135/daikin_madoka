@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.daikin_madoka.const import (
     ENERGY_CONSUMPTION_COMMAND,
     ENERGY_PARAMETERS,
+    ENERGY_PERIOD_SCAN_INTERVAL,
     ENERGY_PRIVILEGE_COMMAND,
     ENERGY_PRIVILEGE_PARAMETER,
     ENERGY_SCAN_INTERVAL,
@@ -83,7 +84,7 @@ async def test_energy_query_uses_the_existing_authenticated_connection() -> None
     assert status.energy_today == (12.3,)
     assert cached is status
     assert refreshed is not status
-    expected_query = [
+    initial_query = [
         call(
             ENERGY_PRIVILEGE_COMMAND,
             bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
@@ -93,7 +94,19 @@ async def test_energy_query_uses_the_existing_authenticated_connection() -> None
             for parameter in ENERGY_PARAMETERS.values()
         ),
     ]
-    assert connection.send.await_args_list == expected_query * 2
+    today_query = [
+        call(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        ),
+        call(
+            ENERGY_CONSUMPTION_COMMAND,
+            bytearray((ENERGY_PARAMETERS["energy_today"], 0)),
+        ),
+    ]
+    assert connection.send.await_args_list == initial_query + today_query
+    assert refreshed.energy_yesterday == status.energy_yesterday
+    assert feature._next_period_query == 100.0 + ENERGY_PERIOD_SCAN_INTERVAL
 
 
 async def test_energy_timeout_discards_the_pending_pymadoka_request() -> None:
@@ -118,6 +131,56 @@ async def test_energy_timeout_discards_the_pending_pymadoka_request() -> None:
     connection.discard_request.assert_called_once_with(
         ENERGY_CONSUMPTION_COMMAND, energy_response
     )
+
+
+async def test_period_counters_refresh_without_rereading_today() -> None:
+    """The five informational periods use their independent daily cadence."""
+    connection = MagicMock()
+    connection.connection_status = ConnectionStatus.CONNECTED
+    connection._operation_lock = asyncio.Lock()
+
+    def _response(command, payload) -> asyncio.Future[bytearray]:
+        future = asyncio.get_running_loop().create_future()
+        if command == ENERGY_PRIVILEGE_COMMAND:
+            future.set_result(bytearray())
+        else:
+            parameter = payload[0]
+            future.set_result(
+                bytearray((11, 0, 1, 32, parameter, 4, 123, 0, 0, 0))
+            )
+        return future
+
+    connection.send = AsyncMock(side_effect=_response)
+    feature = MadokaEnergyConsumption(connection)
+    feature.status = MadokaEnergyStatus()
+    feature.status.energy_today = (4.2,)
+    feature._next_today_query = 200.0
+    feature._next_period_query = 100.0
+
+    with patch(
+        "custom_components.daikin_madoka.coordinator.monotonic", return_value=100.0
+    ):
+        status = await feature.query()
+
+    period_parameters = [
+        parameter
+        for period, parameter in ENERGY_PARAMETERS.items()
+        if period != "energy_today"
+    ]
+    assert connection.send.await_args_list == [
+        call(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        ),
+        *(
+            call(ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0)))
+            for parameter in period_parameters
+        ),
+    ]
+    assert status.energy_today == (4.2,)
+    assert status.energy_yesterday == (12.3,)
+    assert feature._next_today_query == 200.0
+    assert feature._next_period_query == 100.0 + ENERGY_PERIOD_SCAN_INTERVAL
 
 
 async def test_energy_response_accepts_missing_trailing_breakdown_slots() -> None:
@@ -178,7 +241,8 @@ async def test_cached_energy_does_not_count_as_a_device_response() -> None:
     controller.connection.address = "D0:CF:13:0F:11:F6"
     energy = MadokaEnergyConsumption(controller.connection)
     energy.status = MadokaEnergyStatus()
-    energy._next_query = 200.0
+    energy._next_today_query = 200.0
+    energy._next_period_query = 200.0
     controller.energy_consumption = energy
 
     async def _no_feature_answered() -> None:

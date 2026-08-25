@@ -50,7 +50,7 @@
         "title": "Options Daikin Madoka",
         "data": {
           "scan_interval": "Intervalle d'interrogation (secondes)",
-          "enable_energy_consumption": "Lire la consommation d'énergie (ajoute sept requêtes Bluetooth toutes les cinq minutes)"
+          "enable_energy_consumption": "Lire la consommation d'énergie (aujourd'hui toutes les cinq minutes, autres périodes chaque jour)"
         }
       }
     }

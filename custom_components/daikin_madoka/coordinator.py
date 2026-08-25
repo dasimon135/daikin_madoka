@@ -35,6 +35,7 @@ from .const import (
     DOMAIN,
     ENERGY_CONSUMPTION_COMMAND,
     ENERGY_PARAMETERS,
+    ENERGY_PERIOD_SCAN_INTERVAL,
     ENERGY_PRIVILEGE_COMMAND,
     ENERGY_PRIVILEGE_PARAMETER,
     ENERGY_SCAN_INTERVAL,
@@ -116,9 +117,12 @@ class MadokaEnergyStatus(FeatureStatus):
 class MadokaEnergyConsumption(Feature):
     """Read the Madoka's internal energy counters over the active connection."""
 
+    status: MadokaEnergyStatus | None
+
     def __init__(self, connection) -> None:
         super().__init__(connection)
-        self._next_query = 0.0
+        self._next_today_query = 0.0
+        self._next_period_query = 0.0
 
     def query_cmd_id(self) -> int:
         return ENERGY_CONSUMPTION_COMMAND
@@ -131,19 +135,45 @@ class MadokaEnergyConsumption(Feature):
 
     @property
     def cache_is_fresh(self) -> bool:
-        """Return whether the last complete read is still fresh."""
-        return self.status is not None and monotonic() < self._next_query
+        """Return whether neither energy group needs a device read."""
+        now = monotonic()
+        return (
+            self.status is not None
+            and now < self._next_today_query
+            and now < self._next_period_query
+        )
 
     async def query(self) -> FeatureStatus:
-        """Enable energy access, then request every counter separately."""
-        if self.cache_is_fresh:
-            return self.status
+        """Read today's counter frequently and period summaries daily."""
+        now = monotonic()
+        cached = self.status
+        if (
+            cached is not None
+            and now < self._next_today_query
+            and now < self._next_period_query
+        ):
+            return cached
+        today_parameter = ENERGY_PARAMETERS["energy_today"]
+        today_due = cached is None or now >= self._next_today_query
+        periods_due = cached is None or now >= self._next_period_query
+        parameters = []
+        if today_due:
+            parameters.append(today_parameter)
+        if periods_due:
+            parameters.extend(
+                parameter
+                for parameter in ENERGY_PARAMETERS.values()
+                if parameter != today_parameter
+            )
         await self._send_command(
             ENERGY_PRIVILEGE_COMMAND,
             bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
         )
         status = MadokaEnergyStatus()
-        for parameter in ENERGY_PARAMETERS.values():
+        if cached is not None:
+            for period in ENERGY_PARAMETERS:
+                setattr(status, period, getattr(cached, period))
+        for parameter in parameters:
             response = await self._send_command(
                 ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
             )
@@ -153,7 +183,11 @@ class MadokaEnergyConsumption(Feature):
                 raise ValueError(f"Energy response omitted parameter {parameter:#x}")
             status.set_values({parameter: raw})
         self.status = status
-        self._next_query = monotonic() + ENERGY_SCAN_INTERVAL
+        now = monotonic()
+        if today_due:
+            self._next_today_query = now + ENERGY_SCAN_INTERVAL
+        if periods_due:
+            self._next_period_query = now + ENERGY_PERIOD_SCAN_INTERVAL
         return status
 
     @staticmethod
