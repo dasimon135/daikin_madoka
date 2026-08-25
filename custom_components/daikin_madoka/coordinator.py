@@ -5,7 +5,7 @@ import logging
 import struct
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from time import monotonic
 from typing import Any
 
@@ -20,6 +20,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     AUTH_CORROBORATION_WINDOW_S,
@@ -35,7 +36,7 @@ from .const import (
     DOMAIN,
     ENERGY_CONSUMPTION_COMMAND,
     ENERGY_PARAMETERS,
-    ENERGY_PERIOD_SCAN_INTERVAL,
+    ENERGY_PERIOD_REFRESH_MINUTE,
     ENERGY_PRIVILEGE_COMMAND,
     ENERGY_PRIVILEGE_PARAMETER,
     ENERGY_SCAN_INTERVAL,
@@ -122,7 +123,7 @@ class MadokaEnergyConsumption(Feature):
     def __init__(self, connection) -> None:
         super().__init__(connection)
         self._next_today_query = 0.0
-        self._next_period_query = 0.0
+        self._period_day: date | None = None
 
     def query_cmd_id(self) -> int:
         return ENERGY_CONSUMPTION_COMMAND
@@ -136,26 +137,35 @@ class MadokaEnergyConsumption(Feature):
     @property
     def cache_is_fresh(self) -> bool:
         """Return whether neither energy group needs a device read."""
-        now = monotonic()
         return (
             self.status is not None
-            and now < self._next_today_query
-            and now < self._next_period_query
+            and monotonic() < self._next_today_query
+            and self._period_day == self._current_period_day()
         )
+
+    @staticmethod
+    def _current_period_day() -> date:
+        """Return the calendar day whose period values are safe to cache."""
+        local_now = dt_util.now()
+        day = local_now.date()
+        if local_now.hour == 0 and local_now.minute < ENERGY_PERIOD_REFRESH_MINUTE:
+            return day - timedelta(days=1)
+        return day
 
     async def query(self) -> FeatureStatus:
         """Read today's counter frequently and period summaries daily."""
         now = monotonic()
+        period_day = self._current_period_day()
         cached = self.status
         if (
             cached is not None
             and now < self._next_today_query
-            and now < self._next_period_query
+            and self._period_day == period_day
         ):
             return cached
         today_parameter = ENERGY_PARAMETERS["energy_today"]
         today_due = cached is None or now >= self._next_today_query
-        periods_due = cached is None or now >= self._next_period_query
+        periods_due = cached is None or self._period_day != period_day
         parameters = []
         if today_due:
             parameters.append(today_parameter)
@@ -187,7 +197,7 @@ class MadokaEnergyConsumption(Feature):
         if today_due:
             self._next_today_query = now + ENERGY_SCAN_INTERVAL
         if periods_due:
-            self._next_period_query = now + ENERGY_PERIOD_SCAN_INTERVAL
+            self._period_day = period_day
         return status
 
     @staticmethod

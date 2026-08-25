@@ -1,6 +1,7 @@
 """Tests for Madoka energy consumption polling."""
 
 import asyncio
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -12,7 +13,6 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.daikin_madoka.const import (
     ENERGY_CONSUMPTION_COMMAND,
     ENERGY_PARAMETERS,
-    ENERGY_PERIOD_SCAN_INTERVAL,
     ENERGY_PRIVILEGE_COMMAND,
     ENERGY_PRIVILEGE_PARAMETER,
     ENERGY_SCAN_INTERVAL,
@@ -72,7 +72,13 @@ async def test_energy_query_uses_the_existing_authenticated_connection() -> None
     connection.send = AsyncMock(side_effect=_response)
     feature = MadokaEnergyConsumption(connection)
     clock = _Clock(100.0)
-    with patch("custom_components.daikin_madoka.coordinator.monotonic", new=clock):
+    with (
+        patch("custom_components.daikin_madoka.coordinator.monotonic", new=clock),
+        patch(
+            "custom_components.daikin_madoka.coordinator.dt_util.now",
+            return_value=datetime(2026, 8, 25, 12, 0, tzinfo=UTC),
+        ),
+    ):
         status = await feature.query()
 
         clock.now += ENERGY_SCAN_INTERVAL - 0.001
@@ -106,7 +112,7 @@ async def test_energy_query_uses_the_existing_authenticated_connection() -> None
     ]
     assert connection.send.await_args_list == initial_query + today_query
     assert refreshed.energy_yesterday == status.energy_yesterday
-    assert feature._next_period_query == 100.0 + ENERGY_PERIOD_SCAN_INTERVAL
+    assert feature._period_day == date(2026, 8, 25)
 
 
 async def test_energy_timeout_discards_the_pending_pymadoka_request() -> None:
@@ -155,10 +161,17 @@ async def test_period_counters_refresh_without_rereading_today() -> None:
     feature.status = MadokaEnergyStatus()
     feature.status.energy_today = (4.2,)
     feature._next_today_query = 200.0
-    feature._next_period_query = 100.0
+    feature._period_day = date(2026, 8, 24)
 
-    with patch(
-        "custom_components.daikin_madoka.coordinator.monotonic", return_value=100.0
+    with (
+        patch(
+            "custom_components.daikin_madoka.coordinator.monotonic",
+            return_value=100.0,
+        ),
+        patch(
+            "custom_components.daikin_madoka.coordinator.dt_util.now",
+            return_value=datetime(2026, 8, 25, 12, 0, tzinfo=UTC),
+        ),
     ):
         status = await feature.query()
 
@@ -180,7 +193,59 @@ async def test_period_counters_refresh_without_rereading_today() -> None:
     assert status.energy_today == (4.2,)
     assert status.energy_yesterday == (12.3,)
     assert feature._next_today_query == 200.0
-    assert feature._next_period_query == 100.0 + ENERGY_PERIOD_SCAN_INTERVAL
+    assert feature._period_day == date(2026, 8, 25)
+
+
+async def test_period_counters_refresh_after_midnight_grace() -> None:
+    """A slow thermostat must reset before the new day is cached."""
+    connection = MagicMock()
+    connection.connection_status = ConnectionStatus.CONNECTED
+    connection._operation_lock = asyncio.Lock()
+
+    def _response(command, payload) -> asyncio.Future[bytearray]:
+        future = asyncio.get_running_loop().create_future()
+        if command == ENERGY_PRIVILEGE_COMMAND:
+            future.set_result(bytearray())
+        else:
+            parameter = payload[0]
+            future.set_result(
+                bytearray((11, 0, 1, 32, parameter, 4, 123, 0, 0, 0))
+            )
+        return future
+
+    connection.send = AsyncMock(side_effect=_response)
+    feature = MadokaEnergyConsumption(connection)
+    feature.status = MadokaEnergyStatus()
+    feature._next_today_query = 200.0
+    feature._period_day = date(2026, 8, 24)
+
+    with (
+        patch(
+            "custom_components.daikin_madoka.coordinator.monotonic",
+            return_value=100.0,
+        ),
+        patch(
+            "custom_components.daikin_madoka.coordinator.dt_util.now",
+            side_effect=(
+                datetime(2026, 8, 25, 0, 2, tzinfo=UTC),
+                datetime(2026, 8, 25, 0, 5, tzinfo=UTC),
+            ),
+        ),
+    ):
+        cached = await feature.query()
+        refreshed = await feature.query()
+
+    assert cached is not refreshed
+    assert connection.send.await_count == 6
+    assert connection.send.await_args_list[0] == call(
+        ENERGY_PRIVILEGE_COMMAND,
+        bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+    )
+    assert all(
+        request.args[1][0] != ENERGY_PARAMETERS["energy_today"]
+        for request in connection.send.await_args_list[1:]
+    )
+    assert feature._period_day == date(2026, 8, 25)
 
 
 async def test_energy_response_accepts_missing_trailing_breakdown_slots() -> None:
@@ -242,7 +307,7 @@ async def test_cached_energy_does_not_count_as_a_device_response() -> None:
     energy = MadokaEnergyConsumption(controller.connection)
     energy.status = MadokaEnergyStatus()
     energy._next_today_query = 200.0
-    energy._next_period_query = 200.0
+    energy._period_day = date(2026, 8, 25)
     controller.energy_consumption = energy
 
     async def _no_feature_answered() -> None:
@@ -255,6 +320,10 @@ async def test_cached_energy_does_not_count_as_a_device_response() -> None:
 
     with (
         patch("custom_components.daikin_madoka.coordinator.monotonic", return_value=100.0),
+        patch(
+            "custom_components.daikin_madoka.coordinator.dt_util.now",
+            return_value=datetime(2026, 8, 25, 12, 0, tzinfo=UTC),
+        ),
         pytest.raises(UpdateFailed, match="No feature answered any query"),
     ):
         await coordinator._async_poll()

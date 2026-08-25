@@ -49,7 +49,10 @@ ENERGY_CONSUMPTION_COMMAND = 0x0120
 ENERGY_PRIVILEGE_COMMAND = 0x4112
 ENERGY_PRIVILEGE_PARAMETER = 0xFE
 ENERGY_SCAN_INTERVAL = 300
-ENERGY_PERIOD_SCAN_INTERVAL = 86400
+# Real units have been observed rolling their calendar counters a few minutes
+# either side of HA's local midnight. Refresh after this grace period so a
+# slightly slow thermostat cannot leave yesterday's values cached all day.
+ENERGY_PERIOD_REFRESH_MINUTE = 5
 ENERGY_PARAMETERS = {
     "energy_today": 0x40,
     "energy_yesterday": 0x41,
