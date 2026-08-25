@@ -10,7 +10,7 @@ v3.9.1 wrote the same value to both setpoint registers whenever the unit was not
 
 The written pair now carries the unit's own `min_differential` (argument `0x32`): the setpoint the active mode uses gets the target, and the other one is placed a differential away from it, so the controller has nothing to correct. On a unit reporting `0` this is byte for byte what v3.9.1 sent, so the units [#67](https://github.com/dasimon135/daikin_madoka/issues/67) was reported from are unaffected. A controller that does not report the argument keeps the v3.9.1 behaviour.
 
-Confirmed on the affected hardware by @speynaud before release: the target now lands where it was asked for, and it survives the poll. That confirmation covers COOL; the HEAT path on a unit with a non-zero differential is derived from the same rule rather than measured.
+Confirmed on the affected hardware by @speynaud, in every mode: the target lands where it was asked for and it survives the poll, raising and lowering alike. The release shipped with COOL confirmed and HEAT derived from the same rule; HEAT was measured the day after and behaves as derived.
 
 The ESPHome component now reads and applies the same differential. ([#65](https://github.com/dasimon135/daikin_madoka/issues/65), [#67](https://github.com/dasimon135/daikin_madoka/issues/67))
 
