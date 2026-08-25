@@ -385,6 +385,31 @@ Up to one poll interval of staleness is normal and is not a bug.
 Shortening the interval means more Bluetooth traffic and more chances to collide
 with another connection; 60 s is a deliberate default.
 
+### Some settings are locked by the unit, not by this integration
+
+The BRC1H acknowledges frames it does not apply. A write that appears to do
+nothing has therefore always got two possible readings: the command was wrong,
+or the controller declined it. The acknowledgement alone never tells them
+apart.
+
+One case is confirmed. On **firmware 01.10.03**, the LED ring intensity and the
+screen brightness cannot be changed at all: the official Daikin app moves the
+same sliders with no effect either, and the controller's own installer menu
+shows both entries crossed out
+([#76](https://github.com/dasimon135/daikin_madoka/issues/76)). Screen contrast
+still responds on that firmware. There is nothing to fix here — the write is
+sent, and the unit refuses it.
+
+How to tell the difference yourself: after any write, this integration forces a
+refresh instead of trusting the acknowledgement. So a locked setting **snaps
+back** to the controller's own value within a second or two. A value that
+sticks in the interface and only reverts at the next poll would be a defect
+here; one that reverts immediately is the device having the last word.
+
+Note also that the LED intensity is exposed on the protocol's own **0-19**
+scale, while the Daikin app presents 0-100. The two numbers describe the same
+setting and will not match.
+
 ### Protocol-level behaviour lives upstream
 
 This repository handles the Home Assistant side: entities, discovery, options,
