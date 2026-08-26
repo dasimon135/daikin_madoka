@@ -1526,13 +1526,25 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     @property
     def device_info(self) -> DeviceInfo:
         """Return shared device registry information."""
+        # The GATT Device Information service on a BRC1H describes its
+        # Bluetooth radio -- "UE878 RF MODULE", by Universal Electronics -- and
+        # not the Daikin controller wrapped around it. Its Model Number String
+        # is the radio's ("0.1"), so appending it to BRC1H invents a marking
+        # that does not exist on any product, and its revisions are the radio's
+        # firmware rather than the thermostat's.
+        #
+        # Report them anyway, because a difference at radio level can explain a
+        # difference in Bluetooth behaviour, but name them for what they are.
+        # The Daikin firmware revision (the 01.10.03 form quoted in issues) is
+        # not published here at all; reading it needs a protocol command that
+        # pymadoka-ng does not implement.
         info = self.controller.info or {}
-        model = info.get("Model Number String")
+        radio = info.get("Software Revision String")
         return DeviceInfo(
             identifiers={(DOMAIN, self.address)},
             name=self.device_name,
             manufacturer="DAIKIN",
-            model=f"{BRC1H_NAME_PREFIX}{model}" if model else BRC1H_NAME_PREFIX,
-            sw_version=info.get("Software Revision String"),
+            model=BRC1H_NAME_PREFIX,
+            sw_version=f"RF module {radio}" if radio else None,
             hw_version=info.get("Hardware Revision String"),
         )

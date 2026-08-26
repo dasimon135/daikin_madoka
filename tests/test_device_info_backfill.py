@@ -1,8 +1,11 @@
 """The device information is read again once a poll proves the link works.
 
 Setup asks for it before the BLE link exists, where pymadoka answers with an
-empty dict, so without this the device page never shows the model marking or
-the firmware revision.
+empty dict, so without this the device page carries no revision at all.
+
+What the service actually publishes is the BRC1H's Bluetooth radio, not the
+Daikin controller: these tests pin that it is reported as the radio's and never
+dressed up as a thermostat marking.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -24,10 +27,15 @@ from custom_components.daikin_madoka.coordinator import MadokaCoordinator
 
 MAC = "D0:CF:13:0F:11:F6"
 
+# What a real BRC1H publishes: the service describes its Bluetooth radio, a
+# Universal Electronics module, not the Daikin controller around it.
 INFO = {
-    "Model Number String": "52K",
-    "Software Revision String": "01.09.00",
-    "Hardware Revision String": "1.0",
+    "Device Name": "UE878 RF MODULE",
+    "Manufacturer Name String": "Universal Electronics, Inc.",
+    "Model Number String": "0.1",
+    "Firmware Revision String": "BL C0",
+    "Hardware Revision String": "UEIS-15288",
+    "Software Revision String": "7031.05.17",
 }
 
 
@@ -101,9 +109,11 @@ async def test_a_successful_poll_fills_in_the_model_and_firmware(
 
     stored = dr.async_get(hass).async_get(device.id)
     assert stored is not None
-    assert stored.model == "BRC1H52K"
-    assert stored.sw_version == "01.09.00"
-    assert stored.hw_version == "1.0"
+    # The radio's model number is not a thermostat marking, so it is not
+    # appended to one; its revisions are reported but labelled as the radio's.
+    assert stored.model == "BRC1H"
+    assert stored.sw_version == "RF module 7031.05.17"
+    assert stored.hw_version == "UEIS-15288"
 
 
 async def test_it_keeps_trying_across_polls_until_the_device_answers(
@@ -120,7 +130,7 @@ async def test_it_keeps_trying_across_polls_until_the_device_answers(
     assert dr.async_get(hass).async_get(device.id).sw_version is None
 
     await coordinator.async_refresh()
-    assert dr.async_get(hass).async_get(device.id).sw_version == "01.09.00"
+    assert dr.async_get(hass).async_get(device.id).sw_version == "RF module 7031.05.17"
 
 
 async def test_a_controller_that_never_answers_is_not_re_enumerated_forever(
