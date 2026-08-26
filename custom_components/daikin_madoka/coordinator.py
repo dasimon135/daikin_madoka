@@ -14,7 +14,7 @@ from pymadoka.connection import ConnectionStatus
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -30,6 +30,7 @@ from .const import (
     CONF_PAIRING_STATE,
     CONF_PREFERRED_SOURCE,
     CONNECT_TIMEOUT,
+    DEVICE_INFO_MAX_ATTEMPTS,
     DOMAIN,
     MIN_PAIR_TIMEOUT,
     PAIRING_CONNECT_TIMEOUT,
@@ -367,6 +368,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
         self._issue_active = False
+        # Attempts spent reading the GATT device information. Setup gets one
+        # shot, before the link exists; see _async_backfill_device_info.
+        self._device_info_attempts = 0
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
         self._boost_unsub: CALLBACK_TYPE | None = None
@@ -589,6 +593,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # so the entry stays not-ready instead of exposing phantom entities.
         if not status:
             raise UpdateFailed(f"Device {self.address} did not answer any query")
+
+        # The link is demonstrably up and the device demonstrably answers,
+        # which is exactly what setup could not assume.
+        await self._async_backfill_device_info()
 
         return status
 
@@ -1471,6 +1479,49 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def device_name(self) -> str:
         """Return the display name of the device."""
         return self._friendly_name or self.controller.connection.name or self.address
+
+    async def _async_backfill_device_info(self) -> None:
+        """Read the GATT device information once the link is actually up.
+
+        Setup calls read_info() immediately after building the controller,
+        before the BLE link exists. pymadoka returns an empty dict in that
+        state without raising and without caching it, so the model marking and
+        the firmware revision never reach the device registry and the device
+        page shows a bare "BRC1H" with no version for the life of the entry.
+
+        The information matters beyond cosmetics: behaviour differs between
+        firmware revisions of the same controller, and every report that turns
+        on "which firmware" currently has to be answered by reading the label
+        on the wall.
+
+        Called from a poll that just succeeded, so the link is known good.
+        read_info() caches as soon as it returns something, and the attempt
+        counter stops a controller that publishes nothing from being
+        re-enumerated on every cycle.
+        """
+        if self.controller.info or self._device_info_attempts >= DEVICE_INFO_MAX_ATTEMPTS:
+            return
+        self._device_info_attempts += 1
+        try:
+            await self.controller.read_info()
+        except Exception:
+            _LOGGER.debug(
+                "Could not read device info for %s", self.address, exc_info=True
+            )
+            return
+        if not self.controller.info:
+            return
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device(identifiers={(DOMAIN, self.address)})
+        if device is None:
+            return
+        info = self.device_info
+        registry.async_update_device(
+            device.id,
+            model=info.get("model"),
+            sw_version=info.get("sw_version"),
+            hw_version=info.get("hw_version"),
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

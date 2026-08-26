@@ -41,6 +41,11 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
+# read_info() enumerates every GATT service and reads every readable
+# characteristic, so it is not something to repeat on every poll. A
+# controller that has answered a poll but still returns nothing after this
+# many tries does not publish a usable Device Information service.
+DEVICE_INFO_MAX_ATTEMPTS = 3
 # Failed polls masked by serving the last good data instead of raising: a
 # one-off BLE micro-drop should not punch holes in graphs or flip entities
 # unavailable. Kept well below UNREACHABLE_THRESHOLD so a real outage still
