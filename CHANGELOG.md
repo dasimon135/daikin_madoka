@@ -20,6 +20,18 @@ If every path Home Assistant chooses stays unsanctioned for three consecutive ro
 
 It is a WARNING, not an error, and it convicts nobody: no bond is evicted and reconnects are not suspended, because nothing was refused — no pairing was attempted at all. The poll cadence is slowed to 15 minutes because the retries are futile while the scoring stands, not because the thermostat did anything wrong. The condition often clears on its own when signal conditions shift.
 
+### bonded_sources no longer claims a key the proxy has lost
+
+The bonded-proxy list records what a session once succeeded through. It is not a reading of the proxy's keystore, and the two drift apart — which matters more than it sounds, because the new veto trusts that list: a stale entry is precisely a path it will still allow pairing on.
+
+Measured on the maintainer's install the same evening: one proxy listed as bonded for two thermostats had lost both their keys while keeping a third's. Every attempt through it therefore started a real numeric-comparison pairing. This is not inferred — the ESPHome pairing responders pushed the passkeys into Home Assistant as notifications (two of them, minutes apart), and a second integration independently reported "this proxy does not have the pairing key" for the same two devices. Each of those attempts left a six-digit code lit on a thermostat, waiting for a confirmation nobody was there to give, until it timed out.
+
+A proxy is now dropped from the list after five consecutive pairing timeouts unbroken by any success on that same proxy. The evidence is deliberately not "it timed out" — congestion produces that too — but "it never succeeds": a valid bond re-encrypts silently as soon as the proxy is free, and a single success clears the streak, while a keyless path cannot complete on its own at all because completing it requires a person at the thermostat.
+
+Both eviction triggers — proven refusals and stale-key timeouts — now share one routine, so the safety rules cannot hold for one and not the other. Chief among them: the last known bond is never dropped, because an empty list reads as "unrestricted" everywhere and emptying it would switch the entire anti-prompt policy off instead of tightening it.
+
+Being wrong is cheap and self-announcing: a wrongly dropped path stops being paired on, and if it was the only usable one, the unbonded_path repair names it and a single Reconnect restores it.
+
 ### Requires pymadoka-ng 0.3.12
 
 The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.

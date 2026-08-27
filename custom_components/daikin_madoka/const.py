@@ -22,6 +22,28 @@ CONF_BONDED_SOURCES = "bonded_sources"
 # MadokaCoordinator._async_evict_dead_bond) and forgetting a good bond costs a
 # full re-pair with a human at the thermostat, so the evidence has to repeat.
 BOND_EVICTION_FAILURES = 3
+# Consecutive pairing TIMEOUTS on one proxy, unbroken by any success on that
+# same proxy, before its entry in CONF_BONDED_SOURCES is treated as stale.
+#
+# The list records what a session once succeeded through; it is not a reading
+# of the proxy's keystore, and the two drift apart. Field case 2026-08-27: one
+# proxy listed as bonded for two thermostats had lost both their keys while
+# keeping a third's, so every attempt through it started a REAL
+# numeric-comparison pairing and left a 6-digit code lit on a screen nobody was
+# watching. The allowed-source veto cannot catch that — it trusts this same
+# list.
+#
+# The evidence is not "it timed out" (congestion does that too) but "it NEVER
+# succeeds". A valid bond re-encrypts silently as soon as the proxy is free,
+# and any success clears the streak; a keyless path cannot complete without a
+# person at the thermostat, so its streak only grows.
+#
+# Higher than BOND_EVICTION_FAILURES because a single timeout proves less than
+# a single refusal. Not much higher: each round in the streak costs one lit
+# thermostat screen, and being wrong is now cheap and self-announcing — the
+# dropped path stops being paired on, and if it was the only usable one the
+# unbonded_path repair names it and a single Reconnect restores it.
+BOND_STALE_TIMEOUTS = 5
 # Durable shadow of the per-MAC pairing verdict (suspended / backoff /
 # timeout streak / consecutive failures / last pairing error), keyed by MAC.
 # The live copy lives in hass.data so it survives a coordinator rebuild; this

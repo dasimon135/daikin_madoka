@@ -24,6 +24,7 @@ from .const import (
     AUTH_CORROBORATION_WINDOW_S,
     AUTOMATIC_PAIR_TIMEOUT,
     BOND_EVICTION_FAILURES,
+    BOND_STALE_TIMEOUTS,
     BRC1H_NAME_PREFIX,
     CANDIDATE_CONNECT_OVERHEAD_S,
     CONF_BONDED_SOURCES,
@@ -932,34 +933,49 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing.auth_failures[source] = failures
         if failures < BOND_EVICTION_FAILURES:
             return
+        self._async_drop_bonded_source(
+            source, f"{BOND_EVICTION_FAILURES} proven refusals"
+        )
+
+    @callback
+    def _async_drop_bonded_source(self, source: str, because: str) -> bool:
+        """Remove a proxy from CONF_BONDED_SOURCES. Returns whether it went.
+
+        The ONE place a bond is forgotten, reached from the two triggers that
+        can conclude a proxy holds no usable key: proven refusals, and a streak
+        of pairing timeouts never broken by a success on that same path. Shared
+        so the safety rules below cannot hold for one trigger and not the other.
+        """
         entry = self.config_entry
         if entry is None or CONF_MAC not in entry.data:
-            return
+            return False
         bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
         if source not in bonded:
-            return
+            return False
         if len(bonded) <= 1:
-            # NEVER empty the list. build_candidates treats an empty
-            # CONF_BONDED_SOURCES as "unrestricted", so evicting the last entry
-            # would not protect the device — it would silently switch the
-            # anti-storm policy off and let unattended polls pair with any proxy
-            # in range. The recovery path for a device with no working bond is
-            # the reauth flow (a human, deliberately), not an eviction.
+            # NEVER empty the list. build_candidates and the pairing veto both
+            # treat an empty CONF_BONDED_SOURCES as "unrestricted", so evicting
+            # the last entry would not protect the device — it would silently
+            # switch the whole anti-storm policy off and let unattended polls
+            # pair with any proxy in range. The recovery path for a device with
+            # no working bond is the reauth flow (a human, deliberately).
             _LOGGER.warning(
-                "%s: %s keeps refusing the bond, but it is the only proxy known "
-                "to hold one — keeping it and leaving recovery to a re-pair",
+                "%s: %s looks unusable (%s), but it is the only proxy known to "
+                "hold a bond — keeping it and leaving recovery to a re-pair",
                 self.address,
                 self._proxy_names([source]),
+                because,
             )
-            return
+            return False
         bonded.remove(source)
         self._pairing.auth_failures.pop(source, None)
+        self._pairing.timeout_sources.pop(source, None)
         _LOGGER.warning(
-            "%s: dropping %s from the bonded proxies after %d refusals; "
-            "reconnects will use the remaining %d",
+            "%s: dropping %s from the bonded proxies (%s); reconnects will use "
+            "the remaining %d",
             self.address,
             self._proxy_names([source]),
-            BOND_EVICTION_FAILURES,
+            because,
             len(bonded),
         )
         data = {**entry.data, CONF_BONDED_SOURCES: bonded}
@@ -969,6 +985,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # successful session elect a new one.
             data.pop(CONF_PREFERRED_SOURCE, None)
         self.hass.config_entries.async_update_entry(entry, data=data)
+        return True
 
     @callback
     def _raise_unreachable_issue(self) -> None:
@@ -1269,8 +1286,23 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         for source, verdict in evidence.items():
             if verdict != "timeout" or not source:
                 continue
-            self._pairing.timeout_sources[source] = (
-                self._pairing.timeout_sources.get(source, 0) + 1
+            # Clamped, like the refusal counter: past the threshold a bigger
+            # number changes nothing, and the clamp is what stops a device
+            # whose eviction is blocked (last bonded path) from rewriting the
+            # config entry on every poll forever.
+            streak = min(
+                self._pairing.timeout_sources.get(source, 0) + 1,
+                BOND_STALE_TIMEOUTS,
+            )
+            self._pairing.timeout_sources[source] = streak
+            if streak < BOND_STALE_TIMEOUTS:
+                continue
+            # Never succeeded once across the whole streak, so the entry in
+            # CONF_BONDED_SOURCES is claiming a key this proxy does not have.
+            # Dropping it is what stops the numeric-comparison prompts: the
+            # pairing veto only spares paths the list does not vouch for.
+            self._async_drop_bonded_source(
+                source, f"{BOND_STALE_TIMEOUTS} pairing timeouts with no success"
             )
 
     @callback
