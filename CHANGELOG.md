@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.10.0 - August 2026
+
+Thermostat screens stop being asked to confirm pairings nobody can answer.
+
+### The pairing prompts on the thermostat screen are gone
+
+The integration has restricted automatic reconnects to proxies known to hold a bond since v3.6.0, by filtering the candidate list it hands to pymadoka. That restriction was advisory and could not have been anything else: Home Assistant keeps only the *address* of the `BLEDevice` it is given and re-scores every connectable path itself at connect time. So a reconnect could — and regularly did — land on a proxy the integration had deliberately excluded, and pairing there put a six-digit confirmation prompt on the thermostat screen that no unattended retry can ever answer.
+
+Field measurement behind this release: one thermostat produced eight such prompts in a single hour, every one of them through a proxy absent from its `bonded_sources`. Nothing was visible in Home Assistant — the device stayed available throughout, because the next candidate succeeded — so the only trace was a log line and an illuminated screen in the living room.
+
+The check now happens where it binds: after the link is up and *before* `pair()`, against the path the backend really used. An unsanctioned path is dropped without pairing. It costs a connect and a disconnect, no SMP exchange, and nothing appears on the thermostat.
+
+Worth stating plainly: the scoring that picks these paths is not simply "nearest proxy wins". In the measured case the elected proxy was 15 dB *weaker* than an available bonded one, and won because free-slot and failure-count penalties outweighed the signal difference. Any of the proxies in range can be elected at any time, which is why the veto had to move to the real path rather than the offered one.
+
+### A new repair for the case only a human can fix
+
+If every path Home Assistant chooses stays unsanctioned for three consecutive rounds, a new `unbonded_path` repair names the proxy the connection keeps landing on and offers the reauth flow. This replaces harassing the thermostat with telling the user, in Home Assistant, which proxy to go and pair with.
+
+It is a WARNING, not an error, and it convicts nobody: no bond is evicted and reconnects are not suspended, because nothing was refused — no pairing was attempted at all. The poll cadence is slowed to 15 minutes because the retries are futile while the scoring stands, not because the thermostat did anything wrong. The condition often clears on its own when signal conditions shift.
+
+### Requires pymadoka-ng 0.3.12
+
+The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.
+
 ## v3.9.2 - August 2026
 
 A follow-up to v3.9.1. The setpoint fix released there was right for the units it was reported from and wrong for a unit that keeps a minimum gap between its two setpoints.

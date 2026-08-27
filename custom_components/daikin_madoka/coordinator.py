@@ -61,6 +61,11 @@ UNREACHABLE_THRESHOLD = 5
 # about a device.
 BACKOFF_PAIRING = "pairing_timeout"
 BACKOFF_UNREACHABLE = "unreachable"
+# Every path HA chose was one we refused to pair on, for long enough that the
+# library gave up. Kept apart from BACKOFF_PAIRING because it tells the
+# opposite story: nothing was attempted, so nothing failed — the thermostat is
+# fine and the ROUTING is the problem.
+BACKOFF_UNBONDED_PATH = "unbonded_path"
 # Consecutive polls skipped for lock contention before we stop serving stale
 # data. Three: a skip means another Madoka device held the connect lock for a
 # whole connect budget, so three of them is minutes of a device we have not
@@ -374,6 +379,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._device_info_attempts = 0
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
+        self._unbonded_path_issue_active = False
         self._boost_unsub: CALLBACK_TYPE | None = None
         # Cancel handle of the pairing window's time-to-live timer, and the
         # poll interval to go back to once a timeout backoff ends.
@@ -947,7 +953,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # unreachable advice (power/range) would be wrong next to the
         # pairing_required ERROR (or the pairing_slow WARNING, which tells the
         # opposite story), so keep that single repair on screen.
-        if self._pairing_issue_active or self._pairing_slow_issue_active:
+        if (
+            self._pairing_issue_active
+            or self._pairing_slow_issue_active
+            or self._unbonded_path_issue_active
+        ):
             return
         if self._issue_active:
             return
@@ -1107,6 +1117,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         backoff only costs time.
         """
         reason = getattr(err, "reason", None)
+        if reason == "unbonded_path":
+            # A fourth tier, and the only one that is a statement about
+            # ROUTING rather than about a bond. pymadoka refused to pair on
+            # every path HA chose because we told it those proxies are not
+            # bonded, so pair() was never called and nothing was prompted on
+            # the thermostat. Nothing here is evidence against any bond, and
+            # the branches below would all misread it: there was no refusal to
+            # convict and no timeout to infer from.
+            self._async_enter_unbonded_path_backoff(err)
+            return
         if isinstance(reason, str):
             # A reason we do not recognise is not evidence of a refusal.
             proven_rejection = reason == "rejected"
@@ -1242,6 +1262,31 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._async_slow_to_backoff_cadence(BACKOFF_PAIRING)
 
     @callback
+    def _async_enter_unbonded_path_backoff(self, err: PairingRequiredError) -> None:
+        """Slow down, say which proxy, and offer the one fix that works.
+
+        Deliberately NOT _note_pairing_failure(): suspending reconnects is for
+        a proven refusal, and this device refused nothing. The retries are also
+        genuinely cheap here — a connect and a disconnect, no SMP exchange and
+        nothing on the screen — so they may continue; they are slowed only
+        because they are futile while HA's scoring keeps electing the same
+        unusable path, and that scoring can shift on its own (RSSI, free slots,
+        failure counts all move) which is exactly how this state clears
+        without anyone doing anything.
+
+        The reauth flow IS the remedy, though, and unlike the timeout tier that
+        is not a guess: a proxy that holds no bond will never hold one until a
+        human stands at the thermostat and confirms a code. Offering the Fix
+        button is the whole point of the exercise — the prompt moves off the
+        thermostat screen, where nobody was watching it, and into Home
+        Assistant, where somebody is.
+        """
+        self._pairing.last_error = err
+        self._raise_unbonded_path_issue(err)
+        self._async_slow_to_backoff_cadence(BACKOFF_UNBONDED_PATH)
+        self._async_start_reauth()
+
+    @callback
     def _async_slow_to_backoff_cadence(self, reason: str | None = None) -> None:
         """Brake the poll cadence to TIMEOUT_BACKOFF_INTERVAL_S. Idempotent.
 
@@ -1260,9 +1305,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         which re-applies the configured cadence, so any poll that persists
         pairing state can quietly hand a stalling device its fast interval back.
         """
-        if reason is not None and self._pairing.backoff_reason != BACKOFF_PAIRING:
+        if reason is not None and not (
+            reason == BACKOFF_UNREACHABLE
+            and self._pairing.backoff_reason
+            in (BACKOFF_PAIRING, BACKOFF_UNBONDED_PATH)
+        ):
             # A pairing verdict is the more specific story and outranks a bare
-            # failure streak; never let the streak overwrite it.
+            # failure streak; never let the streak overwrite it. Between two
+            # pairing verdicts the newer one wins — they describe the same
+            # device at different moments, and the stale one would misreport
+            # it in diagnostics.
             self._pairing.backoff_reason = reason
         self._pairing.backoff = True
         backoff = timedelta(seconds=TIMEOUT_BACKOFF_INTERVAL_S)
@@ -1380,6 +1432,31 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             learn_more_url=DOCS_URL,
         )
 
+    @callback
+    def _raise_unbonded_path_issue(self, err: PairingRequiredError) -> None:
+        """Report a routing dead end, and name the proxy to go and pair.
+
+        WARNING, not ERROR: the thermostat is healthy and the condition can
+        clear on its own the moment HA's path scoring moves. What makes it
+        worth a repair anyway is that it is precisely actionable — unlike
+        every other tier, we know exactly which proxy to pair with, and we
+        know pairing with it was never even attempted.
+        """
+        self._unbonded_path_issue_active = True
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"unbonded_path_{self.address}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="unbonded_path",
+            translation_placeholders={
+                "device": self.device_name,
+                "proxies": self._proxy_names(err.tried_sources),
+            },
+            learn_more_url=DOCS_URL,
+        )
+
     def _proxy_names(self, sources: list[str | None]) -> str:
         """Resolve proxy source MACs to human-readable scanner names."""
         names = []
@@ -1399,6 +1476,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._issue_active = False
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
+        self._unbonded_path_issue_active = False
         # The window is permission for one deliberate attempt, not a standing
         # grant: close it as soon as the device is reachable again. The
         # suspension is deliberately NOT cleared here — this also runs on
@@ -1406,6 +1484,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._async_close_pairing_window()
         ir.async_delete_issue(self.hass, DOMAIN, f"unreachable_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_required_{self.address}")
+        ir.async_delete_issue(self.hass, DOMAIN, f"unbonded_path_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_slow_{self.address}")
 
     @callback
@@ -1443,6 +1522,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def pairing_slow_issue_active(self) -> bool:
         """True while this coordinator has a pairing_slow repair open."""
         return self._pairing_slow_issue_active
+
+    @property
+    def unbonded_path_issue_active(self) -> bool:
+        """True while this coordinator has an unbonded_path repair open."""
+        return self._unbonded_path_issue_active
 
     @property
     def pairing_backoff(self) -> bool:

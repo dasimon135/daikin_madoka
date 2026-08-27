@@ -118,6 +118,10 @@
     "pairing_slow": {
       "title": "{device} is not completing its Bluetooth pairing",
       "description": "Connections to {device} keep timing out while the Bluetooth pairing is being established (tried via: {proxies}). This is not proof that the thermostat refused anything — a busy proxy can cause it too — so Home Assistant keeps trying, but far less often to avoid flooding the thermostat with pairing prompts. If it does not recover on its own: stand at the thermostat, press the device's Reconnect button in Home Assistant, and confirm the pairing prompt on its screen. See the pairing documentation for details."
+    },
+    "unbonded_path": {
+      "title": "{device} can only be reached through an unpaired proxy",
+      "description": "Home Assistant keeps routing its connection to {device} through {proxies}, which this thermostat has never been paired with. No pairing was attempted, so nothing was prompted on the thermostat screen — but the connection cannot be used either. This often clears on its own when Bluetooth signal conditions change. To fix it for good: stand at the thermostat, press the device's Reconnect button in Home Assistant, and confirm the pairing prompt on its screen — pairing is required once per proxy. See the pairing documentation for details."
     }
   }
 }

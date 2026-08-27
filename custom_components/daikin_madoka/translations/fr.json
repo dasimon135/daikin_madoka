@@ -118,6 +118,10 @@
     "pairing_slow": {
       "title": "{device} ne termine pas son appairage Bluetooth",
       "description": "Les connexions vers {device} expirent systématiquement pendant l'établissement de l'appairage Bluetooth (essayé via : {proxies}). Cela ne prouve pas que le thermostat a refusé quoi que ce soit — un proxy surchargé produit le même symptôme — aussi Home Assistant continue d'essayer, mais beaucoup plus rarement, pour ne pas inonder le thermostat d'invites d'appairage. S'il ne se rétablit pas de lui-même : placez-vous devant le thermostat, appuyez sur le bouton Reconnecter de l'appareil dans Home Assistant, puis confirmez l'invite d'appairage sur son écran. Voir la documentation d'appairage pour les détails."
+    },
+    "unbonded_path": {
+      "title": "{device} n'est joignable que par un proxy non appairé",
+      "description": "Home Assistant achemine ses connexions vers {device} par {proxies}, avec lequel ce thermostat n'a jamais été appairé. Aucun appairage n'a été tenté, donc rien ne s'est affiché sur l'écran du thermostat — mais la connexion est inutilisable pour autant. La situation se résout souvent d'elle-même quand les conditions du signal Bluetooth changent. Pour la régler définitivement : placez-vous devant le thermostat, appuyez sur le bouton Reconnecter de l'appareil dans Home Assistant, puis confirmez la demande d'appairage sur son écran — l'appairage est nécessaire une fois par proxy. Voir la documentation sur l'appairage."
     }
   }
 }
