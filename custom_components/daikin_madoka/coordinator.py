@@ -217,6 +217,20 @@ class MadokaPairingState:
     # accumulate enough evidence to be evicted. Cleared for a source the moment
     # that source authenticates again.
     auth_failures: dict[str, int] = field(default_factory=dict)
+    # Consecutive pairing TIMEOUTS per proxy source, cleared for a source the
+    # moment it authenticates. Purely diagnostic: nothing reads it to decide
+    # anything, and that restraint is deliberate. A timeout does not say
+    # whether the bond is dead or the proxy is merely congested, and since the
+    # allowed-source veto landed, dropping a proxy from CONF_BONDED_SOURCES
+    # stops it being paired on at all — so a wrong eviction now costs a trip to
+    # the thermostat rather than a slightly worse candidate order.
+    #
+    # It exists because the evidence was otherwise unrecoverable: auth_failures
+    # counts only PROVEN refusals, and in the field every pairing failure
+    # observed here was a timeout. Answering "which of this device's bonds
+    # looks dead?" meant joining two days of raw log lines against
+    # bonded_sources by hand.
+    timeout_sources: dict[str, int] = field(default_factory=dict)
     # monotonic() at the last fully successful poll, or None. The acquittal a
     # "rejected" verdict is checked against (see AUTH_CORROBORATION_WINDOW_S),
     # and CONSUMED when it is spent, so one good session excuses exactly one
@@ -253,6 +267,8 @@ class MadokaPairingState:
             stored["fail_count"] = min(self.fail_count, UNREACHABLE_THRESHOLD)
         if self.auth_failures:
             stored["auth_failures"] = dict(self.auth_failures)
+        if self.timeout_sources:
+            stored["timeout_sources"] = dict(self.timeout_sources)
         if self.last_error is not None:
             stored["last_error"] = {
                 "tried_sources": list(self.last_error.tried_sources)
@@ -276,14 +292,18 @@ class MadokaPairingState:
             last_error = PairingRequiredError(
                 address, list(sources) if isinstance(sources, list) else []
             )
-        raw_failures = stored.get("auth_failures")
-        auth_failures = {}
-        if isinstance(raw_failures, Mapping):
-            auth_failures = {
+        def _counts(key: str) -> dict[str, int]:
+            raw = stored.get(key)
+            if not isinstance(raw, Mapping):
+                return {}
+            return {
                 str(source): count
-                for source, count in raw_failures.items()
+                for source, count in raw.items()
                 if isinstance(count, int) and not isinstance(count, bool) and count > 0
             }
+
+        auth_failures = _counts("auth_failures")
+        timeout_sources = _counts("timeout_sources")
         return cls(
             last_error=last_error,
             timeout_rounds=_count("timeout_rounds"),
@@ -296,6 +316,7 @@ class MadokaPairingState:
             ),
             fail_count=_count("fail_count"),
             auth_failures=auth_failures,
+            timeout_sources=timeout_sources,
         )
 
 
@@ -788,6 +809,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # Cleared here as well as in _async_record_bonded_source because a poll
         # over an already-open link never goes through the connect path at all.
         self._pairing.auth_failures.pop(source, None)
+        self._pairing.timeout_sources.pop(source, None)
         bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
         if source not in bonded:
             bonded.append(source)
@@ -831,6 +853,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # This path just authenticated, so whatever it was accused of before is
         # over: a streak has to be CONSECUTIVE to mean anything.
         self._pairing.auth_failures.pop(source, None)
+        self._pairing.timeout_sources.pop(source, None)
         bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
         if source in bonded:
             return
@@ -1231,6 +1254,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing.timeout_rounds = 0
 
     @callback
+    def _async_note_timed_out_paths(self, err: PairingRequiredError) -> None:
+        """Charge this round's timeouts to the paths they actually happened on.
+
+        Reads the same authoritative mapping the eviction bookkeeping does, and
+        with the same rule: only a source pymadoka could PROVE carried the
+        attempt counts. A path keyed under None means "this round cannot say
+        which proxy failed", and guessing there is exactly the defect the
+        evidence mapping exists to prevent.
+        """
+        evidence = getattr(err, "evidence", None)
+        if not isinstance(evidence, Mapping):
+            return
+        for source, verdict in evidence.items():
+            if verdict != "timeout" or not source:
+                continue
+            self._pairing.timeout_sources[source] = (
+                self._pairing.timeout_sources.get(source, 0) + 1
+            )
+
+    @callback
     def _async_enter_timeout_backoff(self, err: PairingRequiredError) -> None:
         """Slow down hard, but never convict.
 
@@ -1258,6 +1301,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # action. Zero here means "count three fresh rounds before saying this
         # again", not "forget that pairing is not completing".
         self._pairing.timeout_rounds = 0
+        self._async_note_timed_out_paths(err)
         self._raise_pairing_slow_issue(err)
         self._async_slow_to_backoff_cadence(BACKOFF_PAIRING)
 

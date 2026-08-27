@@ -115,16 +115,25 @@ def _patched_bluetooth():
     )
 
 
-async def _refresh(hass: HomeAssistant, entry: MockConfigEntry) -> MadokaCoordinator:
-    # A polling coordinator only exists on a loaded entry, and the recovery
-    # affordances check for it: _async_start_reauth deliberately refuses to
-    # open a flow that would outlive the entry it belongs to.
+async def _refresh(hass: HomeAssistant, entry: MockConfigEntry):
+    """One failing poll. Returns (coordinator, the patched reauth trigger).
+
+    The trigger is patched rather than left to run: opening a real flow
+    schedules a background task that outlives the test and makes teardown
+    intermittently fail, and HA's flow machinery is not what any of these
+    tests is about — the routing decision is.
+
+    The entry is marked LOADED because that is the state a polling coordinator
+    is really in, and the recovery affordances check for it.
+    """
     entry.mock_state(hass, config_entries.ConfigEntryState.LOADED)
     coordinator = _coordinator(hass, entry, _controller())
     present, scanner = _patched_bluetooth()
-    with present, scanner:
+    with present, scanner, patch.object(
+        MadokaCoordinator, "_async_start_reauth", autospec=True
+    ) as start_reauth:
         await coordinator.async_refresh()
-    return coordinator
+    return coordinator, start_reauth
 
 
 # --------------------------------------------------------------------------
@@ -186,7 +195,7 @@ async def test_unbonded_path_raises_its_own_repair_naming_the_proxy(
 async def test_unbonded_path_slows_the_poll_cadence(hass: HomeAssistant) -> None:
     """Retries are cheap (no SMP) but futile while the scoring stands."""
     entry = _entry(hass)
-    coordinator = await _refresh(hass, entry)
+    coordinator, _ = await _refresh(hass, entry)
 
     assert coordinator.update_interval == timedelta(
         seconds=TIMEOUT_BACKOFF_INTERVAL_S
@@ -204,9 +213,6 @@ async def test_unbonded_path_offers_a_way_out(hass: HomeAssistant) -> None:
     reaches for the reauth affordance at all.
     """
     entry = _entry(hass)
-    with patch.object(
-        MadokaCoordinator, "_async_start_reauth", autospec=True
-    ) as start_reauth:
-        await _refresh(hass, entry)
+    _, start_reauth = await _refresh(hass, entry)
 
     start_reauth.assert_called_once()
