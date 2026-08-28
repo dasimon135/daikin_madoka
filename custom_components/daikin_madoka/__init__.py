@@ -8,6 +8,7 @@ from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_BONDED_SOURCES,
@@ -64,6 +65,29 @@ def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
         dev_reg.async_remove_device(device.id)
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the bundled Lovelace card as soon as the component loads.
+
+    Deliberately here and not in ``async_setup_entry``. The card is referenced
+    by a dashboard resource URL that HA's frontend requests on every page load,
+    while a config entry only finishes setting up once the Bluetooth stack is
+    up and the thermostats have been given their chance to answer -- seconds
+    later, and not at all when every entry fails. Registering the static path
+    from the entry therefore left a window, right after a restart, in which the
+    URL returned 404: the browser parsed the error page as a module, the custom
+    element was never defined, and the card rendered as "custom element doesn't
+    exist: madoka-card" until that page was reloaded by hand.
+
+    Opening a dashboard immediately after restarting Home Assistant is exactly
+    how someone lands in that window, which is why the failure looked random.
+
+    This runs when the component is imported, before any entry, and the http
+    and frontend components it needs are already declared as dependencies.
+    """
+    await async_register_card(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bool:
     """Set up Madoka thermostat(s) from a config entry.
 
@@ -81,8 +105,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
     # Idempotent and cheap (one pass over the registry), so running it on
     # every entry setup is fine.
     _async_purge_orphan_devices(hass)
-
-    await async_register_card(hass)
 
     # Before any coordinator exists: what the integration concluded about this
     # device's bond before the last restart drives the very first connect
