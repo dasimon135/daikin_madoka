@@ -20,6 +20,29 @@ If every path Home Assistant chooses stays unsanctioned for three consecutive ro
 
 It is a WARNING, not an error, and it convicts nobody: no bond is evicted and reconnects are not suspended, because nothing was refused — no pairing was attempted at all. The poll cadence is slowed to 15 minutes because the retries are futile while the scoring stands, not because the thermostat did anything wrong. The condition often clears on its own when signal conditions shift.
 
+### What it costs when the veto is the only thing left
+
+Stated plainly, because a day of field observation made it concrete rather than
+theoretical. When Home Assistant elects an unsanctioned proxy for every attempt
+of a round — which it will, since it re-scores each attempt and a free proxy
+scores well — the veto refuses all of them and the round cannot fall through to
+a bonded path. The device then goes UNAVAILABLE.
+
+That is the intended trade, and it is worth being deliberate about: a thermostat
+whose entities are unavailable, with a repair naming the proxy to pair with, is
+better than one that works while lighting a six-digit code nobody answers, every
+night, invisibly. But it is a real cost and it is not hypothetical.
+
+Measured 2026-08-29 on the maintainer's install. The stale proxy was dropped at
+15:12; the veto then refused it on every round and the thermostat was
+unreachable from 16:29. At 16:52 the scoring shifted — the good proxy's failure
+count had decayed, putting it back in front by a single point — the round fell
+through to it, and the device recovered on its own with no pairing, no prompt
+and no user action. Both repairs closed themselves.
+
+So the unavailability lasts as long as the scoring insists, which is minutes to
+hours, and the Reconnect button ends it deliberately at any time.
+
 ### bonded_sources no longer claims a key the proxy has lost
 
 The bonded-proxy list records what a session once succeeded through. It is not a reading of the proxy's keystore, and the two drift apart — which matters more than it sounds, because the new veto trusts that list: a stale entry is precisely a path it will still allow pairing on.
