@@ -32,7 +32,29 @@ Both eviction triggers — proven refusals and stale-key timeouts — now share 
 
 Being wrong is cheap and self-announcing: a wrongly dropped path stops being paired on, and if it was the only usable one, the unbonded_path repair names it and a single Reconnect restores it.
 
-### Requires pymadoka-ng 0.3.12
+### A proxy that proved it holds no key is no longer forgiven every round
+
+Found on live hardware while this release was under observation, and it is the
+half that made the eviction above unreachable in practice.
+
+A proxy refused a thermostat's bond outright — the strongest evidence there
+is — and then timed out on every round afterwards, because that is what a
+keyless proxy does: the prompt goes up on the screen and nobody answers it.
+The library retains a proven refusal precisely so the later rounds inherit it,
+but the retention was consulted one branch too late to ever see a timeout, so
+the verdict decayed to "timeout" from the second round onward and the
+integration, which acts only on proven refusals, charged nobody. The proxy
+kept its place in `bonded_sources` — the very list the veto trusts — and every
+reconnect lit a fresh six-digit code with nothing able to conclude otherwise.
+
+The arithmetic left over was hopeless: reaching eviction through the timeout
+route alone takes 3 library rounds x 3 candidates x 5 errors, about 45 pairing
+attempts, every one of them consecutive and every one of them a prompt.
+
+Fixed in pymadoka-ng 0.3.13. Nothing in this integration changed: it was
+already asking the right question, and now gets a truthful answer.
+
+### Requires pymadoka-ng 0.3.13
 
 The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.
 
