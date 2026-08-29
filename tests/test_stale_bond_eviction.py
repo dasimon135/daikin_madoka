@@ -38,6 +38,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.daikin_madoka.const import (
     BOND_STALE_TIMEOUTS,
+    BOND_STALE_TIMEOUTS_CORROBORATED,
     CONF_BONDED_SOURCES,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
@@ -204,5 +205,77 @@ async def test_an_unattributable_timeout_never_costs_anyone_a_bond(
     entry = _entry(hass)
     for _ in range(BOND_STALE_TIMEOUTS * 2):
         await _time_out(hass, entry, source=None)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+# --------------------------------------------------------------------------
+# Congestion does not pick a favourite proxy
+# --------------------------------------------------------------------------
+#
+# Field case, Salon, 2026-08-29. One proxy took every attempt of every round
+# for seventeen hours and timed out on all of them, while the other proxies
+# polled the same thermostat normally in between. The streak rule above never
+# reached its threshold, because the honest reading of a timeout — congestion
+# until proven otherwise — kept the bar deliberately high.
+#
+# But congestion is a property of the AIR, not of a proxy: it cannot make one
+# path fail while another authenticates against the same device minutes apart.
+# So a success ELSEWHERE, while this path's streak is running, removes the
+# innocent explanation and the same evidence becomes conclusive sooner.
+#
+# The mirror of AUTH_CORROBORATION_WINDOW_S, which downgrades a refusal that a
+# recent session contradicts. Here a contemporaneous success on another path
+# upgrades a timeout streak instead.
+
+
+async def test_a_corroborated_streak_is_conclusive_sooner(
+    hass: HomeAssistant,
+) -> None:
+    """A success on another path rules out the congestion defence."""
+    entry = _entry(hass)
+
+    await _time_out(hass, entry)
+    # The air is demonstrably fine: this proves it against the same device.
+    await _succeed_via(hass, entry, GOOD)
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED - 1):
+        await _time_out(hass, entry)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_an_uncorroborated_streak_still_takes_the_long_road(
+    hass: HomeAssistant,
+) -> None:
+    """The guard rail: with nothing to contradict it, a timeout is congestion.
+
+    Without a contemporaneous success elsewhere, the short threshold must not
+    apply — a proxy dropped on congestion alone costs a re-pair with a human at
+    the thermostat, which is the asymmetry the long streak exists to respect.
+    """
+    entry = _entry(hass)
+
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED):
+        await _time_out(hass, entry)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_the_path_authenticating_itself_clears_the_corroboration(
+    hass: HomeAssistant,
+) -> None:
+    """A path that authenticates has answered the accusation, whatever backed it.
+
+    Corroboration is an argument ABOUT a streak, so it cannot outlive the
+    streak it qualifies: this path just proved it holds a bond.
+    """
+    entry = _entry(hass)
+
+    await _time_out(hass, entry)
+    await _succeed_via(hass, entry, GOOD)
+    await _succeed_via(hass, entry, STALE)
+
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED):
+        await _time_out(hass, entry)
 
     assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]

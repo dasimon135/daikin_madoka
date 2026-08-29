@@ -25,6 +25,7 @@ from .const import (
     AUTOMATIC_PAIR_TIMEOUT,
     BOND_EVICTION_FAILURES,
     BOND_STALE_TIMEOUTS,
+    BOND_STALE_TIMEOUTS_CORROBORATED,
     BRC1H_NAME_PREFIX,
     CANDIDATE_CONNECT_OVERHEAD_S,
     CONF_BONDED_SOURCES,
@@ -232,6 +233,11 @@ class MadokaPairingState:
     # looks dead?" meant joining two days of raw log lines against
     # bonded_sources by hand.
     timeout_sources: dict[str, int] = field(default_factory=dict)
+    # Sources whose timeout streak is no longer explicable by congestion,
+    # because another path authenticated against this same device while the
+    # streak was running (see BOND_STALE_TIMEOUTS_CORROBORATED). An argument
+    # ABOUT a streak, so it lives and dies with the streak it qualifies.
+    timeout_corroborated: set[str] = field(default_factory=set)
     # monotonic() at the last fully successful poll, or None. The acquittal a
     # "rejected" verdict is checked against (see AUTH_CORROBORATION_WINDOW_S),
     # and CONSUMED when it is spent, so one good session excuses exactly one
@@ -270,6 +276,10 @@ class MadokaPairingState:
             stored["auth_failures"] = dict(self.auth_failures)
         if self.timeout_sources:
             stored["timeout_sources"] = dict(self.timeout_sources)
+        if self.timeout_corroborated:
+            # Sorted for a stable config entry: an unordered set would rewrite
+            # the entry on every poll for no change at all.
+            stored["timeout_corroborated"] = sorted(self.timeout_corroborated)
         if self.last_error is not None:
             stored["last_error"] = {
                 "tried_sources": list(self.last_error.tried_sources)
@@ -305,6 +315,15 @@ class MadokaPairingState:
 
         auth_failures = _counts("auth_failures")
         timeout_sources = _counts("timeout_sources")
+        raw_corroborated = stored.get("timeout_corroborated")
+        corroborated = {
+            str(source)
+            for source in (
+                raw_corroborated if isinstance(raw_corroborated, list) else []
+            )
+            # Only meaningful while the streak it qualifies still exists.
+            if str(source) in timeout_sources
+        }
         return cls(
             last_error=last_error,
             timeout_rounds=_count("timeout_rounds"),
@@ -318,6 +337,7 @@ class MadokaPairingState:
             fail_count=_count("fail_count"),
             auth_failures=auth_failures,
             timeout_sources=timeout_sources,
+            timeout_corroborated=corroborated,
         )
 
 
@@ -547,6 +567,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # covers a poll over an already-open link, which never goes through the
         # connect path at all.
         self._pairing.last_success = monotonic()
+        self._async_corroborate_other_streaks()
         self._clear_issues()
         # Full clear only here: an unload (which also runs _clear_issues via
         # async_shutdown_extras) must NOT lift the suspension, or a simple
@@ -811,6 +832,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # over an already-open link never goes through the connect path at all.
         self._pairing.auth_failures.pop(source, None)
         self._pairing.timeout_sources.pop(source, None)
+        self._pairing.timeout_corroborated.discard(source)
         bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
         if source not in bonded:
             bonded.append(source)
@@ -855,6 +877,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # over: a streak has to be CONSECUTIVE to mean anything.
         self._pairing.auth_failures.pop(source, None)
         self._pairing.timeout_sources.pop(source, None)
+        self._pairing.timeout_corroborated.discard(source)
         bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
         if source in bonded:
             return
@@ -970,6 +993,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         bonded.remove(source)
         self._pairing.auth_failures.pop(source, None)
         self._pairing.timeout_sources.pop(source, None)
+        self._pairing.timeout_corroborated.discard(source)
         _LOGGER.warning(
             "%s: dropping %s from the bonded proxies (%s); reconnects will use "
             "the remaining %d",
@@ -1211,6 +1235,25 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._async_enter_timeout_backoff(err)
 
     @callback
+    def _async_corroborate_other_streaks(self) -> None:
+        """This session just proved the air is fine. Note it against the rest.
+
+        Congestion cannot single out one proxy: it could not have made another
+        path time out while this one authenticated against the same thermostat.
+        So every OTHER path currently carrying a timeout streak loses the only
+        innocent explanation it had, and BOND_STALE_TIMEOUTS_CORROBORATED
+        applies to it from here on.
+
+        Not consumed like the acquittal is. That one excuses a single refusal
+        and must not be spendable twice; this records a fact about the air that
+        stays true for as long as the streak it qualifies lasts.
+        """
+        source = self.controller.connection.connected_source
+        self._pairing.timeout_corroborated.update(
+            other for other in self._pairing.timeout_sources if other != source
+        )
+
+    @callback
     def _async_spend_acquittal(self) -> bool:
         """Does a fresh authenticated session refute this refusal? Spend it if so.
 
@@ -1290,19 +1333,33 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # number changes nothing, and the clamp is what stops a device
             # whose eviction is blocked (last bonded path) from rewriting the
             # config entry on every poll forever.
+            # Corroborated streaks conclude sooner, so the clamp has to be
+            # the threshold actually in force — clamping at the long one would
+            # let a corroborated streak keep rewriting the config entry after
+            # it had already said everything it had to say.
+            threshold = (
+                BOND_STALE_TIMEOUTS_CORROBORATED
+                if source in self._pairing.timeout_corroborated
+                else BOND_STALE_TIMEOUTS
+            )
             streak = min(
-                self._pairing.timeout_sources.get(source, 0) + 1,
-                BOND_STALE_TIMEOUTS,
+                self._pairing.timeout_sources.get(source, 0) + 1, threshold
             )
             self._pairing.timeout_sources[source] = streak
-            if streak < BOND_STALE_TIMEOUTS:
+            if streak < threshold:
                 continue
             # Never succeeded once across the whole streak, so the entry in
             # CONF_BONDED_SOURCES is claiming a key this proxy does not have.
             # Dropping it is what stops the numeric-comparison prompts: the
             # pairing veto only spares paths the list does not vouch for.
             self._async_drop_bonded_source(
-                source, f"{BOND_STALE_TIMEOUTS} pairing timeouts with no success"
+                source,
+                f"{threshold} pairing timeouts with no success"
+                + (
+                    " while another path authenticated"
+                    if source in self._pairing.timeout_corroborated
+                    else ""
+                ),
             )
 
     @callback

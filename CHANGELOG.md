@@ -54,6 +54,29 @@ attempts, every one of them consecutive and every one of them a prompt.
 Fixed in pymadoka-ng 0.3.13. Nothing in this integration changed: it was
 already asking the right question, and now gets a truthful answer.
 
+### Congestion does not pick a favourite proxy
+
+The eviction above waits for five timeout rounds on one path because a timeout
+is ambiguous: congestion produces one on a perfectly good bond, and convicting
+a healthy proxy costs a re-pair with a human standing at the thermostat. Held
+against the field, that bar was never cleared — one proxy took every attempt of
+every round for seventeen hours while the others polled the same thermostat
+normally in between, and every round lit a fresh six-digit code.
+
+But congestion is a property of the air, not of a proxy. It cannot make one
+path time out while another authenticates against the same thermostat minutes
+apart. So a successful session on a DIFFERENT path, while this one's streak is
+running, removes the only innocent explanation the streak had, and two rounds
+then suffice instead of five.
+
+This is the mirror of the rule that already governs refusals, where a session
+completed minutes earlier downgrades a "refused the bond" verdict to the
+timeout tier. The same evidence, read in the other direction.
+
+Nothing is convicted on congestion alone: with no contemporaneous success
+elsewhere the long streak still applies, and any success on the accused path
+itself clears both the streak and the corroboration.
+
 ### Requires pymadoka-ng 0.3.13
 
 The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.

@@ -44,6 +44,30 @@ BOND_EVICTION_FAILURES = 3
 # dropped path stops being paired on, and if it was the only usable one the
 # unbonded_path repair names it and a single Reconnect restores it.
 BOND_STALE_TIMEOUTS = 5
+
+# ...unless a DIFFERENT path completed an authenticated session while this
+# one's streak was running, in which case this many suffice.
+#
+# The whole reason the streak above is long is that a timeout is ambiguous:
+# congestion produces one on a perfectly valid bond, and convicting a healthy
+# proxy costs a re-pair with a human standing at the thermostat. But congestion
+# is a property of the AIR, not of a proxy. It cannot make one path time out
+# while another authenticates against the same thermostat minutes apart, so a
+# contemporaneous success elsewhere removes the innocent explanation and what
+# is left is a fact about this path.
+#
+# Field case 2026-08-29: one proxy took every attempt of every round for
+# seventeen hours and timed out on all of them, while the others polled the
+# same thermostat normally in between. At five, and with any success on the
+# path resetting the count, the streak never arrived — while every round put a
+# fresh six-digit code on the screen.
+#
+# Two rather than one, because the evidence still has to repeat: one raised
+# error already covers several attempts, but a single unlucky round must not be
+# enough on its own. This is the mirror of AUTH_CORROBORATION_WINDOW_S, which
+# DOWNGRADES a refusal a recent session contradicts; here a contemporaneous
+# success on another path UPGRADES a timeout streak.
+BOND_STALE_TIMEOUTS_CORROBORATED = 2
 # Durable shadow of the per-MAC pairing verdict (suspended / backoff /
 # timeout streak / consecutive failures / last pairing error), keyed by MAC.
 # The live copy lives in hass.data so it survives a coordinator rebuild; this
