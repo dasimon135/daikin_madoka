@@ -101,7 +101,15 @@ Remember the bond is per proxy: re-pairing restores one path, and another proxy 
 
 📘 **Reference proxy setup**: for the complete, annotated configuration — including a pairing responder per thermostat that pushes the 6-digit pairing code to Home Assistant as a notification (so you know *which* thermostat is pairing through *which* proxy), the passive-proxy alternative, and a troubleshooting table for multi-proxy homes — see **[docs/esphome-proxy.md](docs/esphome-proxy.md)**.
 
-#### Via the HA host's own adapter
+#### Via the HA host's own adapter (not validated)
+
+> ⚠️ **This route is not validated on hardware.** It works for some people and
+> the config flow does pair over the local adapter by itself. But every report
+> of "the BRC1H is discovered, the passkey appears, and the link drops seconds
+> later" has come from a built-in adapter or a USB dongle, and in at least one
+> case the bare `bluetoothctl` procedure below failed identically with no
+> integration involved. If pairing does not complete here, the ESPHome proxy
+> above is the supported answer — not more attempts on the local adapter.
 
 Pair the device once from the host:
 
@@ -117,6 +125,23 @@ pair <MAC_ADDRESS>
 ```
 
 > If running HA in Docker: mount `/var/run/dbus/system_bus_socket` and run in privileged mode.
+
+#### If pairing has already failed several times
+
+This applies to **both** routes above.
+
+After a handful of failed attempts the BRC1H's Bluetooth stack stays jammed and
+refuses even a correct configuration, so every retry past the first few tells
+you nothing. Clearing it takes both sides:
+
+1. **On the thermostat**: Bluetooth menu → forget the pairing, then toggle
+   Bluetooth off and on again.
+2. **On the host or proxy**: drop the stored bond too — `remove <MAC_ADDRESS>`
+   in `bluetoothctl`, or reflash the ESP32. A host that reports
+   `Bonded: yes` after a *failed* pairing has kept a key from that attempt and
+   will reuse it.
+3. Then make **one** attempt, and confirm on the thermostat screen within a few
+   seconds. Retrying in a loop is what puts it back into the jammed state.
 
 ---
 
@@ -187,9 +212,9 @@ climate:
 > within a few seconds. The bond is stored on the ESP32 and survives reboots.
 >
 > **If pairing already failed several times**, the BRC1H's Bluetooth stack
-> stays jammed and will refuse even a correct configuration. On the
-> thermostat: Bluetooth menu → forget the pairing, then toggle Bluetooth off
-> and on again before retrying.
+> stays jammed and will refuse even a correct configuration. See
+> [If pairing has already failed several times](#if-pairing-has-already-failed-several-times)
+> for the sequence that clears it — it applies here too.
 
 ### Optional entities
 

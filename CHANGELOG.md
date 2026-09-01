@@ -104,6 +104,22 @@ itself clears both the streak and the corroboration.
 
 The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.
 
+### The card no longer renders as "custom element doesn't exist"
+
+Reported as intermittent with no pattern anyone could pin down ([#65](https://github.com/dasimon135/daikin_madoka/issues/65)).
+
+The dashboard resource points at `/daikin_madoka/madoka-card.js`, which the frontend requests on every page load. The static path behind that URL was registered from `async_setup_entry` — which only runs once the Bluetooth stack is up and the thermostats have had their chance to answer, seconds after Home Assistant starts accepting HTTP requests. In that window the URL returned 404, the browser parsed the error page as a JavaScript module, the custom element was never defined, and the card stayed broken on that page until it was reloaded by hand.
+
+Opening a dashboard right after restarting Home Assistant is exactly how one lands in that window, which is what made the failure look random.
+
+Serving the card is a component-level concern, not an entry-level one, so it moves to `async_setup`: it runs when the component is imported, before any entry, and regardless of whether any entry succeeds. ([#81](https://github.com/dasimon135/daikin_madoka/pull/81))
+
+### The device page carries a model and a revision again
+
+Setup called `read_info()` immediately after building the controller, before the BLE link existed. pymadoka returns an empty dict in that state without raising and without caching it, and nothing ever retried, so the model marking and firmware revision never reached the device registry: every device page showed a bare BRC1H with no version, on every installation. It is now read from a poll that has just succeeded, and stops after `DEVICE_INFO_MAX_ATTEMPTS` so a controller that publishes no Device Information service is not re-enumerated on every cycle.
+
+Reading it on real hardware settled what that service actually describes: `UE878 RF MODULE` by Universal Electronics, Model Number String `0.1`, Software Revision `7031.05.17` — the BRC1H's **Bluetooth radio**, not the Daikin controller. So `model=f"BRC1H{model}"` was inventing a marking (it rendered as `BRC1H0.1` on all four units here), and the revisions belong to the radio. They are reported as such; the Daikin firmware version is not exposed over GATT at all. ([#78](https://github.com/dasimon135/daikin_madoka/issues/78), [#79](https://github.com/dasimon135/daikin_madoka/pull/79))
+
 ## v3.9.2 - August 2026
 
 A follow-up to v3.9.1. The setpoint fix released there was right for the units it was reported from and wrong for a unit that keeps a minimum gap between its two setpoints.
