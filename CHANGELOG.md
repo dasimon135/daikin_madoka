@@ -1,5 +1,109 @@
 # Changelog
 
+## v3.10.0 - August 2026
+
+Thermostat screens stop being asked to confirm pairings nobody can answer.
+
+### The pairing prompts on the thermostat screen are gone
+
+The integration has restricted automatic reconnects to proxies known to hold a bond since v3.6.0, by filtering the candidate list it hands to pymadoka. That restriction was advisory and could not have been anything else: Home Assistant keeps only the *address* of the `BLEDevice` it is given and re-scores every connectable path itself at connect time. So a reconnect could — and regularly did — land on a proxy the integration had deliberately excluded, and pairing there put a six-digit confirmation prompt on the thermostat screen that no unattended retry can ever answer.
+
+Field measurement behind this release: one thermostat produced eight such prompts in a single hour, every one of them through a proxy absent from its `bonded_sources`. Nothing was visible in Home Assistant — the device stayed available throughout, because the next candidate succeeded — so the only trace was a log line and an illuminated screen in the living room.
+
+The check now happens where it binds: after the link is up and *before* `pair()`, against the path the backend really used. An unsanctioned path is dropped without pairing. It costs a connect and a disconnect, no SMP exchange, and nothing appears on the thermostat.
+
+Worth stating plainly: the scoring that picks these paths is not simply "nearest proxy wins". In the measured case the elected proxy was 15 dB *weaker* than an available bonded one, and won because free-slot and failure-count penalties outweighed the signal difference. Any of the proxies in range can be elected at any time, which is why the veto had to move to the real path rather than the offered one.
+
+### A new repair for the case only a human can fix
+
+If every path Home Assistant chooses stays unsanctioned for three consecutive rounds, a new `unbonded_path` repair names the proxy the connection keeps landing on and offers the reauth flow. This replaces harassing the thermostat with telling the user, in Home Assistant, which proxy to go and pair with.
+
+It is a WARNING, not an error, and it convicts nobody: no bond is evicted and reconnects are not suspended, because nothing was refused — no pairing was attempted at all. The poll cadence is slowed to 15 minutes because the retries are futile while the scoring stands, not because the thermostat did anything wrong. The condition often clears on its own when signal conditions shift.
+
+### What it costs when the veto is the only thing left
+
+Stated plainly, because a day of field observation made it concrete rather than
+theoretical. When Home Assistant elects an unsanctioned proxy for every attempt
+of a round — which it will, since it re-scores each attempt and a free proxy
+scores well — the veto refuses all of them and the round cannot fall through to
+a bonded path. The device then goes UNAVAILABLE.
+
+That is the intended trade, and it is worth being deliberate about: a thermostat
+whose entities are unavailable, with a repair naming the proxy to pair with, is
+better than one that works while lighting a six-digit code nobody answers, every
+night, invisibly. But it is a real cost and it is not hypothetical.
+
+Measured 2026-08-29 on the maintainer's install. The stale proxy was dropped at
+15:12; the veto then refused it on every round and the thermostat was
+unreachable from 16:29. At 16:52 the scoring shifted — the good proxy's failure
+count had decayed, putting it back in front by a single point — the round fell
+through to it, and the device recovered on its own with no pairing, no prompt
+and no user action. Both repairs closed themselves.
+
+So the unavailability lasts as long as the scoring insists, which is minutes to
+hours, and the Reconnect button ends it deliberately at any time.
+
+### bonded_sources no longer claims a key the proxy has lost
+
+The bonded-proxy list records what a session once succeeded through. It is not a reading of the proxy's keystore, and the two drift apart — which matters more than it sounds, because the new veto trusts that list: a stale entry is precisely a path it will still allow pairing on.
+
+Measured on the maintainer's install the same evening: one proxy listed as bonded for two thermostats had lost both their keys while keeping a third's. Every attempt through it therefore started a real numeric-comparison pairing. This is not inferred — the ESPHome pairing responders pushed the passkeys into Home Assistant as notifications (two of them, minutes apart), and a second integration independently reported "this proxy does not have the pairing key" for the same two devices. Each of those attempts left a six-digit code lit on a thermostat, waiting for a confirmation nobody was there to give, until it timed out.
+
+A proxy is now dropped from the list after five consecutive pairing timeouts unbroken by any success on that same proxy. The evidence is deliberately not "it timed out" — congestion produces that too — but "it never succeeds": a valid bond re-encrypts silently as soon as the proxy is free, and a single success clears the streak, while a keyless path cannot complete on its own at all because completing it requires a person at the thermostat.
+
+Both eviction triggers — proven refusals and stale-key timeouts — now share one routine, so the safety rules cannot hold for one and not the other. Chief among them: the last known bond is never dropped, because an empty list reads as "unrestricted" everywhere and emptying it would switch the entire anti-prompt policy off instead of tightening it.
+
+Being wrong is cheap and self-announcing: a wrongly dropped path stops being paired on, and if it was the only usable one, the unbonded_path repair names it and a single Reconnect restores it.
+
+### A proxy that proved it holds no key is no longer forgiven every round
+
+Found on live hardware while this release was under observation, and it is the
+half that made the eviction above unreachable in practice.
+
+A proxy refused a thermostat's bond outright — the strongest evidence there
+is — and then timed out on every round afterwards, because that is what a
+keyless proxy does: the prompt goes up on the screen and nobody answers it.
+The library retains a proven refusal precisely so the later rounds inherit it,
+but the retention was consulted one branch too late to ever see a timeout, so
+the verdict decayed to "timeout" from the second round onward and the
+integration, which acts only on proven refusals, charged nobody. The proxy
+kept its place in `bonded_sources` — the very list the veto trusts — and every
+reconnect lit a fresh six-digit code with nothing able to conclude otherwise.
+
+The arithmetic left over was hopeless: reaching eviction through the timeout
+route alone takes 3 library rounds x 3 candidates x 5 errors, about 45 pairing
+attempts, every one of them consecutive and every one of them a prompt.
+
+Fixed in pymadoka-ng 0.3.13. Nothing in this integration changed: it was
+already asking the right question, and now gets a truthful answer.
+
+### Congestion does not pick a favourite proxy
+
+The eviction above waits for five timeout rounds on one path because a timeout
+is ambiguous: congestion produces one on a perfectly good bond, and convicting
+a healthy proxy costs a re-pair with a human standing at the thermostat. Held
+against the field, that bar was never cleared — one proxy took every attempt of
+every round for seventeen hours while the others polled the same thermostat
+normally in between, and every round lit a fresh six-digit code.
+
+But congestion is a property of the air, not of a proxy. It cannot make one
+path time out while another authenticates against the same thermostat minutes
+apart. So a successful session on a DIFFERENT path, while this one's streak is
+running, removes the only innocent explanation the streak had, and two rounds
+then suffice instead of five.
+
+This is the mirror of the rule that already governs refusals, where a session
+completed minutes earlier downgrades a "refused the bond" verdict to the
+timeout tier. The same evidence, read in the other direction.
+
+Nothing is convicted on congestion alone: with no contemporaneous success
+elsewhere the long streak still applies, and any success on the accused path
+itself clears both the streak and the corroboration.
+
+### Requires pymadoka-ng 0.3.13
+
+The veto lives in the library (`allowed_sources_callback`), which the integration now supplies from the same bonded-proxy list that orders the candidates — one definition, so the two can never disagree about what is allowed.
+
 ## v3.9.2 - August 2026
 
 A follow-up to v3.9.1. The setpoint fix released there was right for the units it was reported from and wrong for a unit that keeps a minimum gap between its two setpoints.

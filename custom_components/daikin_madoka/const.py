@@ -22,6 +22,52 @@ CONF_BONDED_SOURCES = "bonded_sources"
 # MadokaCoordinator._async_evict_dead_bond) and forgetting a good bond costs a
 # full re-pair with a human at the thermostat, so the evidence has to repeat.
 BOND_EVICTION_FAILURES = 3
+# Consecutive pairing TIMEOUTS on one proxy, unbroken by any success on that
+# same proxy, before its entry in CONF_BONDED_SOURCES is treated as stale.
+#
+# The list records what a session once succeeded through; it is not a reading
+# of the proxy's keystore, and the two drift apart. Field case 2026-08-27: one
+# proxy listed as bonded for two thermostats had lost both their keys while
+# keeping a third's, so every attempt through it started a REAL
+# numeric-comparison pairing and left a 6-digit code lit on a screen nobody was
+# watching. The allowed-source veto cannot catch that — it trusts this same
+# list.
+#
+# The evidence is not "it timed out" (congestion does that too) but "it NEVER
+# succeeds". A valid bond re-encrypts silently as soon as the proxy is free,
+# and any success clears the streak; a keyless path cannot complete without a
+# person at the thermostat, so its streak only grows.
+#
+# Higher than BOND_EVICTION_FAILURES because a single timeout proves less than
+# a single refusal. Not much higher: each round in the streak costs one lit
+# thermostat screen, and being wrong is now cheap and self-announcing — the
+# dropped path stops being paired on, and if it was the only usable one the
+# unbonded_path repair names it and a single Reconnect restores it.
+BOND_STALE_TIMEOUTS = 5
+
+# ...unless a DIFFERENT path completed an authenticated session while this
+# one's streak was running, in which case this many suffice.
+#
+# The whole reason the streak above is long is that a timeout is ambiguous:
+# congestion produces one on a perfectly valid bond, and convicting a healthy
+# proxy costs a re-pair with a human standing at the thermostat. But congestion
+# is a property of the AIR, not of a proxy. It cannot make one path time out
+# while another authenticates against the same thermostat minutes apart, so a
+# contemporaneous success elsewhere removes the innocent explanation and what
+# is left is a fact about this path.
+#
+# Field case 2026-08-29: one proxy took every attempt of every round for
+# seventeen hours and timed out on all of them, while the others polled the
+# same thermostat normally in between. At five, and with any success on the
+# path resetting the count, the streak never arrived — while every round put a
+# fresh six-digit code on the screen.
+#
+# Two rather than one, because the evidence still has to repeat: one raised
+# error already covers several attempts, but a single unlucky round must not be
+# enough on its own. This is the mirror of AUTH_CORROBORATION_WINDOW_S, which
+# DOWNGRADES a refusal a recent session contradicts; here a contemporaneous
+# success on another path UPGRADES a timeout streak.
+BOND_STALE_TIMEOUTS_CORROBORATED = 2
 # Durable shadow of the per-MAC pairing verdict (suspended / backoff /
 # timeout streak / consecutive failures / last pairing error), keyed by MAC.
 # The live copy lives in hass.data so it survives a coordinator rebuild; this
@@ -61,6 +107,11 @@ ENERGY_PARAMETERS = {
     "energy_this_year": 0x44,
     "energy_last_year": 0x45,
 }
+# read_info() enumerates every GATT service and reads every readable
+# characteristic, so it is not something to repeat on every poll. A
+# controller that has answered a poll but still returns nothing after this
+# many tries does not publish a usable Device Information service.
+DEVICE_INFO_MAX_ATTEMPTS = 3
 # Failed polls masked by serving the last good data instead of raising: a
 # one-off BLE micro-drop should not punch holes in graphs or flip entities
 # unavailable. Kept well below UNREACHABLE_THRESHOLD so a real outage still

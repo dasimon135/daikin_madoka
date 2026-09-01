@@ -24,7 +24,7 @@ on:
 env:
   # Pinned so an ESPHome release cannot turn an unrelated PR red. Bump
   # deliberately, with any resulting component fixes in the same PR.
-  ESPHOME_VERSION: "2026.7.2"
+  ESPHOME_VERSION: "2026.8.2"
   # ESPHome supports >=3.12,<3.15. Pinned one minor below the version used by
   # ci.yml because that is what the component has actually been built with.
   PYTHON_VERSION: "3.13"

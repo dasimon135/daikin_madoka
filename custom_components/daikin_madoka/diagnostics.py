@@ -59,6 +59,15 @@ def _pairing_states(hass: HomeAssistant, entry: MadokaConfigEntry) -> dict | Non
                 _resolve_source(hass, source) or source: count
                 for source, count in state.auth_failures.items()
             },
+            # Per-proxy pairing TIMEOUT streaks. Distinct from auth_failures
+            # (proven refusals) and, in the field, the only one of the two that
+            # is ever non-empty. This is the field that answers "which of this
+            # device's bonds looks dead, and which proxy is just busy?" without
+            # joining raw log lines against bonded_sources by hand.
+            "timeout_sources": {
+                _resolve_source(hass, source) or source: count
+                for source, count in state.timeout_sources.items()
+            },
             "last_error": str(state.last_error) if state.last_error else None,
         }
     if not states:
