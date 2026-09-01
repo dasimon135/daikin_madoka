@@ -87,6 +87,31 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 
 DEFAULT_SCAN_INTERVAL = 60
+CONF_ENABLE_ENERGY = "enable_energy_consumption"
+# Madoka Assistant energy-consumption protocol. The counters are uint32 little
+# endian values in tenths of a kWh and are available only after this privileged
+# request on an authenticated connection.
+ENERGY_CONSUMPTION_COMMAND = 0x0120
+# Found by decompiling the official Madoka Assistant APK: the app emits this
+# sequence in its energy path immediately before the 0x0120 reads for 0x40-0x45.
+# It is not tied to an installer or service screen and no setting write follows
+# it, so it appears to unlock the counters for the session. The protocol is
+# undocumented, and that is the limit of what can be claimed.
+ENERGY_PRIVILEGE_COMMAND = 0x4112
+ENERGY_PRIVILEGE_PARAMETER = 0xFE
+ENERGY_SCAN_INTERVAL = 300
+# Real units have been observed rolling their calendar counters a few minutes
+# either side of HA's local midnight. Refresh after this grace period so a
+# slightly slow thermostat cannot leave yesterday's values cached all day.
+ENERGY_PERIOD_REFRESH_MINUTE = 5
+ENERGY_PARAMETERS = {
+    "energy_today": 0x40,
+    "energy_yesterday": 0x41,
+    "energy_this_week": 0x42,
+    "energy_last_week": 0x43,
+    "energy_this_year": 0x44,
+    "energy_last_year": 0x45,
+}
 # read_info() enumerates every GATT service and reads every readable
 # characteristic, so it is not something to repeat on every poll. A
 # controller that has answered a poll but still returns nothing after this

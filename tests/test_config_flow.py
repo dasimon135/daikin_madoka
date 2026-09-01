@@ -8,13 +8,14 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_DEVICES
+from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.daikin_madoka.config_flow import FlowHandler
 from custom_components.daikin_madoka.const import (
     CONF_BONDED_SOURCES,
+    CONF_ENABLE_ENERGY,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PAIRING_STATE,
@@ -29,6 +30,25 @@ OTHER_SOURCE = "D0:CF:13:0F:11:F7"
 
 VALIDATE = "custom_components.daikin_madoka.config_flow.FlowHandler._async_validate_device"
 SETUP_ENTRY = "custom_components.daikin_madoka.async_setup_entry"
+
+
+async def test_energy_polling_option_defaults_off(hass: HomeAssistant) -> None:
+    """The extra Bluetooth traffic requires an explicit opt-in."""
+    entry = _add_configured_entry(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.FORM
+    assert result["data_schema"]({}) == {
+        CONF_SCAN_INTERVAL: 60,
+        CONF_ENABLE_ENERGY: False,
+    }
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_SCAN_INTERVAL: 60, CONF_ENABLE_ENERGY: True},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_ENABLE_ENERGY] is True
 
 
 @pytest.fixture

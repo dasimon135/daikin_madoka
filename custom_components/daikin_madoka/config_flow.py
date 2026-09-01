@@ -29,6 +29,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     BRC1H_NAME_PREFIX,
     CONF_BONDED_SOURCES,
+    CONF_ENABLE_ENERGY,
     CONF_FRIENDLY_NAME,
     CONF_MAC,
     CONF_PAIRING_STATE,
@@ -447,7 +448,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle the options flow (poll interval)."""
+    """Handle integration options."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -474,6 +475,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             mode=NumberSelectorMode.BOX,
                         )
                     ),
+                    vol.Required(
+                        CONF_ENABLE_ENERGY,
+                        default=self.config_entry.options.get(
+                            CONF_ENABLE_ENERGY, False
+                        ),
+                    ): bool,
                 }
             ),
         )

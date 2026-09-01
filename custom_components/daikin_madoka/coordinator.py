@@ -2,14 +2,16 @@
 
 import asyncio
 import logging
+import struct
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 from time import monotonic
 from typing import Any
 
 from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import ConnectionStatus
+from pymadoka.feature import Feature, FeatureStatus
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -19,6 +21,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     AUTH_CORROBORATION_WINDOW_S,
@@ -35,6 +38,12 @@ from .const import (
     CONNECT_TIMEOUT,
     DEVICE_INFO_MAX_ATTEMPTS,
     DOMAIN,
+    ENERGY_CONSUMPTION_COMMAND,
+    ENERGY_PARAMETERS,
+    ENERGY_PERIOD_REFRESH_MINUTE,
+    ENERGY_PRIVILEGE_COMMAND,
+    ENERGY_PRIVILEGE_PARAMETER,
+    ENERGY_SCAN_INTERVAL,
     MIN_PAIR_TIMEOUT,
     PAIRING_CONNECT_TIMEOUT,
     PAIRING_WINDOW_TIMEOUT,
@@ -86,6 +95,159 @@ DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
 # perfectly valid bonds past its timeout.
 CONNECT_LOCK_KEY = f"{DOMAIN}_connect_lock"
 PAIRING_STATE_KEY = f"{DOMAIN}_pairing_state"
+
+
+class MadokaEnergyStatus(FeatureStatus):
+    """Energy counters reported by the Madoka in tenths of a kWh."""
+
+    def __init__(self) -> None:
+        for period in ENERGY_PARAMETERS:
+            setattr(self, period, None)
+
+    def get_values(self) -> dict[int, bytearray]:
+        """Request every counter in a single response."""
+        return {parameter: bytearray() for parameter in ENERGY_PARAMETERS.values()}
+
+    def set_values(self, values: dict[int, bytearray]) -> None:
+        """Decode each counter's total and optional period breakdown."""
+        for period, parameter in ENERGY_PARAMETERS.items():
+            raw = values.get(parameter)
+            if raw is None or len(raw) < 4:
+                continue
+            setattr(
+                self,
+                period,
+                tuple(
+                    round(struct.unpack_from("<I", raw, offset)[0] / 10, 1)
+                    for offset in range(0, len(raw) - len(raw) % 4, 4)
+                ),
+            )
+
+
+class MadokaEnergyConsumption(Feature):
+    """Read the Madoka's internal energy counters over the active connection."""
+
+    status: MadokaEnergyStatus | None
+
+    def __init__(self, connection) -> None:
+        super().__init__(connection)
+        self.supported: bool | None = None
+        self._next_today_query = 0.0
+        self._period_day: date | None = None
+
+    def query_cmd_id(self) -> int:
+        return ENERGY_CONSUMPTION_COMMAND
+
+    def update_cmd_id(self) -> int:
+        raise NotImplementedError
+
+    def new_status(self) -> FeatureStatus:
+        return MadokaEnergyStatus()
+
+    @property
+    def cache_is_fresh(self) -> bool:
+        """Return whether neither energy group needs a device read."""
+        return (
+            self.supported is False
+            or (
+                self.status is not None
+                and monotonic() < self._next_today_query
+                and self._period_day == self._current_period_day()
+            )
+        )
+
+    @staticmethod
+    def _current_period_day() -> date:
+        """Return the calendar day whose period values are safe to cache."""
+        local_now = dt_util.now()
+        day = local_now.date()
+        if local_now.hour == 0 and local_now.minute < ENERGY_PERIOD_REFRESH_MINUTE:
+            return day - timedelta(days=1)
+        return day
+
+    async def query(self) -> FeatureStatus:
+        """Read today's counter frequently and period summaries daily."""
+        if self.supported is False:
+            assert self.status is not None
+            return self.status
+        now = monotonic()
+        period_day = self._current_period_day()
+        cached = self.status
+        if (
+            cached is not None
+            and now < self._next_today_query
+            and self._period_day == period_day
+        ):
+            return cached
+        today_parameter = ENERGY_PARAMETERS["energy_today"]
+        today_due = cached is None or now >= self._next_today_query
+        periods_due = cached is None or self._period_day != period_day
+        parameters = []
+        if today_due:
+            parameters.append(today_parameter)
+        if periods_due:
+            parameters.extend(
+                parameter
+                for parameter in ENERGY_PARAMETERS.values()
+                if parameter != today_parameter
+            )
+        await self._send_command(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        )
+        status = MadokaEnergyStatus()
+        if cached is not None:
+            for period in ENERGY_PARAMETERS:
+                setattr(status, period, getattr(cached, period))
+        for parameter in parameters:
+            response = await self._send_command(
+                ENERGY_CONSUMPTION_COMMAND, bytearray((parameter, 0))
+            )
+            values = self._parse_energy_values(bytearray(response))
+            raw = values.get(parameter)
+            if parameter == today_parameter and raw == bytearray():
+                _LOGGER.warning(
+                    "Thermostat reports no energy counters; disabling energy polling"
+                )
+                self.supported = False
+                self.status = status
+                return status
+            if raw is None or len(raw) < 4:
+                raise ValueError(f"Energy response omitted parameter {parameter:#x}")
+            if parameter == today_parameter:
+                self.supported = True
+            status.set_values({parameter: raw})
+        self.status = status
+        now = monotonic()
+        if today_due:
+            self._next_today_query = now + ENERGY_SCAN_INTERVAL
+        if periods_due:
+            self._period_day = period_day
+        return status
+
+    @staticmethod
+    def _parse_energy_values(response: bytearray) -> dict[int, bytearray]:
+        """Decode energy parameters without trusting the inaccurate size byte."""
+        if len(response) < 6:
+            raise ValueError("Energy response is too short")
+        values: dict[int, bytearray] = {}
+        index = 4
+        while index < len(response):
+            if index + 1 >= len(response):
+                raise ValueError("Energy response has a truncated parameter header")
+            parameter = response[index]
+            size = 0 if response[index + 1] == 0xFF else response[index + 1]
+            end = index + 2 + size
+            if end > len(response):
+                # The thermostat sometimes advertises the complete period
+                # breakdown but omits its trailing, not-yet-populated slots.
+                # Keep the available prefix; callers still require the full
+                # four-byte total before accepting this response.
+                values[parameter] = response[index + 2 :]
+                break
+            values[parameter] = response[index + 2 : end]
+            index = end
+        return values
 
 
 def _async_connect_lock(hass: HomeAssistant) -> asyncio.Lock:
@@ -409,9 +571,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         controller: Controller,
         scan_interval: int,
         friendly_name: str | None = None,
+        energy_enabled: bool = False,
     ) -> None:
         """Initialize the coordinator."""
         self.controller = controller
+        controller.energy_consumption = None
+        self.async_apply_energy_enabled(energy_enabled)
         # The BLE stack overwrites controller.connection.name with the
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
@@ -617,6 +782,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 self._async_close_pairing_window()
                 raise
 
+        energy = self.controller.energy_consumption
+        use_cached_energy = energy is not None and energy.cache_is_fresh
+        if use_cached_energy:
+            # Controller.update() counts every Feature.query() return as a device
+            # answer. A cache hit performs no I/O, so do not let it make a fully
+            # unresponsive device look healthy. Restore it before refresh_status
+            # so the cached counters remain in the coordinator snapshot.
+            self.controller.energy_consumption = None
         try:
             async with asyncio.timeout(POLL_TIMEOUT):
                 await self.controller.update()
@@ -628,6 +801,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             raise UpdateFailed(
                 f"Polling {self.address} exceeded {POLL_TIMEOUT}s"
             ) from err
+        finally:
+            if use_cached_energy:
+                self.controller.energy_consumption = energy
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.
@@ -1454,6 +1630,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if self.update_interval != backoff:
             self._normal_interval = self.update_interval
             self.update_interval = backoff
+
+    @callback
+    def async_apply_energy_enabled(self, enabled: bool) -> None:
+        """Add or remove energy polling without rebuilding the BLE session."""
+        if enabled and self.controller.energy_consumption is None:
+            self.controller.energy_consumption = MadokaEnergyConsumption(
+                self.controller.connection
+            )
+        elif not enabled:
+            self.controller.energy_consumption = None
 
     @callback
     def async_apply_scan_interval(self, scan_interval: int) -> None:

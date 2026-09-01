@@ -49,7 +49,8 @@
       "init": {
         "title": "Daikin Madoka options",
         "data": {
-          "scan_interval": "Poll interval (seconds)"
+          "scan_interval": "Poll interval (seconds)",
+          "enable_energy_consumption": "Read energy consumption (today every five minutes, other periods daily)"
         }
       }
     }
@@ -72,6 +73,24 @@
       },
       "operating_time": {
         "name": "Operating time"
+      },
+      "energy_today": {
+        "name": "Energy today"
+      },
+      "energy_yesterday": {
+        "name": "Energy yesterday"
+      },
+      "energy_this_week": {
+        "name": "Energy this week"
+      },
+      "energy_last_week": {
+        "name": "Energy last week"
+      },
+      "energy_this_year": {
+        "name": "Energy this year"
+      },
+      "energy_last_year": {
+        "name": "Energy last year"
       },
       "connection_source": {
         "name": "Connection source"
