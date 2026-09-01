@@ -131,6 +131,7 @@ class MadokaEnergyConsumption(Feature):
 
     def __init__(self, connection) -> None:
         super().__init__(connection)
+        self.supported: bool | None = None
         self._next_today_query = 0.0
         self._period_day: date | None = None
 
@@ -147,9 +148,12 @@ class MadokaEnergyConsumption(Feature):
     def cache_is_fresh(self) -> bool:
         """Return whether neither energy group needs a device read."""
         return (
-            self.status is not None
-            and monotonic() < self._next_today_query
-            and self._period_day == self._current_period_day()
+            self.supported is False
+            or (
+                self.status is not None
+                and monotonic() < self._next_today_query
+                and self._period_day == self._current_period_day()
+            )
         )
 
     @staticmethod
@@ -163,6 +167,9 @@ class MadokaEnergyConsumption(Feature):
 
     async def query(self) -> FeatureStatus:
         """Read today's counter frequently and period summaries daily."""
+        if self.supported is False:
+            assert self.status is not None
+            return self.status
         now = monotonic()
         period_day = self._current_period_day()
         cached = self.status
@@ -198,8 +205,17 @@ class MadokaEnergyConsumption(Feature):
             )
             values = self._parse_energy_values(bytearray(response))
             raw = values.get(parameter)
+            if parameter == today_parameter and raw == bytearray():
+                _LOGGER.warning(
+                    "Thermostat reports no energy counters; disabling energy polling"
+                )
+                self.supported = False
+                self.status = status
+                return status
             if raw is None or len(raw) < 4:
                 raise ValueError(f"Energy response omitted parameter {parameter:#x}")
+            if parameter == today_parameter:
+                self.supported = True
             status.set_values({parameter: raw})
         self.status = status
         now = monotonic()

@@ -299,6 +299,42 @@ async def test_energy_response_without_complete_total_is_not_cached() -> None:
     assert not feature.cache_is_fresh
 
 
+async def test_empty_today_disables_future_energy_queries(caplog) -> None:
+    """A unit without counters is probed once, then left alone."""
+    connection = MagicMock()
+    connection.connection_status = ConnectionStatus.CONNECTED
+    connection._operation_lock = asyncio.Lock()
+
+    def _response(command, payload) -> asyncio.Future[bytearray]:
+        future = asyncio.get_running_loop().create_future()
+        if command == ENERGY_PRIVILEGE_COMMAND:
+            future.set_result(bytearray())
+        else:
+            future.set_result(bytearray((6, 0, 1, 32, payload[0], 0)))
+        return future
+
+    connection.send = AsyncMock(side_effect=_response)
+    feature = MadokaEnergyConsumption(connection)
+
+    status = await feature.query()
+    cached = await feature.query()
+
+    assert feature.supported is False
+    assert feature.cache_is_fresh
+    assert cached is status
+    assert connection.send.await_args_list == [
+        call(
+            ENERGY_PRIVILEGE_COMMAND,
+            bytearray((ENERGY_PRIVILEGE_PARAMETER, 1, 1)),
+        ),
+        call(
+            ENERGY_CONSUMPTION_COMMAND,
+            bytearray((ENERGY_PARAMETERS["energy_today"], 0)),
+        ),
+    ]
+    assert "disabling energy polling" in caplog.text
+
+
 async def test_cached_energy_does_not_count_as_a_device_response() -> None:
     """A cache hit must not hide failure of every feature that touched BLE."""
     controller = MagicMock()
