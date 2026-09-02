@@ -103,7 +103,9 @@ class MadokaBase : public climate::Climate, public esphome::ble_client::BLEClien
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                            esp_ble_gattc_cb_param_t *param) override;
   void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) override;
-  void dump_config() override;
+  // dump_config() stays in each component: LOG_CLIMATE reads a TAG from the
+  // enclosing scope and puts its label through LOG_STR_LITERAL, so neither can
+  // come from a virtual here.
   void set_clean_filter_binary_sensor(binary_sensor::BinarySensor *sensor) {
     this->clean_filter_binary_sensor_ = sensor;
   }

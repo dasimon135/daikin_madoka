@@ -60,6 +60,8 @@ void MadokaResetFilterButton::press_action() { this->parent_->reset_filter(); }
 
 const char *MadokaVam::tag_() const { return TAG; }
 
+void MadokaVam::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka VAM Climate Controller", this); }
+
 void MadokaVam::on_setup_() {
   this->set_supported_custom_presets({PRESET_VENTILATION_AUTO, PRESET_HEAT_EXCHANGE, PRESET_BYPASS});
 }

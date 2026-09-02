@@ -37,6 +37,8 @@ void MadokaResetFilterButton::press_action() { this->parent_->reset_filter(); }
 
 const char *Madoka::tag_() const { return TAG; }
 
+void Madoka::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka Climate Controller", this); }
+
 void Madoka::query_appliance_state_() {
   this->query_(CMD_GET_SETPOINT, std::vector<uint8_t>{0x00, 0x00}, 50);
   this->query_(CMD_GET_FAN_SPEED, std::vector<uint8_t>{0x00, 0x00}, 50);

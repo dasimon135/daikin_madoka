@@ -40,6 +40,7 @@ class MadokaVam : public madoka_base::MadokaBase {
   void control(const climate::ClimateCall &call) override;
 
  public:
+  void dump_config() override;
   void set_dump_raw(bool dump_raw) { this->dump_raw_ = dump_raw; }
   // Send a raw command (function id plus arguments): useful for probing the
   // VAM's undocumented functions from an ESPHome lambda. Responses land in the

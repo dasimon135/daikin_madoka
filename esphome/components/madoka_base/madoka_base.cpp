@@ -32,8 +32,6 @@ void MadokaBase::loop() {
   }
 }
 
-void MadokaBase::dump_config() { LOG_CLIMATE(this->tag_(), this->label_(), this); }
-
 void MadokaBase::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
   switch (event) {
     case ESP_GAP_BLE_SEC_REQ_EVT:

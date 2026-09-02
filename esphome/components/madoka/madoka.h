@@ -71,6 +71,7 @@ class Madoka : public madoka_base::MadokaBase {
   void control(const climate::ClimateCall &call) override;
 
  public:
+  void dump_config() override;
   void set_outdoor_temperature_sensor(sensor::Sensor *sensor) { this->outdoor_temperature_sensor_ = sensor; }
   void set_dual_setpoint(bool dual_setpoint) { this->dual_setpoint_ = dual_setpoint; }
   climate::ClimateTraits traits() override {
