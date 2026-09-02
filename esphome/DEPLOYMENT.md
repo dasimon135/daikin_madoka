@@ -15,7 +15,7 @@
 ```yaml
 external_components:
   - source: github://dasimon135/daikin_madoka@main
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 ```
 
 #### Option B : En local
@@ -27,7 +27,7 @@ external_components:
   - source:
       type: local
       path: esphome_components
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 ```
 
 ### 2. Créer votre fichier de configuration
@@ -52,7 +52,7 @@ ota:
 
 external_components:
   - source: github://dasimon135/daikin_madoka@main
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 
 esp32_ble_tracker:
   id: ble_tracker

@@ -133,7 +133,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v2.2.0
       path: esphome/components
-    components: [madoka]
+    components: [madoka, madoka_base]
 
 esp32_ble_tracker:
   id: ble_tracker
@@ -202,7 +202,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v2.2.0
       path: esphome/components
-    components: [madoka]
+    components: [madoka, madoka_base]
 
 esp32_ble_tracker:
   id: ble_tracker
@@ -268,7 +268,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v2.2.0        # remplacer par le tag le plus récent
       path: esphome/components
-    components: [madoka]
+    components: [madoka, madoka_base]
 ```
 
 Consultez le [CHANGELOG](../CHANGELOG.md) pour les versions disponibles.

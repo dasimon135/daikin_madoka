@@ -26,7 +26,7 @@ external_components:
   - source:
       type: local
       path: esphome_components
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 ```
 
 ### Option 2 : Depuis GitHub
@@ -40,7 +40,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v2.1.1
       path: esphome_components
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 ```
 
 Le champ `path: esphome_components` est important dans ce dépôt pour charger la version maintenue du composant externe.
@@ -85,7 +85,7 @@ external_components:
   - source:
       type: local
       path: /config/esphome/esphome_components  # Ajustez le chemin selon votre config
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 
 esp32_ble_tracker:
   max_connections: 2
@@ -202,7 +202,7 @@ external_components:
   - source:
       type: local
       path: /config/esphome/esphome_components  # Ajustez le chemin selon votre config
-    components: [ madoka_vam ]
+    components: [ madoka_vam, madoka_base ]
 
 esp32_ble_tracker:
   max_connections: 2
