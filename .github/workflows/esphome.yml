@@ -1,9 +1,9 @@
 name: ESPHome
 
-# The ESPHome external component under esphome/components/madoka is C++ and is
-# not covered by the Python CI in ci.yml: nothing there ever compiles it, so a
+# The ESPHome external components under esphome/components are C++ and are
+# not covered by the Python CI in ci.yml: nothing there ever compiles them, so a
 # broken build could only be discovered by a user flashing an ESP32. This
-# workflow builds it.
+# workflow builds them.
 #
 # Only triggered by changes under esphome/ (and to this file): a full ESP-IDF
 # firmware build is expensive and has nothing to say about a change to
@@ -60,9 +60,9 @@ jobs:
 
   compile:
     # Slow leg: runs the Python codegen (to_code) and builds the generated C++
-    # for a real ESP32 target. This is what proves esphome/components/madoka
-    # actually compiles. Both test configurations are built because they take
-    # different codegen paths (dual_setpoint true/false).
+    # for a real ESP32 target. This is what proves esphome/components actually
+    # compiles. Every test configuration is built because they take different
+    # codegen paths (madoka dual_setpoint true/false, and madoka_vam).
     name: esphome compile (ESP32 firmware)
     runs-on: ubuntu-latest
 
@@ -92,7 +92,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install "esphome==${ESPHOME_VERSION}"
 
-      - name: Compile firmware for both setpoint modes
+      - name: Compile firmware for every test configuration
         run: |
           for cfg in esphome/tests/*.yaml; do
             echo "::group::${cfg}"

@@ -24,7 +24,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_PREFERRED_SOURCE, ENERGY_PARAMETERS
+from .const import (
+    CONF_DEVICE_TYPE,
+    CONF_PREFERRED_SOURCE,
+    DEFAULT_DEVICE_TYPE,
+    DEVICE_TYPE_VENTILATION,
+    ENERGY_PARAMETERS,
+)
 from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
 
@@ -36,9 +42,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up Daikin sensors based on config_entry."""
     entities: list[MadokaEntity] = []
+    # A VAM is an indoor-only unit: it has no outdoor probe and answers
+    # argument 0x41 with nothing usable, so the sensor would sit at unknown
+    # forever.
+    is_ventilation = (
+        entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE) == DEVICE_TYPE_VENTILATION
+    )
     for coordinator in entry.runtime_data.values():
         entities.append(MadokaIndoorSensor(coordinator))
-        entities.append(MadokaOutdoorSensor(coordinator))
+        if not is_ventilation:
+            entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
         entities.extend(
