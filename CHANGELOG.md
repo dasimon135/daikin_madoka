@@ -1,5 +1,43 @@
 # Changelog
 
+## v3.11.0 - September 2026
+
+Two features that came from outside this repository, and the ESPHome side stops carrying two copies of the same BLE transport.
+
+### Daikin VAM ventilation units are supported
+
+Contributed by @Frank802, the first external contribution this integration has had. A ventilation-only VAM is now its own device type rather than a thermostat that answers oddly: the climate entity exposes off and fan-only, two fan speeds, and the ventilation mode as a preset, and the setpoint controls a VAM has no use for are gone. On the ESPHome side a new `madoka_vam` component sits alongside `madoka`. An Italian translation came with it.
+
+Stated plainly, because it decides who can trust what: the maintainer owns no VAM. Everything about the ventilation path was written and measured by @Frank802 on his own unit. What was verified here is the other half — that a BRC1H thermostat still behaves exactly as it did before, since this release moves code both device types share.
+
+### Energy consumption sensors
+
+Six sensors — today, yesterday, this week, last week, this year, last year — reading the counters the Madoka keeps internally. They are **off by default**: turn on *Read energy consumption* in the entry options. "Energy today" can be added to the Energy dashboard; it is read every five minutes, the other periods once a day.
+
+Not every unit keeps those counters. One that answers the query with an empty value is not a failure and is no longer treated as one: the integration says so once in the log and turns energy polling off for that thermostat, leaving every other reading untouched. That path is not theoretical — the maintainer's own four BRC1H report no counters at all, which is how it was found.
+
+### ESPHome component — breaking change
+
+`madoka_vam.cpp` carried a copy of `madoka.cpp`'s entire transport layer: seven functions identical character for character, four more differing only by a log label or a command id. The next transport fix would have landed in one copy and drifted in the other, and CI could not have noticed — it compiles these components, it never runs them. The shared half now lives once, in a new `madoka_base` component that `Madoka` and `MadokaVam` derive from. 1398 lines become 1225.
+
+**This changes your YAML.** ESPHome only copies the external components named in `components:`, and AUTO_LOAD cannot reach one that is not listed there, so `madoka_base` has to be named explicitly:
+
+```yaml
+external_components:
+  - source:
+      type: local
+      path: esphome_components
+    components: [ madoka, madoka_base ]          # add madoka_vam too if you have a VAM
+```
+
+Then recompile. Miss it and the build fails on a missing component, loudly and immediately — it cannot silently produce a half-updated firmware.
+
+The poll order is preserved exactly: same commands, same delays, same sequence as before, on both components.
+
+### ESPHome — housekeeping
+
+The vendored `esphome/components/ble_client/` copy is gone. It had been dead for months without anyone being able to tell: every configuration in the repo and the docs lists `components: [ madoka ]`, so ESPHome always resolved `ble_client` to its own, and the CI firmware builds have never compiled the fork. Removing it changes no produced binary. Everything it existed for — numeric-comparison and passkey replies, bond removal, `auto_connect` — has been upstream since ESPHome 2026.7.2. The pinned ESPHome moves to 2026.8.2 in the same pass.
+
 ## v3.10.0 - August 2026
 
 Thermostat screens stop being asked to confirm pairings nobody can answer.
