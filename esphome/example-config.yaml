@@ -36,7 +36,7 @@ external_components:
   - source:
       type: local
       path: esphome_components  # Chemin relatif depuis le dossier de config ESPHome
-    components: [ madoka ]
+    components: [ madoka, madoka_base ]
 
 # Appairage authentifié (MITM) — OBLIGATOIRE pour le BRC1H.
 # Le thermostat ignore silencieusement toute commande sur un lien non
@@ -185,7 +185,7 @@ script:
 # Un VAM est piloté par le même contrôleur BRC1H, sur le même service BLE, mais
 # ne fait que ventiler (mode 5 = VENTILATION, sans consigne de température).
 # Utilisez la plateforme dédiée 'madoka_vam' et ajoutez-la à la liste
-# 'external_components: components' (ex: components: [ madoka, madoka_vam ]).
+# 'external_components: components' (ex: components: [ madoka, madoka_vam, madoka_base ]).
 #
 # Exemple (décommentez et adaptez l'adresse MAC) :
 #

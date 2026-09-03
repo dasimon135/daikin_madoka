@@ -12,23 +12,15 @@ namespace madoka {
 static const char *const TAG = "madoka";
 
 using namespace esphome::climate;
+// The GATT plumbing, the chunking and every command a BRC1H answers whatever
+// is behind it live in MadokaBase; only what is specific to a thermostat is
+// below.
+using namespace esphome::madoka_base;
 
-static const uint16_t CMD_GET_SETTING_STATUS = 0x0020;
-static const uint16_t CMD_SET_SETTING_STATUS = 0x4020;
-static const uint16_t CMD_GET_OPERATION_MODE = 0x0030;
-static const uint16_t CMD_SET_OPERATION_MODE = 0x4030;
 static const uint16_t CMD_GET_SETPOINT = 0x0040;
 static const uint16_t CMD_SET_SETPOINT = 0x4040;
 static const uint16_t CMD_GET_FAN_SPEED = 0x0050;
 static const uint16_t CMD_SET_FAN_SPEED = 0x4050;
-static const uint16_t CMD_GET_SENSOR_INFORMATION = 0x0110;
-static const uint16_t CMD_GET_CLEAN_FILTER = 0x0100;
-static const uint16_t CMD_GET_VERSION = 0x0130;
-static const uint16_t CMD_GET_EYE_BRIGHTNESS = 0x0302;
-static const uint16_t CMD_RESET_FILTER = 0x4220;
-static const uint16_t CMD_SET_EYE_BRIGHTNESS = 0x4302;
-
-void Madoka::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka Climate Controller", this); }
 
 void MadokaEyeBrightnessNumber::control(float value) {
   int level = static_cast<int>(value + 0.5f);
@@ -43,24 +35,19 @@ void MadokaEyeBrightnessNumber::control(float value) {
 
 void MadokaResetFilterButton::press_action() { this->parent_->reset_filter(); }
 
-void Madoka::setup() { this->receive_semaphore_ = xSemaphoreCreateMutex(); }
+const char *Madoka::tag_() const { return TAG; }
 
-void Madoka::loop() {
-  std::vector<uint8_t> chk = {};
-  if (xSemaphoreTake(this->receive_semaphore_, 0L)) {
-    if (!this->received_chunks_.empty()) {
-      chk = this->received_chunks_.front();
-      this->received_chunks_.pop();
-    }
-    xSemaphoreGive(this->receive_semaphore_);
-    if (!chk.empty()) {
-      this->process_incoming_chunk_(chk);
-    }
-  }
-  if (this->should_update_) {
-    this->should_update_ = false;
-    this->update();
-  }
+void Madoka::dump_config() { LOG_CLIMATE(TAG, "Daikin Madoka Climate Controller", this); }
+
+void Madoka::query_appliance_state_() {
+  this->query_(CMD_GET_SETPOINT, std::vector<uint8_t>{0x00, 0x00}, 50);
+  this->query_(CMD_GET_FAN_SPEED, std::vector<uint8_t>{0x00, 0x00}, 50);
+}
+
+void Madoka::on_disconnect_() {
+  // A VAM has no setpoint, so clearing it is the thermostat's business rather
+  // than the base's.
+  this->target_temperature = NAN;
 }
 
 void Madoka::control(const ClimateCall &call) {
@@ -180,218 +167,6 @@ void Madoka::control(const ClimateCall &call) {
   this->should_update_ = true;
 }
 
-void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
-  switch (event) {
-    case ESP_GAP_BLE_SEC_REQ_EVT:
-      esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
-      break;
-    case ESP_GAP_BLE_NC_REQ_EVT:
-      esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
-      // passkey is uint32_t; %d is a -Wformat error waiting to happen on a
-      // 32-bit target where uint32_t is `long unsigned int`.
-      ESP_LOGI(TAG, "ESP_GAP_BLE_NC_REQ_EVT, the passkey Notify number:%" PRIu32,
-               param->ble_security.key_notif.passkey);
-      break;
-    case ESP_GAP_BLE_AUTH_CMPL_EVT: {
-      if (!param->ble_security.auth_cmpl.success) {
-        ESP_LOGE(TAG, "Authentication failed, status: 0x%x", param->ble_security.auth_cmpl.fail_reason);
-        break;
-      }
-      auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
-      auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
-      if (nfy == nullptr || wwr == nullptr) {
-        ESP_LOGW(TAG, "[%s] No control service found at device, not a Daikin Madoka..?", this->get_name().c_str());
-        break;
-      }
-      this->notify_handle_ = nfy->handle;
-      this->wwr_handle_ = wwr->handle;
-
-      auto status = esp_ble_gattc_register_for_notify(this->parent_->get_gattc_if(), this->parent_->get_remote_bda(),
-                                                      nfy->handle);
-      if (status) {
-        ESP_LOGW(TAG, "[%s] esp_ble_gattc_register_for_notify failed, status=%d", this->get_name().c_str(), status);
-      }
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-void Madoka::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) {
-  switch (event) {
-    case ESP_GATTC_DISCONNECT_EVT: {
-      this->node_state = espbt::ClientState::IDLE;  // ??
-      this->current_temperature = NAN;
-      this->target_temperature = NAN;
-      this->publish_state();
-      break;
-    }
-    case ESP_GATTC_WRITE_DESCR_EVT:
-      if (param->write.status != ESP_GATT_OK) {
-        if (param->write.status == ESP_GATT_INSUF_AUTHENTICATION) {
-          ESP_LOGE(TAG, "Insufficient authentication");
-        } else {
-          ESP_LOGE(TAG, "Failed writing characteristic descriptor, status = 0x%x", param->write.status);
-        }
-      }
-      break;
-    case ESP_GATTC_SEARCH_CMPL_EVT: {
-      esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
-      break;
-    }
-    case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
-      this->node_state = espbt::ClientState::ESTABLISHED;  // ??
-      break;
-    }
-    case ESP_GATTC_NOTIFY_EVT: {
-      if (param->notify.handle != this->notify_handle_) {
-        ESP_LOGW(TAG, "Different notify handle");
-        break;
-      }
-      std::vector<uint8_t> chk =
-          std::vector<uint8_t>{param->notify.value, param->notify.value + param->notify.value_len};
-      xSemaphoreTake(this->receive_semaphore_, portMAX_DELAY);
-      this->received_chunks_.push(chk);
-      xSemaphoreGive(this->receive_semaphore_);
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-void Madoka::update() {
-  ESP_LOGD(TAG, "Got update request...");
-  if (this->node_state != espbt::ClientState::ESTABLISHED) {
-    ESP_LOGD(TAG, "...but device is disconnected");
-    return;
-  }
-
-  this->query_(CMD_GET_SETTING_STATUS, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_OPERATION_MODE, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_SETPOINT, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_FAN_SPEED, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_SENSOR_INFORMATION, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_CLEAN_FILTER, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_VERSION, std::vector<uint8_t>{0x00, 0x00}, 50);
-  this->query_(CMD_GET_EYE_BRIGHTNESS, std::vector<uint8_t>{0x33, 0x01, 0x00}, 50);
-}
-
-void Madoka::set_eye_brightness(uint8_t level) {
-  if (this->node_state != espbt::ClientState::ESTABLISHED) {
-    return;
-  }
-  this->query_(CMD_SET_EYE_BRIGHTNESS, std::vector<uint8_t>{0x33, 0x01, level}, 200);
-  if (this->eye_brightness_number_ != nullptr) {
-    this->eye_brightness_number_->publish_state(level);
-  }
-  this->should_update_ = true;
-}
-
-void Madoka::reset_filter() {
-  if (this->node_state != espbt::ClientState::ESTABLISHED) {
-    return;
-  }
-  this->query_(CMD_RESET_FILTER, std::vector<uint8_t>{0x51, 0x01, 0x01, 0xFE, 0x01, 0x01}, 200);
-  if (this->clean_filter_binary_sensor_ != nullptr) {
-    this->clean_filter_binary_sensor_->publish_state(false);
-  }
-  this->should_update_ = true;
-}
-
-bool validate_buffer(std::vector<uint8_t> buffer) { return buffer[0] == buffer.size(); }
-
-void Madoka::process_incoming_chunk_(std::vector<uint8_t> chk) {
-  if (chk.size() < 2) {
-    ESP_LOGI(TAG, "Chunk discarded: invalid length.");
-    return;
-  }
-  uint8_t chunk_id = chk[0];
-  std::vector<uint8_t> stripped{chk.begin() + 1, chk.end()};
-  if (chunk_id == 0 && validate_buffer(stripped)) {
-    this->parse_cb_(stripped);
-    return;
-  }
-  if (this->pending_chunks_.count(chunk_id)) {
-    if (chunk_id == 0) {
-      ESP_LOGW(TAG, "New message detected, clearing incomplete buffer (chunk_id=0).");
-      this->pending_chunks_.clear();
-    } else {
-      ESP_LOGE(TAG, "Another packet with the same chunk ID is already in the buffer.");
-      ESP_LOGD(TAG, "Chunk ID: %d.", chunk_id);
-      return;
-    }
-  }
-  this->pending_chunks_[chunk_id] = chk;
-
-  if (this->pending_chunks_.size() != this->pending_chunks_.rbegin()->first + 1) {
-    ESP_LOGW(TAG, "Buffer is missing packets");
-    return;
-  }
-
-  std::vector<uint8_t> msg;
-  int lim = this->pending_chunks_.size();
-  for (int i = 0; i < lim; i++) {
-    msg.insert(msg.end(), this->pending_chunks_[i].begin() + 1, this->pending_chunks_[i].end());
-  }
-  if (validate_buffer(msg)) {
-    this->pending_chunks_.clear();
-    this->parse_cb_(msg);
-  }
-}
-
-std::vector<std::vector<uint8_t>> Madoka::split_payload_(std::vector<uint8_t> msg) {
-  std::vector<std::vector<uint8_t>> result;
-  size_t len = msg.size();
-
-  // Add leading length byte
-  std::vector<uint8_t> buf{(uint8_t) (len + 1)};
-  buf.insert(buf.end(), msg.begin(), msg.end());
-
-  for (size_t i = 0; i <= len / (MAX_CHUNK_SIZE - 1); i++) {
-    std::vector<uint8_t> chunk{(uint8_t) i};
-    chunk.insert(chunk.end(), buf.begin() + (i * (MAX_CHUNK_SIZE - 1)),
-                 std::min(buf.end(), buf.begin() + ((i + 1) * (MAX_CHUNK_SIZE - 1))));
-
-    result.push_back(chunk);
-  }
-
-  return result;
-}
-
-std::vector<uint8_t> Madoka::prepare_message_(uint16_t cmd, std::vector<uint8_t> args) {
-  std::vector<uint8_t> result({0x00, (uint8_t) ((cmd >> 8) & 0xFF), (uint8_t) (cmd & 0xFF)});
-  result.insert(result.end(), args.begin(), args.end());
-  return result;
-}
-
-void Madoka::query_(uint16_t cmd, std::vector<uint8_t> args, int t_d) {
-  std::vector<uint8_t> payload = this->prepare_message_(cmd, std::move(args));
-
-  if (this->node_state != espbt::ClientState::ESTABLISHED) {
-    return;
-  }
-  std::vector<std::vector<uint8_t>> chunks = this->split_payload_(payload);
-
-  for (auto chk : chunks) {
-    esp_err_t status;
-    for (int j = 0; j < BLE_SEND_MAX_RETRIES; j++) {
-      status = esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(), this->wwr_handle_,
-                                        chk.size(), chk.data(), ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
-      if (!status) {
-        break;
-      }
-      ESP_LOGD(TAG, "[%s] esp_ble_gattc_write_char failed (%d of %d), status=%d", this->parent_->address_str(),
-               j + 1, BLE_SEND_MAX_RETRIES, status);
-    }
-    if (status) {
-      ESP_LOGE(TAG, "[%s] Command could not be sent, last status=%d", this->parent_->address_str(), status);
-      return;
-    }
-  }
-  esphome::delay(t_d);
-}
 
 void Madoka::parse_cb_(std::vector<uint8_t> msg) {
   uint16_t function_id = msg[2] << 8 | msg[3];

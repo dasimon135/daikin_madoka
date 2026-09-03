@@ -19,7 +19,7 @@ from esphome.const import (
 
 CODEOWNERS = ["@Petapton"]
 DEPENDENCIES = ["ble_client"]
-AUTO_LOAD = ["binary_sensor", "button", "number", "sensor", "text_sensor"]
+AUTO_LOAD = ["binary_sensor", "button", "madoka_base", "number", "sensor", "text_sensor"]
 
 CONF_DUAL_SETPOINT = "dual_setpoint"
 CONF_OUTDOOR_TEMPERATURE = "outdoor_temperature"
@@ -28,10 +28,16 @@ CONF_FIRMWARE_VERSION = "firmware_version"
 CONF_EYE_BRIGHTNESS = "eye_brightness"
 CONF_RESET_FILTER = "reset_filter"
 
-madoka_ns = cg.esphome_ns.namespace("madoka")
-Madoka = madoka_ns.class_(
-    "Madoka", climate.Climate, ble_client.BLEClientNode, cg.PollingComponent
+# Declared here rather than imported from the madoka_base component: an
+# external component that is not itself listed in `external_components:`
+# cannot be imported by name. This is type metadata for codegen only --
+# the shared implementation lives in madoka_base/madoka_base.h.
+madoka_base_ns = cg.esphome_ns.namespace("madoka_base")
+MadokaBase = madoka_base_ns.class_(
+    "MadokaBase", climate.Climate, ble_client.BLEClientNode, cg.PollingComponent
 )
+madoka_ns = cg.esphome_ns.namespace("madoka")
+Madoka = madoka_ns.class_("Madoka", MadokaBase)
 MadokaEyeBrightnessNumber = madoka_ns.class_(
     "MadokaEyeBrightnessNumber", number.Number, cg.Parented.template(Madoka)
 )

@@ -20,7 +20,7 @@ external_components:
   - source:
       type: local
       path: ../components
-    components: [madoka]
+    components: [madoka, madoka_base]
 
 esp32_ble_tracker:
   id: ble_tracker

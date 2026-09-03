@@ -162,6 +162,14 @@ you nothing. Clearing it takes both sides:
 
 An ESP32 bridges the Bluetooth connection over WiFi. HA talks to the ESP via the standard ESPHome API — no special configuration needed on the HA side.
 
+> ⚠️ **Upgrading from a ref before the shared transport landed**: add
+> **`madoka_base`** to your `components:` list, next to `madoka` or
+> `madoka_vam`. The BLE transport the two components used to carry a copy of
+> each now lives in that third component, and ESPHome only copies the
+> components you list. Nothing else changes — your existing node keeps running
+> its current firmware until you recompile, and if you forget, the build stops
+> with `Component not found: madoka_base` rather than misbehaving.
+
 ### Minimal config
 
 ```yaml
@@ -171,7 +179,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v3.8.0
       path: esphome/components
-    components: [madoka]
+    components: [madoka, madoka_base]
 
 # The BRC1H only accepts an authenticated (MITM) link, established through a
 # numeric comparison. Both lines below are required — see the note after this
@@ -307,7 +315,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v3.2.0        # replace with latest tag
       path: esphome/components
-    components: [madoka_vam]
+    components: [madoka_vam, madoka_base]
 
 esp32_ble:
   io_capability: display_yes_no
@@ -346,7 +354,7 @@ external_components:
       url: https://github.com/dasimon135/daikin_madoka
       ref: v2.2.0        # replace with latest tag
       path: esphome/components
-    components: [madoka]
+    components: [madoka, madoka_base]
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for available versions.
