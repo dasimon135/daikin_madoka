@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.11.2 - September 2026
+
+### VAM ventilation moved into pymadoka-ng, and a VAM stops polling a function it cannot use
+
+Function 0x0031 — how a VAM keeps its ventilation mode and fan speed — lived in this integration, which reached into the library's controller to attach it. Reverse-engineered protocol knowledge belongs in the library, and while it lived here no other consumer of pymadoka-ng could talk to a VAM at all. It now ships in [pymadoka-ng 0.4.0](https://github.com/dasimon135/pymadoka/releases/tag/v0.4.0), and the pin moves with it.
+
+The controller is told which kind of unit it is driving, and picks its own features from that: a VAM gets ventilation and **no fan speed**, a thermostat the reverse. A VAM does answer function 0x0050 — which is why this went unnoticed — but every argument comes back with length 0 and none of them ever change, so querying it cost a round trip on every poll for a value nothing could read or write.
+
+**Nothing changes for a thermostat**, and nothing changes in what a VAM exposes: same entities, same presets, same fan modes. The ventilation path remains hardware-validated only by @Frank802, on his own unit; the maintainer owns no VAM.
+
+The contract tests stay in this repository rather than moving with the code. If a future library release changes the wire format or the merge-on-write behaviour, they are what notices before a VAM owner does.
+
 ## v3.11.1 - September 2026
 
 ### The bundled card is registered as a Lovelace resource

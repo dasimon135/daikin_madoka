@@ -9,6 +9,8 @@ from pymadoka import (
     OperationModeStatus,
     PowerStateStatus,
     SetPointStatus,
+    VentilationModeEnum,
+    VentilationStatus,
 )
 
 from homeassistant.components.climate import (
@@ -39,7 +41,6 @@ from .const import (
 )
 from .coordinator import MadokaConfigEntry
 from .entity import MadokaEntity
-from .ventilation import VentilationModeEnum, VentilationStatus
 
 # HVACMode.OFF has no Daikin operation mode on purpose: the BRC1H models
 # "off" as a power state, not a mode. async_set_hvac_mode handles OFF by
