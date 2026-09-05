@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.11.1 - September 2026
+
+### The bundled card is registered as a Lovelace resource
+
+The card rendered as a configuration error in the Android companion app on every load, while the same dashboard worked in a desktop browser and in Chrome on the same phone.
+
+The two ways to auto-load a card are not equivalent. A **Lovelace resource** is loaded by Lovelace itself, which waits for it before rendering any card. A **frontend module URL** is handed to the shell and *nothing waits for it* — that is what this integration used. The card is now registered the way HACS registers a plugin: a storage-mode resource, adopting an entry already on that path instead of adding a competing second one, and removing duplicates, since two copies race to define the same element and the loser cannot be replaced.
+
+The module list stays as a fallback for YAML mode and for an install with no Lovelace. Never both, or the page gets two copies.
+
+This is not a one-install theory: [ha-rf-fan#44](https://github.com/dasimon135/ha-rf-fan/issues/44), filed by a different user against a different integration, reports the identical failure and was fixed the same way.
+
+Alongside it, two cache-correctness fixes that are *not* the fix above: the `?v=` marker is now a digest of the file rather than a hand-maintained version that did not move when the file changed, and the static path drops its month-long cache headers so a hand-registered resource cannot freeze.
+
+Nothing else changes. No entity, no configuration, no BLE behaviour.
+
 ## v3.11.0 - September 2026
 
 Two features that came from outside this repository, and the ESPHome side stops carrying two copies of the same BLE transport.
