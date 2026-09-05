@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.12.0 - September 2026
+
+### The card can be themed
+
+Until now the Madoka card carried 36 colours of its own — the six HVAC mode palettes, the dial's navy "device face", the reconnect and error gradients — as literals in its stylesheet. A Home Assistant theme could recolour the text and the panel around them, and nothing else: on a warm or light theme the dial stayed a purple-on-navy island.
+
+Every one of those colours is now the fallback of a CSS variable a theme can set. Nothing changes if a theme sets none of them — the defaults are the values the card has always used. The variables are `--madoka-accent`, `--madoka-mode-{heat,cool,auto,dry,fan,off}` with a `-2` partner for the second gradient stop, `--madoka-face`, `--madoka-face-2`, `--madoka-bezel`, `--madoka-face-edge`, `--madoka-screen-ink`, `--madoka-dev-ink`, `--madoka-dev-soft`, `--madoka-dev-hairline`, `--madoka-range-{low,high}`, `--madoka-warn`, `--madoka-warn-2`, `--madoka-warn-ink`, `--madoka-error`, `--madoka-error-2` and `--madoka-on-state` (the text painted over a mode gradient). Set them in a theme YAML without the leading dashes, e.g. `madoka-mode-heat: "#E0784A"`.
+
+### The card is a real `ha-card`
+
+The card's outer container was a `<div>` styled to look like a Home Assistant card. Theme variables reached it, but anything applied *to the card element* did not: a theme's `ha-card-box-shadow`, a theme's `card-mod-card` block, a user's per-card `card_mod`. All of it selects `ha-card`, and there was none. Both layouts now render inside a real `<ha-card>`.
+
+**One visible consequence on the default theme:** the corner radius follows Home Assistant's own card radius (12 px) instead of the card's private 16 px, so the Madoka card now matches every other card on the page.
+
+A test scans the shipped file so neither property can regress: the container must be `ha-card`, and no colour literal may appear outside a `var()` fallback.
+
 ## v3.11.2 - September 2026
 
 ### VAM ventilation moved into pymadoka-ng, and a VAM stops polling a function it cannot use
