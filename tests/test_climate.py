@@ -4,7 +4,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pymadoka import ConnectionException, FanSpeedEnum, OperationModeEnum
+from pymadoka import (
+    ConnectionException,
+    FanSpeedEnum,
+    OperationModeEnum,
+    VentilationModeEnum,
+    VentilationStatus,
+)
 from pymadoka.connection import ConnectionStatus
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -40,10 +46,6 @@ from custom_components.daikin_madoka.const import (
     MIN_TEMP,
 )
 from custom_components.daikin_madoka.coordinator import MadokaCoordinator
-from custom_components.daikin_madoka.ventilation import (
-    VentilationModeEnum,
-    VentilationStatus,
-)
 
 MAC = "D0:CF:13:0F:11:F6"
 

@@ -1,7 +1,15 @@
 """Platform for the Daikin BRC1H (Madoka) thermostat."""
 import logging
 
-from pymadoka import Controller
+from pymadoka import (
+    DEVICE_TYPE_THERMOSTAT as LIB_DEVICE_TYPE_THERMOSTAT,
+)
+from pymadoka import (
+    DEVICE_TYPE_VENTILATION as LIB_DEVICE_TYPE_VENTILATION,
+)
+from pymadoka import (
+    Controller,
+)
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
@@ -31,7 +39,6 @@ from .coordinator import (
 )
 from .frontend import async_register_card
 from .util import build_candidates, entry_macs, normalize_mac
-from .ventilation import Ventilation
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -226,6 +233,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
                 )
                 return []
 
+        # pymadoka-ng owns function 0x0031 since 0.4.0, so the controller picks
+        # its own features from the device type: a VAM gets `ventilation` and
+        # no `fan_speed`, a thermostat the reverse. The two vocabularies are
+        # mapped explicitly rather than passed through — they agree today, and
+        # a silent divergence would send a VAM down the thermostat path.
+        device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+        library_device_type = (
+            LIB_DEVICE_TYPE_VENTILATION
+            if device_type == DEVICE_TYPE_VENTILATION
+            else LIB_DEVICE_TYPE_THERMOSTAT
+        )
+
         # reconnect=False: the coordinator is the single reconnect owner; a
         # library-side background reconnect task would race it.
         controller = Controller(
@@ -235,16 +254,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             reconnect=False,
             candidates_callback=_candidates,
             allowed_sources_callback=_allowed_sources,
+            device_type=library_device_type,
         )
-        # pymadoka-ng knows nothing about function 0x0031, so a VAM gets the
-        # feature attached here. Controller.update() walks vars(self) and
-        # queries anything that is a Feature, so this is enough to have it
-        # polled. Not attached to a thermostat: that one does not answer 0x0031
-        # at all, and every unanswered query costs a poll round trip.
-        if entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE) == (
-            DEVICE_TYPE_VENTILATION
-        ):
-            controller.ventilation = Ventilation(controller.connection)
         coordinator = MadokaCoordinator(
             hass,
             controller,
