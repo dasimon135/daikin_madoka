@@ -57,6 +57,33 @@ to show the run did something.
 Continue only when the issue is genuinely awaiting a first response, or when the
 reporter has asked something new that the maintainer has not answered.
 
+### Then read the history with this person, not just this thread
+
+One issue is rarely someone's first contact. Before drafting anything, find out
+what this reporter has already been told:
+
+    gh issue list --repo dasimon135/daikin_madoka --state all --limit 50 \
+      --json number,title,author --jq '.[] | select(.author.login=="<login>")'
+
+Read the related ones in full, and follow any thread they link to — the public
+tutorial threads on `community.home-assistant.io` are where most reporters first
+appear, and long diagnostic exchanges live there rather than on GitHub.
+
+This is not optional politeness, it is correctness. Two failure modes come from
+skipping it, and both cost more than the reading:
+
+- **Repeating advice they have already acted on.** They did the thing, it did not
+  work, and the reply reads as if nobody looked.
+- **Repeating a diagnosis they have already disproved.** The new report is often
+  precisely the rebuttal to the last answer. Telling someone again that their
+  capture must be wrong, after they went and re-measured to show it was not, is
+  the worst reply the queue can produce.
+
+When the report contradicts something they were told before — by the maintainer
+or by an earlier triage reply — **open by conceding it plainly**, name where it
+was said, and only then answer. A correction the reporter had to fight for is
+worth acknowledging before anything technical.
+
 ## 2. Establish the path before anything else
 
 **This repo ships two independent implementations.** They share a thermostat and
