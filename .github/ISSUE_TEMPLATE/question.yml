@@ -1,0 +1,33 @@
+name: Question
+description: Ask about setup, configuration or expected behaviour
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome here — this tracker is the single place where I follow them.
+
+        Two things worth reading first, because they answer a large share of what gets asked:
+        the [README](https://github.com/dasimon135/daikin_madoka#readme) and
+        [Known limitations](https://github.com/dasimon135/daikin_madoka#known-limitations).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what is unclear or not behaving as you expect?
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Home Assistant and integration versions
+      placeholder: "HA 2026.8.2, integration 3.11.2"
+    validations:
+      required: false
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Thermostat model, and whether you use the integration (proxy or local adapter) or the ESPHome component.
+    validations:
+      required: false

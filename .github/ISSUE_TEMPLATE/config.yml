@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Known limitations — read this first
+    url: https://github.com/dasimon135/daikin_madoka#known-limitations
+    about: Several frequently reported behaviours are documented there and are not defects.
+  - name: Protocol-level bug (command encoding, answer parsing)
+    url: https://github.com/dasimon135/pymadoka/issues
+    about: The BLE protocol lives in pymadoka-ng. Report it here anyway if you are unsure.
+  - name: General discussion (English)
+    url: https://community.home-assistant.io/t/984675
+    about: User-to-user help. Not tracked — open an issue for anything that needs a fix.
+  - name: Discussion générale (français)
+    url: https://forum.hacf.fr/t/75688
+    about: Entraide entre utilisateurs. Non suivi — ouvrez une issue pour tout correctif attendu.

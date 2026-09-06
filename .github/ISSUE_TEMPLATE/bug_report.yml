@@ -1,0 +1,88 @@
+name: Bug report
+description: Report a problem with the Daikin Madoka integration
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please fill in as much of the form as
+        possible — it is what makes an issue diagnosable without a round trip.
+
+        Before you continue, check
+        [Known limitations](https://github.com/dasimon135/daikin_madoka#known-limitations):
+        several frequently reported behaviours are documented there and are not defects.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem, what you expected instead, and how to reproduce it.
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About (e.g. 2026.8.2)
+      placeholder: "2026.8.2"
+    validations:
+      required: true
+  - type: input
+    id: integration-version
+    attributes:
+      label: Integration version
+      description: HACS → Daikin Madoka (e.g. 3.11.2)
+      placeholder: "3.11.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: approach
+    attributes:
+      label: How do you reach the thermostat?
+      description: The two approaches fail in different ways — this decides where to look first.
+      options:
+        - Home Assistant integration, through an ESPHome Bluetooth proxy
+        - Home Assistant integration, through a local Bluetooth adapter
+        - ESPHome component (madoka / madoka_vam), no integration
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: |
+        Thermostat model and firmware if you know it (e.g. BRC1H European), the unit it drives
+        (thermostat or VAM ventilation), and the proxy or adapter — board, ESPHome version.
+      placeholder: |
+        BRC1H, firmware 01.10.03, driving a split unit
+        Proxy: ESP32-WROOM on ESPHome 2026.8.2
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Settings → Devices & services → Daikin Madoka → entry menu (⋮) → Download diagnostics.
+        Attach the file or paste its content here.
+      placeholder: Drag and drop the diagnostics JSON file here.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug log
+      description: |
+        Both loggers are needed. Without `pymadoka: debug` the log says almost nothing about
+        the Bluetooth exchange itself.
+
+        ```yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.daikin_madoka: debug
+            pymadoka: debug
+        ```
+      render: text
+    validations:
+      required: false
