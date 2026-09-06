@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.12.1 - September 2026
+
+### The tile layout is one grid row tall, like every other card
+
+The tile layout drew its icon in a 42 px dot, which made the card 62 px tall. A Home Assistant section grid row is 56 px, and that is exactly what the native tile card and Mushroom occupy (10 px padding + 36 px icon + 10 px). Side by side in a column, this card stood 6 px proud of its neighbours.
+
+The dot is now 36 px, so the card sits on the grid row like the rest. Nothing else moves: the same icon, the same two lines of text, the same buttons.
+
 ## v3.12.0 - September 2026
 
 ### The card can be themed

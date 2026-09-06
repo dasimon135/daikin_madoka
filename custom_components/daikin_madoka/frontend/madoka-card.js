@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.8.0";
+const MADOKA_CARD_VERSION = "0.8.1";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
@@ -865,7 +865,7 @@ class MadokaCard extends HTMLElement {
 .mode-btn:focus-visible, .fanbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* Tile (ultra-compact) layout — config: layout: tile */
 .card.tile { flex-direction:row; align-items:center; gap:12px; padding:10px 12px; }
-.tdot { flex:0 0 auto; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+.tdot { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:none; cursor:pointer;
   display:grid; place-items:center;
   background: radial-gradient(circle at 50% 40%, color-mix(in srgb,var(--state) 45%, var(--face)), var(--face) 78%);
   box-shadow: 0 0 0 2px color-mix(in srgb,var(--state) 70%,transparent),
