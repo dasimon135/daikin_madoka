@@ -3,16 +3,16 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.7.1";
+const MADOKA_CARD_VERSION = "0.8.1";
 const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
 
 const MODES = {
-  cool: { label: "Cooling", color: "#38c6ff", color2: "#4d8bff", mdi: "mdi:snowflake" },
-  heat: { label: "Heating", color: "#ff7a3d", color2: "#ff5152", mdi: "mdi:fire" },
-  auto: { label: "Auto", color: "#8a5cff", color2: "#5b74ff", mdi: "mdi:autorenew" },
-  fan_only: { label: "Fan", color: "#35e0b0", color2: "#2bc6c6", mdi: "mdi:fan" },
-  dry: { label: "Dry", color: "#ffc93d", color2: "#ff9f3d", mdi: "mdi:water-percent" },
-  off: { label: "Off", color: "#565a6e", color2: "#3d4050", mdi: "mdi:power" },
+  cool: { label: "Cooling", color: "var(--madoka-mode-cool, #38c6ff)", color2: "var(--madoka-mode-cool-2, #4d8bff)", mdi: "mdi:snowflake" },
+  heat: { label: "Heating", color: "var(--madoka-mode-heat, #ff7a3d)", color2: "var(--madoka-mode-heat-2, #ff5152)", mdi: "mdi:fire" },
+  auto: { label: "Auto", color: "var(--madoka-mode-auto, #8a5cff)", color2: "var(--madoka-mode-auto-2, #5b74ff)", mdi: "mdi:autorenew" },
+  fan_only: { label: "Fan", color: "var(--madoka-mode-fan, #35e0b0)", color2: "var(--madoka-mode-fan-2, #2bc6c6)", mdi: "mdi:fan" },
+  dry: { label: "Dry", color: "var(--madoka-mode-dry, #ffc93d)", color2: "var(--madoka-mode-dry-2, #ff9f3d)", mdi: "mdi:water-percent" },
+  off: { label: "Off", color: "var(--madoka-mode-off, #565a6e)", color2: "var(--madoka-mode-off-2, #3d4050)", mdi: "mdi:power" },
 };
 const MODE_ORDER = ["cool", "heat", "auto", "fan_only", "dry", "off"];
 
@@ -628,7 +628,7 @@ class MadokaCard extends HTMLElement {
   _template() {
     return `<style>${this._css()}</style>
 <div id="err" class="err"></div>
-<div class="card" id="card">
+<ha-card class="card" id="card">
   <div class="head">
     <b id="title">Madoka</b>
     <div class="chips" id="chips"></div>
@@ -665,13 +665,13 @@ class MadokaCard extends HTMLElement {
   </div>
   <svg class="graph" id="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg>
   <div class="modes" id="modes" role="tablist"></div>
-</div>`;
+</ha-card>`;
   }
 
   _tileTemplate() {
     return `<style>${this._css()}</style>
 <div id="err" class="err"></div>
-<div class="card tile" id="card">
+<ha-card class="card tile" id="card">
   <button class="tdot" id="tdot" type="button" aria-label="Power"><ha-icon id="ticon"></ha-icon></button>
   <div class="tinfo" id="tinfo" role="button" tabindex="0" aria-label="Details">
     <span class="tname" id="tname">Madoka</span>
@@ -682,7 +682,7 @@ class MadokaCard extends HTMLElement {
     <button class="tbtn" id="tplus" type="button" aria-label="Raise">+</button>
     <button class="tbtn recon" id="trecon" type="button"></button>
   </div>
-</div>`;
+</ha-card>`;
   }
 
   _updateTile(st) {
@@ -755,21 +755,22 @@ class MadokaCard extends HTMLElement {
   _css() {
     return `
 :host {
-  --face: #16161d; --face-2: #1d1d27; --bezel: #0a0a0e; --face-edge: #34364a;
-  --screen-ink: #cabfff; --dev-ink: #f2f0ff; --dev-soft: #8f8ca8; --dev-hairline: #2c2c3a;
-  --state: #8a5cff; --state-2: #5b74ff;
+  --face: var(--madoka-face, #16161d); --face-2: var(--madoka-face-2, #1d1d27);
+  --bezel: var(--madoka-bezel, #0a0a0e); --face-edge: var(--madoka-face-edge, #34364a);
+  --screen-ink: var(--madoka-screen-ink, #cabfff); --dev-ink: var(--madoka-dev-ink, #f2f0ff);
+  --dev-soft: var(--madoka-dev-soft, #8f8ca8); --dev-hairline: var(--madoka-dev-hairline, #2c2c3a);
+  --state: var(--madoka-mode-auto, #8a5cff); --state-2: var(--madoka-mode-auto-2, #5b74ff);
   --panel: var(--ha-card-background, var(--card-background-color, #fff));
   --ink: var(--primary-text-color, #1b1a26);
   --ink-soft: var(--secondary-text-color, #5b5a6e);
   --hairline: var(--divider-color, #dcdae6);
-  --accent: var(--primary-color, #6d4bff);
+  --accent: var(--madoka-accent, var(--primary-color, #6d4bff));
   display: block;
 }
 * { box-sizing: border-box; }
-.err { display:none; padding:16px; color:#c0392b; font:14px system-ui; }
+.err { display:none; padding:16px; color:var(--madoka-error, #c0392b); font:14px system-ui; }
 .card {
-  background: var(--panel); border-radius: var(--ha-card-border-radius, 16px);
-  border: 1px solid var(--hairline); padding: 18px 18px 16px;
+  padding: 18px 18px 16px;
   display: flex; flex-direction: column; gap: 15px;
   font-family: var(--paper-font-body1_-_font-family, "Segoe UI", system-ui, sans-serif);
   color: var(--ink);
@@ -780,7 +781,7 @@ class MadokaCard extends HTMLElement {
 .chip { display:inline-flex; align-items:center; gap:5px; font-size:.68rem; font-weight:600;
   color: var(--ink-soft); background: color-mix(in srgb, var(--accent) 8%, transparent);
   border:1px solid var(--hairline); padding:3px 8px; border-radius:999px; white-space:nowrap; }
-.chip.warn { color:#d98324; background: color-mix(in srgb,#f0a33a 18%,transparent); border-color:transparent; }
+.chip.warn { color:var(--madoka-warn-ink, #d98324); background: color-mix(in srgb,var(--madoka-warn, #f0a33a) 18%,transparent); border-color:transparent; }
 .chip svg, .chip ha-icon { width:12px; height:12px; --mdc-icon-size:12px; }
 .dial-wrap { display:grid; place-items:center; padding:4px 0 0; }
 .dial { position:relative; width:250px; height:250px; border-radius:50%;
@@ -810,7 +811,7 @@ class MadokaCard extends HTMLElement {
 .temp .deg { font-size:1.3rem; font-weight:400; margin-top:.45rem; color:var(--dev-soft); }
 .target { margin-top:5px; font-size:.8rem; color:var(--screen-ink); font-variant-numeric:tabular-nums; display:inline-flex; gap:6px; align-items:center; min-height:1.1em; }
 .target .goal { color:var(--dev-ink); font-weight:650; }
-.target.range .goal.low { color:#7fd0ff; } .target.range .goal.high { color:#ff9f7a; }
+.target.range .goal.low { color:var(--madoka-range-low, #7fd0ff); } .target.range .goal.high { color:var(--madoka-range-high, #ff9f7a); }
 .fan { margin-top:10px; display:inline-flex; gap:4px; align-items:flex-end; height:16px; }
 .fan i { width:4px; border-radius:2px; background:var(--dev-hairline); transition:background .3s,height .3s; }
 .fan i:nth-child(1){height:7px;} .fan i:nth-child(2){height:11px;} .fan i:nth-child(3){height:15px;}
@@ -830,8 +831,8 @@ class MadokaCard extends HTMLElement {
 .reconrow { display:none; }
 .reconbtn { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:8px;
   font-size:.8rem; font-weight:650; cursor:pointer; padding:9px 12px; border-radius:10px;
-  color:#fff; border:1px solid transparent; background:linear-gradient(135deg,#f0a33a,#e2703a);
-  box-shadow:0 6px 16px -8px rgba(226,112,58,.9); transition:transform .12s, filter .2s; }
+  color:var(--madoka-on-state, #fff); border:1px solid transparent; background:linear-gradient(135deg,var(--madoka-warn, #f0a33a),var(--madoka-warn-2, #e2703a));
+  box-shadow:0 6px 16px -8px color-mix(in srgb,var(--madoka-warn-2, #e2703a) 90%,transparent); transition:transform .12s, filter .2s; }
 .reconbtn ha-icon { --mdc-icon-size:17px; width:17px; height:17px; }
 .reconbtn:hover:not(:disabled) { filter:brightness(1.07); }
 .reconbtn:active:not(:disabled) { transform:scale(.98); }
@@ -840,14 +841,14 @@ class MadokaCard extends HTMLElement {
 .reconbtn.busy, .tbtn.recon.busy { opacity:.75; animation: reconpulse 1.4s ease-in-out infinite; }
 @keyframes reconpulse { 0%,100%{opacity:.55;} 50%{opacity:1;} }
 /* A press that was REJECTED: never dressed up as progress, and still pressable. */
-.reconbtn.failed, .tbtn.recon.failed { background:linear-gradient(135deg,#e05a52,#b3312a);
-  box-shadow:0 6px 16px -8px rgba(179,49,42,.9); }
+.reconbtn.failed, .tbtn.recon.failed { background:linear-gradient(135deg,var(--madoka-error, #e05a52),var(--madoka-error-2, #b3312a));
+  box-shadow:0 6px 16px -8px color-mix(in srgb,var(--madoka-error-2, #b3312a) 90%,transparent); }
 .lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.12em; font-weight:700; color:var(--ink-soft); min-width:52px; }
 .fansel { display:flex; gap:4px; flex:1; }
 .fanbtn { flex:1; font-size:.72rem; font-weight:600; color:var(--ink-soft); background:transparent;
   border:1px solid var(--hairline); border-radius:8px; padding:5px 0; cursor:pointer; transition:all .16s; }
 .fanbtn:hover { border-color:var(--accent); color:var(--ink); }
-.fanbtn[aria-pressed="true"] { color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--state),var(--state-2)); }
+.fanbtn[aria-pressed="true"] { color:var(--madoka-on-state, #fff); border-color:transparent; background:linear-gradient(135deg,var(--state),var(--state-2)); }
 .brightrow input[type=range] { flex:1; accent-color: var(--state); height:4px; }
 .brighticon { width:15px; height:15px; --mdc-icon-size:15px; color:var(--ink-soft); }
 .graph { width:100%; height:34px; display:block; }
@@ -859,12 +860,12 @@ class MadokaCard extends HTMLElement {
   background:transparent; border:1px solid var(--hairline); border-radius:999px; padding:6px 12px; cursor:pointer; transition:all .18s; }
 .mode-btn svg, .mode-btn ha-icon { width:14px; height:14px; --mdc-icon-size:14px; }
 .mode-btn:hover { border-color:var(--accent); color:var(--ink); }
-.mode-btn[aria-selected="true"] { color:#fff; border-color:transparent;
+.mode-btn[aria-selected="true"] { color:var(--madoka-on-state, #fff); border-color:transparent;
   background:linear-gradient(135deg,var(--state),var(--state-2)); box-shadow:0 6px 16px -6px color-mix(in srgb,var(--state) 80%,transparent); }
 .mode-btn:focus-visible, .fanbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* Tile (ultra-compact) layout — config: layout: tile */
 .card.tile { flex-direction:row; align-items:center; gap:12px; padding:10px 12px; }
-.tdot { flex:0 0 auto; width:42px; height:42px; border-radius:50%; border:none; cursor:pointer;
+.tdot { flex:0 0 auto; width:36px; height:36px; border-radius:50%; border:none; cursor:pointer;
   display:grid; place-items:center;
   background: radial-gradient(circle at 50% 40%, color-mix(in srgb,var(--state) 45%, var(--face)), var(--face) 78%);
   box-shadow: 0 0 0 2px color-mix(in srgb,var(--state) 70%,transparent),
@@ -873,10 +874,10 @@ class MadokaCard extends HTMLElement {
 .tdot ha-icon { --mdc-icon-size:20px; width:20px; height:20px; color:var(--state); }
 .card.tile.off .tdot { box-shadow: inset 0 0 0 1px var(--hairline); background:var(--face); }
 .card.tile.off .tdot ha-icon { color:var(--ink-soft); }
-.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:pointer; border-radius:8px; outline:none; }
+.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:0; cursor:pointer; border-radius:8px; outline:none; }
 .tinfo:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.tname { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tsub { font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tname { font-size:14px; line-height:20px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tsub { font-size:12px; line-height:16px; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tctl { flex:0 0 auto; display:flex; gap:6px; }
 .tbtn { width:34px; height:34px; border-radius:9px; border:1px solid var(--hairline);
   background: color-mix(in srgb,var(--accent) 6%,var(--panel)); color:var(--ink); font-size:1.1rem;
@@ -884,10 +885,10 @@ class MadokaCard extends HTMLElement {
 .tbtn:hover:not(:disabled) { border-color:var(--accent); background: color-mix(in srgb,var(--accent) 14%,var(--panel)); }
 .tbtn:active:not(:disabled) { transform:scale(.9); }
 .tbtn:disabled { opacity:.4; cursor:default; }
-.tbtn.recon { display:none; place-items:center; color:#fff; border-color:transparent;
-  background:linear-gradient(135deg,#f0a33a,#e2703a); }
+.tbtn.recon { display:none; place-items:center; color:var(--madoka-on-state, #fff); border-color:transparent;
+  background:linear-gradient(135deg,var(--madoka-warn, #f0a33a),var(--madoka-warn-2, #e2703a)); }
 .tbtn.recon ha-icon { --mdc-icon-size:19px; width:19px; height:19px; }
-.tbtn.recon:hover:not(:disabled) { filter:brightness(1.07); background:linear-gradient(135deg,#f0a33a,#e2703a); }
+.tbtn.recon:hover:not(:disabled) { filter:brightness(1.07); background:linear-gradient(135deg,var(--madoka-warn, #f0a33a),var(--madoka-warn-2, #e2703a)); }
 .tbtn.recon:disabled { opacity:1; }
 .tdot:focus-visible, .tbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 

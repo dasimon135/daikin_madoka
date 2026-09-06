@@ -410,6 +410,31 @@ need the `climate.*` entity. It follows your Home Assistant theme and language (
 own climate translations). The signal chip appears once you enable the
 disabled-by-default `sensor.*_signal_strength`.
 
+#### Theming
+
+The card renders inside a real `ha-card`, so it takes the card background,
+radius, border and shadow from your theme like any other card. Its own colours
+are CSS variables with the stock values as fallbacks — set any of them in a
+theme YAML (without the leading dashes) to repaint the card:
+
+| Variable | What it colours |
+|---|---|
+| `madoka-accent` | Focus rings, hover borders, chip tint (falls back to `primary-color`) |
+| `madoka-mode-heat`, `-cool`, `-auto`, `-dry`, `-fan`, `-off` | The mode colour (dial halo, arc, mode button, graph); add `-2` for the second gradient stop |
+| `madoka-face`, `madoka-face-2`, `madoka-bezel`, `madoka-face-edge` | The dial's "device face" |
+| `madoka-screen-ink`, `madoka-dev-ink`, `madoka-dev-soft`, `madoka-dev-hairline` | Text and hairlines drawn on the dial |
+| `madoka-range-low`, `madoka-range-high` | The two setpoints of a range |
+| `madoka-warn`, `madoka-warn-2`, `madoka-warn-ink` | The reconnect button and the warning chip |
+| `madoka-error`, `madoka-error-2` | A rejected reconnect, the error banner |
+| `madoka-on-state` | Text painted over a mode or warning gradient |
+
+```yaml
+my-theme:
+  madoka-mode-heat: "#E0784A"
+  madoka-mode-cool: "#8FB8C8"
+  madoka-face: "#1F1B19"
+```
+
 ### Thermostat card
 
 ```yaml
