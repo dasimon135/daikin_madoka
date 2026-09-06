@@ -1,4 +1,10 @@
-# Home Assistant Daikin Madoka
+# Daikin Madoka — Home Assistant integration
+
+[![Release](https://img.shields.io/github/v/release/dasimon135/daikin_madoka)](https://github.com/dasimon135/daikin_madoka/releases)
+[![CI](https://github.com/dasimon135/daikin_madoka/actions/workflows/ci.yml/badge.svg)](https://github.com/dasimon135/daikin_madoka/actions/workflows/ci.yml)
+[![Validate](https://github.com/dasimon135/daikin_madoka/actions/workflows/validate.yml/badge.svg)](https://github.com/dasimon135/daikin_madoka/actions/workflows/validate.yml)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+[![License](https://img.shields.io/github/license/dasimon135/daikin_madoka)](LICENSE)
 
 Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provides **two independent approaches** — choose one based on your setup.
 
