@@ -183,7 +183,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v3.8.0
+      ref: v3.12.0
       path: esphome/components
     components: [madoka, madoka_base]
 
@@ -319,7 +319,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v3.2.0        # replace with latest tag
+      ref: v3.12.0       # replace with latest tag
       path: esphome/components
     components: [madoka_vam, madoka_base]
 
@@ -358,7 +358,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v2.2.0        # replace with latest tag
+      ref: v3.12.0       # replace with latest tag
       path: esphome/components
     components: [madoka, madoka_base]
 ```
