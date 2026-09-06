@@ -6,37 +6,72 @@
 [![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![License](https://img.shields.io/github/license/dasimon135/daikin_madoka)](LICENSE)
 
-Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provides **two independent approaches** — choose one based on your setup.
+Control a Daikin **BRC1H "Madoka"** wall thermostat from Home Assistant, over
+Bluetooth. Temperature, mode, fan speed and filter alerts become ordinary Home
+Assistant entities. No cloud account, no Daikin app, nothing leaves your home.
 
-![](images/madoka.png)
+![A Daikin BRC1H Madoka thermostat mounted on a wall](images/madoka.png)
 
 ---
 
-## Which approach should I use?
+## Will this work for me?
 
-| | Option 1: HA Integration | Option 2: ESPHome |
+**Your thermostat.** The European BRC1H is the one that has been tested, on
+several units. Other variants speak the same protocol and probably work, but
+nobody has confirmed it — see
+[Only the European BRC1H is validated](#only-the-european-brc1h-is-validated).
+Daikin VAM ventilation units work too; that part was contributed and tested by
+someone who owns one.
+
+**Bluetooth range.** Something has to be within Bluetooth range of the
+thermostat — either the machine running Home Assistant, or an ESP32 board
+sitting in the same room and acting as a Bluetooth proxy.
+
+**The step people get stuck on.** The BRC1H ignores any Bluetooth link that has
+not been *paired* — silently, with no error. If you go through an ESP32 proxy,
+the ready-made "Bluetooth Proxy" firmware **cannot do that pairing**: you have
+to add a few lines to its configuration and reflash it. It takes five minutes
+and [the lines are given below](#requirements), but it is not optional.
+
+**What it will not do.** The thermostat is read by polling, about once a minute,
+so a change made on the wall panel takes a moment to show up in Home Assistant.
+And some settings are locked by the indoor unit itself — no app, official or
+otherwise, can change those. Both are explained under
+[Known limitations](#known-limitations).
+
+---
+
+## Two ways to do it
+
+**Most people want Option 1**: a normal Home Assistant integration, installed
+from HACS, that reaches the thermostat through whatever Bluetooth you already
+have. Discovery, options and diagnostics all live inside Home Assistant.
+
+**Option 2 is a dedicated bridge**: an ESP32 running ESPHome that owns the
+thermostat and hands it to Home Assistant. Pick it if you would rather give this
+device its own board, or if you already run everything through ESPHome.
+
+| | Option 1 — HA integration | Option 2 — ESPHome |
 |---|---|---|
-| **Hardware needed** | None (BLE from HA host or any ESPHome Bluetooth proxy) | ESP32 (e.g. M5Stack Atom) |
-| **HA server location** | Anywhere (since v2.4.0, works through Bluetooth proxies) | Anywhere on your network |
-| **Docker/VM** | Works via Bluetooth proxy; local adapter needs DBUS config | Works out of the box |
-| **Install via** | HACS | ESPHome dashboard |
+| Extra hardware | none, if Home Assistant is already in range | an ESP32 board |
+| Installed from | HACS | the ESPHome dashboard |
+| HA in a container or VM | fine through a proxy; a local adapter needs D-Bus set up | fine either way |
 
-Both options are now equally capable. Option 1 keeps everything inside Home Assistant (discovery, options, diagnostics); Option 2 gives the thermostat its own dedicated ESP32 bridge.
+Both are equally capable — this is a matter of where you want the device to live.
 
 ---
 
-## Option 1 — Home Assistant Integration (Direct Bluetooth)
+## Option 1 — Home Assistant integration
 
-> ✨ **New in v2.4.0**: connections go through Home Assistant's Bluetooth stack, so the integration works through **ESPHome Bluetooth proxies** — your HA server no longer needs to be within BLE range. Thermostats in range are **discovered automatically**, the poll interval is configurable, and diagnostics can be downloaded from the device page.
-
-The integration connects to the Madoka thermostat via Bluetooth (local adapter or ESPHome Bluetooth proxy), using the [pymadoka](https://github.com/dasimon135/pymadoka) library.
+The integration reaches the thermostat over Bluetooth, through a local adapter
+or an ESPHome Bluetooth proxy, using the
+[pymadoka](https://github.com/dasimon135/pymadoka) library.
 
 ### Installation
 
-**Via HACS (recommended):**
-1. Add this repository as a custom HACS integration repository.
-2. Install **Daikin Madoka** from HACS.
-3. Restart Home Assistant.
+**From HACS (recommended).** This integration is in the default HACS store, so
+there is no custom repository to add: open HACS, search for **Daikin Madoka**,
+download it, and restart Home Assistant.
 
 **Manual:**
 Copy `custom_components/daikin_madoka/` into your HA `custom_components/` directory, then restart.
@@ -47,21 +82,36 @@ If a thermostat is advertising nearby (directly or via a Bluetooth proxy), Home 
 
 The poll interval (default 60 s) can be changed from the integration's **Configure** dialog.
 
-### Entities exposed
+### What you get in Home Assistant
 
-Each thermostat creates:
-- `climate.*` — thermostat (mode, setpoint, fan speed, current temperature; separate heating/cooling setpoints in AUTO mode when the device has range mode enabled)
-- `sensor.*_indoor_temperature` — indoor temperature
-- `sensor.*_outdoor_temperature` — outdoor temperature (not created for ventilation units, which are indoor-only)
-- `sensor.*_operating_time` — cumulative hours the unit has been running (coarse, poll-interval granularity; persisted across restarts)
-- `sensor.*_energy_*` — daily, weekly and yearly electricity consumption totals retained by the thermostat (when supported; opt in under the integration options). Today's counter refreshes every five minutes; the other period summaries refresh daily to limit Bluetooth traffic.
-- `sensor.*_signal_strength` — Bluetooth RSSI (diagnostic, disabled by default)
-- `sensor.*_connection_source` — which BLE path serves the thermostat: active proxy while connected, preferred (bonded) proxy otherwise (diagnostic)
-- `sensor.*_connection_status` — `connected` / `retrying` / `pairing_slow` / `needs_pairing` / `not_advertising` (diagnostic). Tells the failures apart at a glance: `not_advertising` means no proxy can see the thermostat (range, power), `needs_pairing` means a proxy was explicitly refused and you must re-pair, `pairing_slow` means the handshake keeps timing out (often just a busy proxy). Like `signal_strength` and `connection_source`, it stays available while the thermostat does not — those three are what you read when everything else is `unavailable`.
-- `binary_sensor.*_clean_filter` — filter alert (device_class: problem)
-- `button.*_reset_filter` — reset filter timer
-- `button.*_reconnect` — drop and re-establish the Bluetooth connection (diagnostic)
-- `number.*_eye_brightness` — display LED brightness 0–19
+One device per thermostat, carrying:
+
+- a **thermostat control** — mode, target temperature, fan speed, and the
+  temperature the unit currently reads (separate heating and cooling setpoints
+  in AUTO mode, on units configured for a range);
+- **indoor and outdoor temperature** as their own sensors (a ventilation unit is
+  indoor-only, so it gets no outdoor sensor);
+- **running hours** — how long the unit has been on in total, kept across
+  restarts. It counts in poll-sized steps, so treat it as a trend, not a stopwatch;
+- **electricity used** — daily, weekly and yearly totals the thermostat keeps by
+  itself, on units that report them. Switch it on in the integration options.
+  Today's figure refreshes every five minutes, the older totals once a day, to
+  keep Bluetooth traffic down;
+- a **filter alert**, and a **button to clear it** once you have cleaned the filter;
+- **screen brightness**, 0 to 19.
+
+Four more sit under the device's diagnostics, because you only need them when
+something is wrong:
+
+- **signal strength** (switched off until you enable it), and **which proxy is
+  currently serving the thermostat**;
+- a **connection status** that tells the failures apart instead of just saying
+  "unavailable": `not_advertising` means nothing can see the thermostat at all —
+  range, or power; `needs_pairing` means a proxy was actively refused and you
+  need to pair it again; `pairing_slow` means the handshake keeps timing out,
+  often just a busy proxy. These keep reporting when every other entity has gone
+  `unavailable`, which is precisely when you want them;
+- a **Reconnect** button that drops the Bluetooth link and builds it again.
 
 ### Ventilation units (VAM / HRV)
 
