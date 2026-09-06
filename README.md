@@ -1,4 +1,10 @@
-# Home Assistant Daikin Madoka
+# Daikin Madoka — Home Assistant integration
+
+[![Release](https://img.shields.io/github/v/release/dasimon135/daikin_madoka)](https://github.com/dasimon135/daikin_madoka/releases)
+[![CI](https://github.com/dasimon135/daikin_madoka/actions/workflows/ci.yml/badge.svg)](https://github.com/dasimon135/daikin_madoka/actions/workflows/ci.yml)
+[![Validate](https://github.com/dasimon135/daikin_madoka/actions/workflows/validate.yml/badge.svg)](https://github.com/dasimon135/daikin_madoka/actions/workflows/validate.yml)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+[![License](https://img.shields.io/github/license/dasimon135/daikin_madoka)](LICENSE)
 
 Integration for Daikin Madoka BRC1H Bluetooth thermostats. This repository provides **two independent approaches** — choose one based on your setup.
 
@@ -552,6 +558,56 @@ logger:
 
 Without `pymadoka: debug` the log says almost nothing about the Bluetooth
 exchange itself.
+
+---
+
+## Support
+
+Open an issue here for anything about this integration — a bug, a question, or a
+feature request. Forum threads are for general discussion and user-to-user help;
+nothing raised there is tracked, and it can be lost. An issue cannot.
+
+Before you open one, read [Known limitations](#known-limitations). A good share
+of reported problems are documented behaviour rather than defects.
+
+To get a useful answer on the first exchange, include:
+
+- your Home Assistant version and the version of this integration;
+- the thermostat model, and how you reach it — a local Bluetooth adapter or an
+  ESPHome proxy, and which board;
+- the diagnostics download (device page → **⋮** → *Download diagnostics*);
+- a debug log, plus what you did, what you expected, and what happened instead.
+  Enable **both** loggers — see
+  [Protocol-level behaviour lives upstream](#protocol-level-behaviour-lives-upstream).
+
+### Staying informed
+
+New versions are announced here and nowhere else. To hear about one:
+
+- **HACS already offers you the update**, release notes included — nothing to do;
+- subscribe to `https://github.com/dasimon135/daikin_madoka/releases.atom` in any
+  RSS reader, or inside Home Assistant through the `feedreader` integration;
+- or use **Watch → Custom → Releases** on this repository.
+
+### How replies are written
+
+Some triage replies here are drafted by an agent that reads this repository's
+README and source, then posts a single comment — an answer, a request for the
+missing information, or a diagnosis. Those comments say so on their last line.
+
+Three things that never happen:
+
+- **No reply is posted without me running it.** Nothing is triggered
+  automatically by opening an issue. I start each triage myself and read what
+  goes out.
+- **The agent never changes code.** No commits, no branches, no pull requests.
+  A proposed fix appears as a diff inside the comment and nothing more.
+- **Nothing is posted outside this issue tracker.** I do not post generated
+  replies on [community.home-assistant.io](https://community.home-assistant.io),
+  the HACF forum, or anywhere else, where AI-written answers are not allowed.
+
+If a triage reply is wrong or misses the point, say so in the thread. I read
+every issue myself and I would rather know.
 
 ---
 

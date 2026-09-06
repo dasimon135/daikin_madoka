@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a capability this integration does not have yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth knowing before you write: anything about how a command is encoded on the wire,
+        or how the thermostat's answer is parsed, belongs to
+        [pymadoka-ng](https://github.com/dasimon135/pymadoka) rather than here. File it here
+        anyway if you are unsure — it gets routed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the goal, not only the feature. The best solution is often not the one first imagined.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would it look like?
+      description: Entity, service, option, ESPHome configuration — whatever form you have in mind.
+    validations:
+      required: false
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Can you test it?
+      description: |
+        This matters more than it sounds. The maintainer's own thermostats are all in
+        single-setpoint mode, and he owns no VAM ventilation unit — anything outside that
+        cannot be verified here and needs someone who has the hardware.
+      placeholder: "I have a VAM unit and can test on it."
+    validations:
+      required: false
