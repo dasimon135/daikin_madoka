@@ -874,10 +874,10 @@ class MadokaCard extends HTMLElement {
 .tdot ha-icon { --mdc-icon-size:20px; width:20px; height:20px; color:var(--state); }
 .card.tile.off .tdot { box-shadow: inset 0 0 0 1px var(--hairline); background:var(--face); }
 .card.tile.off .tdot ha-icon { color:var(--ink-soft); }
-.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; cursor:pointer; border-radius:8px; outline:none; }
+.tinfo { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:0; cursor:pointer; border-radius:8px; outline:none; }
 .tinfo:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.tname { font-size:.92rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tsub { font-size:.76rem; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tname { font-size:14px; line-height:20px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tsub { font-size:12px; line-height:16px; color:var(--ink-soft); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tctl { flex:0 0 auto; display:flex; gap:6px; }
 .tbtn { width:34px; height:34px; border-radius:9px; border:1px solid var(--hairline);
   background: color-mix(in srgb,var(--accent) 6%,var(--panel)); color:var(--ink); font-size:1.1rem;
