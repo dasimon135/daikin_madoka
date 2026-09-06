@@ -6,9 +6,9 @@ contact_links:
   - name: Protocol-level bug (command encoding, answer parsing)
     url: https://github.com/dasimon135/pymadoka/issues
     about: The BLE protocol lives in pymadoka-ng. Report it here anyway if you are unsure.
-  - name: General discussion (English)
+  - name: English discussion thread (Home Assistant Community)
     url: https://community.home-assistant.io/t/984675
     about: User-to-user help. Not tracked — open an issue for anything that needs a fix.
-  - name: Discussion générale (français)
+  - name: French discussion thread (HACF)
     url: https://forum.hacf.fr/t/75688
-    about: Entraide entre utilisateurs. Non suivi — ouvrez une issue pour tout correctif attendu.
+    about: User-to-user help, in French. Not tracked - open an issue for anything that needs a fix.
