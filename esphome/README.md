@@ -1,70 +1,87 @@
-# Composants ESPHome Madoka
+# Madoka ESPHome components
 
-Ce dossier contient les composants ESPHome personnalisés pour contrôler les thermostats Daikin Madoka BRC1H via un proxy Bluetooth ESP32.
+This folder holds the custom ESPHome components that drive Daikin Madoka BRC1H
+thermostats from an ESP32 over Bluetooth Low Energy.
 
-## Compatibilité
+## Compatibility
 
 | ESPHome | Support |
 |---|---|
-| < 2025.10 | Non supporté |
-| 2025.10 – 2026.3 | Compatible (non testé) |
-| 2026.4+ | Testé et validé |
+| < 2025.10 | Not supported |
+| 2025.10 – 2026.8.1 | Expected to work, not built here |
+| 2026.8.2 | Built and compiled on every change by CI |
 
-## Composants inclus
+CI installs the version pinned in
+[`.github/workflows/esphome.yml`](../.github/workflows/esphome.yml) and runs
+`esphome config` then `esphome compile` on every file in
+[`tests/`](tests/), targeting `esp32dev` with the ESP-IDF framework. That is
+what proves the C++ still builds; nothing here is validated against other
+ESPHome releases.
 
-- **madoka** : Composant climate pour contrôler les thermostats Madoka
-- **madoka_vam** : Composant climate pour les unités de ventilation Daikin VAM (VMC double flux / récupération de chaleur), pilotées par le même contrôleur BRC1H
+## Components in this folder
+
+- **`madoka`** — climate platform for Madoka thermostats
+- **`madoka_vam`** — climate platform for Daikin VAM ventilation units (heat
+  recovery ventilation), which are driven by the same BRC1H controller
+- **`madoka_base`** — the shared BLE transport both platforms sit on
+
+> **`madoka_base` must be listed explicitly.** ESPHome's `AUTO_LOAD` cannot
+> reach a component that is not named in `external_components: components:`.
+> Leave it out and the build stops with `Component not found: madoka_base`.
 
 ## Installation
 
-### Option 1 : Utilisation locale (recommandé)
-
-Copiez le dossier `esphome_components` dans votre dossier de configuration ESPHome, puis dans votre fichier YAML :
-
-```yaml
-external_components:
-  - source:
-      type: local
-      path: esphome_components
-    components: [ madoka, madoka_base ]
-```
-
-### Option 2 : Depuis GitHub
-
-Si vous hébergez ce repository sur GitHub :
+### Option 1 — from GitHub, pinned to a tag (recommended)
 
 ```yaml
 external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v2.1.1
-      path: esphome_components
-    components: [ madoka, madoka_base ]
+      ref: v3.12.1        # replace with the latest tag
+      path: esphome/components
+    components: [madoka, madoka_base]
 ```
 
-Le champ `path: esphome_components` est important dans ce dépôt pour charger la version maintenue du composant externe.
+`path: esphome/components` is required: the components live in a subfolder of
+this repository, not at its root.
 
-Ne pointez pas vos ESP32 sur `main` en production. Utilisez un tag Git validé pour éviter qu'une évolution de la partie Home Assistant ou d'un composant ESPHome casse vos déploiements existants.
+Never point an ESP32 at `main` in production. Pin a released tag, so that work
+in progress on the Home Assistant side or on a component cannot reach a node
+you already flashed. Tags before **v3.11.0** do not carry `madoka_base` and
+will fail to build with the config above.
 
-## Politique de versions recommandée
+### Option 2 — local copy (for development)
 
-- `main` : intégration continue, peut contenir des changements non encore validés sur tous les ESP32
-- tags `vX.Y.Z` : versions stables recommandées pour ESPHome
-- HACS : peut suivre les releases du dépôt sans imposer aux utilisateurs ESPHome de suivre `main`
+Copy this repository's `esphome/components` folder into your ESPHome
+configuration directory, then point `path` at wherever you put it:
 
-Convention simple conseillée :
+```yaml
+external_components:
+  - source:
+      type: local
+      path: components     # relative to your ESPHome config directory
+    components: [madoka, madoka_base]
+```
 
-1. Taguer une version seulement après validation réelle sur matériel.
-2. Documenter dans le changelog tout changement YAML ou comportemental côté ESPHome.
-3. Demander aux utilisateurs ESPHome de mettre à jour explicitement leur `ref` quand ils veulent changer de version.
+## Version policy
 
-## Configuration exemple
+- `main` — continuous integration, may carry changes not yet validated on hardware
+- `vX.Y.Z` tags — the stable versions ESPHome users should pin
+- HACS follows repository releases, so Home Assistant users are never forced onto `main`
+
+The convention this repository follows:
+
+1. Tag a version only after it has been validated on real hardware.
+2. Record every YAML or behavioural change on the ESPHome side in the changelog.
+3. Ask ESPHome users to bump their `ref` explicitly when they want a new version.
+
+## Example configuration
 
 ```yaml
 substitutions:
   name: m5stack-atom-lite-a03448
-  friendly_name: AtomeBuanderie
+  friendly_name: LaundryAtom
 
 esphome:
   name: ${name}
@@ -76,18 +93,27 @@ wifi:
 
 api:
   encryption:
-    key: votre_clé_ici
+    key: !secret api_key
 
 ota:
   - platform: esphome
 
 external_components:
   - source:
-      type: local
-      path: /config/esphome/esphome_components  # Ajustez le chemin selon votre config
-    components: [ madoka, madoka_base ]
+      type: git
+      url: https://github.com/dasimon135/daikin_madoka
+      ref: v3.12.1        # replace with the latest tag
+      path: esphome/components
+    components: [madoka, madoka_base]
+
+# Authenticated (MITM) pairing is MANDATORY for the BRC1H. Both this block and
+# the on_numeric_comparison_request responder below are required — see
+# "Pairing" further down for what breaks when either is missing.
+esp32_ble:
+  io_capability: display_yes_no
 
 esp32_ble_tracker:
+  id: ble_tracker
   max_connections: 2
 
 bluetooth_proxy:
@@ -96,113 +122,148 @@ bluetooth_proxy:
 ble_client:
   - mac_address: "F0:B3:1E:87:AF:FE"
     id: madoka_salon
+    on_numeric_comparison_request:
+      then:
+        - ble_client.numeric_comparison_reply:
+            id: madoka_salon
+            accept: true
     on_disconnect:
       then:
         - ble_client.connect: madoka_salon
   - mac_address: "1C:54:9E:90:E3:0E"
     id: madoka_parents
+    on_numeric_comparison_request:
+      then:
+        - ble_client.numeric_comparison_reply:
+            id: madoka_parents
+            accept: true
     on_disconnect:
       then:
         - ble_client.connect: madoka_parents
 
 climate:
   - platform: madoka
-    name: "Madoka salon"
+    name: "Madoka living room"
     ble_client_id: madoka_salon
     update_interval: 15s
-    # dual_setpoint: true   # a activer seulement si le mode plage est actif
+    # dual_setpoint: true   # only if range mode is enabled on the BRC1H
     outdoor_temperature:
-      name: "Madoka salon Temp. Exterieure"
+      name: "Madoka living room outdoor temperature"
     clean_filter:
-      name: "Madoka salon Filtre a Nettoyer"
+      name: "Madoka living room filter"
     firmware_version:
-      name: "Madoka salon Firmware"
+      name: "Madoka living room firmware"
     eye_brightness:
-      name: "Madoka salon Luminosite LED"
+      name: "Madoka living room LED brightness"
     reset_filter:
-      name: "Madoka salon Reset Filtre"
+      name: "Madoka living room filter reset"
   - platform: madoka
     name: "Madoka parents"
     ble_client_id: madoka_parents
     update_interval: 15s
     outdoor_temperature:
-      name: "Madoka parents Temp. Exterieure"
+      name: "Madoka parents outdoor temperature"
     clean_filter:
-      name: "Madoka parents Filtre a Nettoyer"
+      name: "Madoka parents filter"
     firmware_version:
-      name: "Madoka parents Firmware"
+      name: "Madoka parents firmware"
     eye_brightness:
-      name: "Madoka parents Luminosite LED"
+      name: "Madoka parents LED brightness"
     reset_filter:
-      name: "Madoka parents Reset Filtre"
+      name: "Madoka parents filter reset"
 ```
 
-## Consigne unique ou double (`dual_setpoint`)
+A complete, commented version of this configuration is in
+[`example-config.yaml`](example-config.yaml).
 
-Le BRC1H peut fonctionner avec une seule consigne ou avec une **plage**
-chauffage/refroidissement (mode « range » activé sur le thermostat).
+## Pairing
 
-| Option | Defaut | Description |
+The BRC1H only accepts an authenticated link. It silently ignores every command
+sent over an unauthenticated one, which looks like a node that connects happily
+and then does nothing.
+
+It pairs by **numeric comparison**: both sides display a six-digit code and each
+confirms it matches. Two pieces of configuration are needed, and neither works
+without the other.
+
+- `esp32_ble: io_capability: display_yes_no` — the default (`none`) cannot take
+  part in a numeric comparison at all, and `keyboard` offers passkey entry, a
+  pairing model the thermostat never asks for.
+- `on_numeric_comparison_request` on each `ble_client`, replying with
+  `accept: true` — without it, pairing starts, nothing confirms it, and the
+  connection fails with `AuthenticationCanceled`, often with no prompt appearing
+  on the thermostat screen at all.
+
+## Single or dual setpoint (`dual_setpoint`)
+
+The BRC1H runs either with one setpoint or with a heating/cooling **range**
+(range mode enabled on the thermostat itself).
+
+| Option | Default | Description |
 |---|---|---|
-| `dual_setpoint` | `false` | Expose deux consignes (plage chaud/froid) au lieu d'une seule. |
+| `dual_setpoint` | `false` | Exposes two setpoints (heat/cool range) instead of one. |
 
 ```yaml
 climate:
   - platform: madoka
-    name: "Madoka salon"
+    name: "Madoka living room"
     ble_client_id: madoka_salon
-    dual_setpoint: true   # uniquement si le mode plage est actif sur le BRC1H
+    dual_setpoint: true   # only if range mode is enabled on the BRC1H
 ```
 
-**Pourquoi une option YAML et pas un choix automatique ?** L'integration Home
-Assistant (option 1 du README principal) bascule seule entre consigne simple et
-plage, parce que HA autorise une entite a changer ses `supported_features` a
-l'execution. ESPHome ne le permet pas : les *traits* climate sont annonces une
-seule fois, au moment ou l'ESP32 declare ses entites a l'API. Le choix doit donc
-etre fait a la compilation. La parite avec l'integration native est donc au
-niveau de la configuration, pas dynamique.
+**Why a YAML option rather than automatic detection?** The Home Assistant
+integration (option 1 in the main README) switches between single setpoint and
+range on its own, because Home Assistant lets an entity change its
+`supported_features` at runtime. ESPHome does not: climate *traits* are
+announced once, when the ESP32 declares its entities to the API. The choice has
+to be made at compile time. Parity with the native integration is therefore at
+the configuration level, not dynamic.
 
-En mode simple, le composant ecrit le registre de consigne correspondant au mode
-actif (chauffage en `heat`, refroidissement sinon) et renvoie l'autre registre a
-sa derniere valeur lue sur le thermostat — meme regle que l'integration native.
+In single-setpoint mode the component writes the setpoint register matching the
+active mode (heating in `heat`, cooling otherwise) and returns the other
+register to the last value it read from the thermostat — the same rule the
+native integration follows.
 
-> **Changement de comportement** : avant cette version, l'entite ESP32 annoncait
-> toujours deux consignes. Apres mise a jour du composant externe, elle n'en
-> expose plus qu'une, sauf si vous ajoutez `dual_setpoint: true`.
+> **Behaviour change**: before this version the ESP32 entity always announced
+> two setpoints. After updating the external component it exposes only one,
+> unless you add `dual_setpoint: true`.
 
-## Entites additionnelles du composant madoka
+## Extra entities on the madoka platform
 
-Chaque bloc `climate: - platform: madoka` peut maintenant exposer des entites auxiliaires :
+Every `climate: - platform: madoka` block can expose auxiliary entities:
 
-- `outdoor_temperature`: capteur de temperature exterieure
-- `clean_filter`: binary sensor indiquant qu'un nettoyage de filtre est necessaire
-- `firmware_version`: text sensor de diagnostic pour la version firmware lue sur la telecommande
-- `eye_brightness`: number (0-19) pour regler la luminosite de la LED facade
-- `reset_filter`: button pour acquitter l'alerte filtre et reinitialiser le timer
+- `outdoor_temperature` — outdoor temperature sensor
+- `clean_filter` — binary sensor, on when the filter needs cleaning
+- `firmware_version` — diagnostic text sensor for the version read from the controller
+- `eye_brightness` — number (0-19) setting the front LED brightness
+- `reset_filter` — button acknowledging the filter alert and resetting its timer
 
-## Composant madoka_vam (ventilation VAM)
+## The madoka_vam component (VAM ventilation)
 
-Pour une unité de **ventilation Daikin VAM** (VMC double flux / récupération de
-chaleur), utilisez la plateforme dédiée **`madoka_vam`** au lieu de `madoka`. Le
-VAM est piloté par le même contrôleur BRC1H, sur le même service BLE, mais ne
-fait que ventiler : mode d'opération `5` (VENTILATION), sans consigne de
-température.
+For a Daikin **VAM ventilation unit** (heat recovery ventilation), use the
+dedicated **`madoka_vam`** platform instead of `madoka`. A VAM is driven by the
+same BRC1H controller over the same BLE service, but it only ventilates:
+operation mode `5` (VENTILATION), with no temperature setpoint.
 
-Entités exposées : modes **Off** / **Fan only**, vitesse de ventilation
-(LOW/HIGH), preset de mode de ventilation (*Auto*, *Heat exchange*, *Bypass*),
-température courante. Le VAM est une unité intérieure : il n'expose pas de
-capteur de température extérieure. Options : `firmware_version` (text sensor),
-`dump_raw` (booléen).
+Entities exposed: **Off** / **Fan only** modes, fan speed (LOW/HIGH),
+ventilation mode preset (*Auto*, *Heat exchange*, *Bypass*) and current
+temperature. A VAM is an indoor unit, so it exposes no outdoor temperature
+sensor. Options: `firmware_version` (text sensor) and `dump_raw` (boolean).
 
-La vitesse et le mode de ventilation sont portés par la fonction BLE `0x0031`
-(arguments `0x21` et `0x20`), et non par la fonction `0x0050` du thermostat.
+Fan speed and ventilation mode travel on BLE function `0x0031` (arguments
+`0x21` and `0x20`), not on the thermostat's `0x0050`.
 
 ```yaml
 external_components:
   - source:
-      type: local
-      path: /config/esphome/esphome_components  # Ajustez le chemin selon votre config
-    components: [ madoka_vam, madoka_base ]
+      type: git
+      url: https://github.com/dasimon135/daikin_madoka
+      ref: v3.12.1        # replace with the latest tag
+      path: esphome/components
+    components: [madoka_vam, madoka_base]
+
+esp32_ble:
+  io_capability: display_yes_no
 
 esp32_ble_tracker:
   max_connections: 2
@@ -211,49 +272,54 @@ bluetooth_proxy:
   active: false
 
 ble_client:
-  - mac_address: "AA:BB:CC:DD:EE:FF"  # Adresse MAC de votre VAM
+  - mac_address: "AA:BB:CC:DD:EE:FF"  # your VAM's MAC address
     id: vam_client
+    on_numeric_comparison_request:
+      then:
+        - ble_client.numeric_comparison_reply:
+            id: vam_client
+            accept: true
     on_disconnect:
       then:
         - ble_client.connect: vam_client
 
 climate:
   - platform: madoka_vam
-    name: "Ventilation VAM"
+    name: "VAM ventilation"
     ble_client_id: vam_client
     update_interval: 15s
     firmware_version:
-      name: "VAM Firmware"
-    dump_raw: false  # passez à true pour journaliser les trames BLE (reverse engineering)
+      name: "VAM firmware"
+    dump_raw: false  # set true to hex-log BLE frames (reverse engineering)
 ```
 
-Le drapeau `dump_raw: true` journalise en hexadécimal chaque trame BLE ainsi que
-toute fonction inconnue reçue — utile pour cartographier les fonctions
-spécifiques au VAM. Voir [../docs/reverse-engineering-vam.md](../docs/reverse-engineering-vam.md).
+`dump_raw: true` hex-logs every BLE frame and any unknown function received —
+useful for mapping VAM-specific functions. See
+[../docs/reverse-engineering-vam.md](../docs/reverse-engineering-vam.md).
 
-## Structure des fichiers
+## File layout
 
 ```
-esphome_components/
-├── madoka/
-│   ├── __init__.py
-│   ├── climate.py
-│   ├── madoka.cpp
-│   └── madoka.h
-└── madoka_vam/
-    ├── __init__.py
-    ├── climate.py
-    ├── madoka_vam.cpp
-    └── madoka_vam.h
+esphome/
+├── components/
+│   ├── madoka/
+│   ├── madoka_base/
+│   └── madoka_vam/
+├── tests/                 # compile-check configs, built by CI
+├── example-config.yaml
+├── DEPLOYMENT.md
+└── README.md
 ```
 
-## Ré-appairage avec le téléphone
+## Re-pairing with the phone
 
-Lorsque l'ESP32 est actif, il tente de se connecter en boucle au Madoka. Si vous supprimez tous les appairages Bluetooth sur le thermostat pour reprendre la main avec l'application téléphone, l'ESP32 monopolise la connexion et empêche le téléphone de s'appairer à nouveau.
+While the ESP32 is running it reconnects to the Madoka in a loop. If you clear
+every Bluetooth pairing on the thermostat to take control back with the phone
+app, the ESP32 grabs the connection again and the phone can never pair.
 
-**Solution** : ajouter un switch dans ESPHome pour couper temporairement le scan BLE depuis Home Assistant.
+**Fix**: add a switch that turns BLE off from Home Assistant for the duration.
 
-**Étape 1** — Ajoutez un `id` au bloc `esp32_ble_tracker` :
+**Step 1** — give the `esp32_ble_tracker` block an `id`:
 
 ```yaml
 esp32_ble_tracker:
@@ -261,12 +327,12 @@ esp32_ble_tracker:
   max_connections: 2
 ```
 
-**Étape 2** — Ajoutez le switch et les scripts :
+**Step 2** — add the switch and the scripts:
 
 ```yaml
 switch:
   - platform: template
-    name: "Proxy Madoka Actif"
+    name: "Madoka proxy enabled"
     id: proxy_enabled
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
@@ -278,36 +344,51 @@ switch:
 script:
   - id: stop_ble
     then:
-      - logger.log: "Arret BLE - scan stop et deconnexion des thermostats"
+      - logger.log: "BLE off - stopping the scan and disconnecting the thermostats"
       - lambda: |-
           id(ble_tracker).stop_scan();
       - ble_client.disconnect: madoka_salon
-      - ble_client.disconnect: madoka_chambre
+      - ble_client.disconnect: madoka_parents
 
   - id: start_ble
     then:
-      - logger.log: "Demarrage BLE - reprise du scan et reconnexion ESP32"
+      - logger.log: "BLE on - resuming the scan and reconnecting"
       - lambda: |-
           id(ble_tracker).start_scan();
       - ble_client.connect: madoka_salon
-      - ble_client.connect: madoka_chambre
+      - ble_client.connect: madoka_parents
 ```
 
-**Procédure de ré-appairage :**
-1. Dans Home Assistant, passez le switch **"Proxy Madoka Actif"** sur **OFF**
-2. Appairez votre téléphone avec le Madoka et effectuez vos modifications
-3. Repassez le switch sur **ON** — l'ESP32 se reconnecte automatiquement
+**Re-pairing procedure:**
 
-> Important : `stop_scan()` seul ne suffit pas toujours. La vraie libération du thermostat pour l'application téléphone vient des actions `ble_client.disconnect`.
+1. In Home Assistant, switch **"Madoka proxy enabled"** to **OFF**
+2. Pair your phone with the Madoka and make your changes
+3. Switch it back **ON** — the ESP32 reconnects on its own
 
-> Le switch est déjà inclus dans le fichier `example-config.yaml`.
+> `stop_scan()` alone is not always enough. What actually releases the
+> thermostat for the phone app is the `ble_client.disconnect` actions.
 
-## Dépannage
+> The switch is already part of [`example-config.yaml`](example-config.yaml).
 
-### Le composant ne se charge pas
+## Troubleshooting
 
-Vérifiez que le chemin dans `external_components.source.path` pointe correctement vers le dossier `esphome_components`.
+### The component does not load
 
-## Crédits
+Check that `external_components.source.path` points at the components folder.
+For the git source that value is `esphome/components`; for a local copy it is
+wherever you put the folder, relative to your ESPHome configuration directory.
 
-- Composant madoka original : [Petapton/esphome](https://github.com/Petapton/esphome)
+### The build fails with `Component not found: madoka_base`
+
+Either `madoka_base` is missing from `components:`, or the tag in `ref:`
+predates v3.11.0, which is when the shared transport was introduced.
+
+### The node connects but nothing responds
+
+The link is almost certainly unauthenticated. See [Pairing](#pairing) — both
+`io_capability: display_yes_no` and the `on_numeric_comparison_request`
+responder are required.
+
+## Credits
+
+- Original madoka component: [Petapton/esphome](https://github.com/Petapton/esphome)
