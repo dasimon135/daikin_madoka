@@ -70,8 +70,13 @@ or an ESPHome Bluetooth proxy, using the
 ### Installation
 
 **From HACS (recommended).** This integration is in the default HACS store, so
-there is no custom repository to add: open HACS, search for **Daikin Madoka**,
-download it, and restart Home Assistant.
+there is no custom repository to add. This button opens it straight in your own
+Home Assistant:
+
+[![Open the Daikin Madoka repository inside your Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dasimon135&repository=daikin_madoka&category=integration)
+
+Download it there, then restart Home Assistant. If the button does not reach
+your instance, open HACS yourself and search for **Daikin Madoka**.
 
 **Manual:**
 Copy `custom_components/daikin_madoka/` into your HA `custom_components/` directory, then restart.
