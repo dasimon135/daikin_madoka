@@ -64,9 +64,11 @@ Stated plainly, because it decides who can trust what: the maintainer owns no VA
 
 ### Energy consumption sensors
 
-Six sensors — today, yesterday, this week, last week, this year, last year — reading the counters the Madoka keeps internally. They are **off by default**: turn on *Read energy consumption* in the entry options. "Energy today" can be added to the Energy dashboard; it is read every five minutes, the other periods once a day.
+Contributed by @sharkoz. Six sensors — today, yesterday, this week, last week, this year, last year — reading the counters the Madoka keeps internally. They are **off by default**: turn on *Read energy consumption* in the entry options. "Energy today" can be added to the Energy dashboard; it is read every five minutes, the other periods once a day.
 
 Not every unit keeps those counters. One that answers the query with an empty value is not a failure and is no longer treated as one: the integration says so once in the log and turns energy polling off for that thermostat, leaving every other reading untouched. That path is not theoretical — the maintainer's own four BRC1H report no counters at all, which is how it was found.
+
+The protocol behind it is documented nowhere public: the `0x0120` reads sit behind a `0x4112` privilege write, and @sharkoz established that by decompiling the official Madoka Assistant app, where the same sequence precedes the same reads.
 
 ### ESPHome component — breaking change
 
