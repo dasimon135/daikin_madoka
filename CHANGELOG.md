@@ -1,5 +1,51 @@
 # Changelog
 
+## v3.13.0 - September 2026
+
+Three changes to the card, all of them from one report by **@speynaud**
+([#100](https://github.com/dasimon135/daikin_madoka/issues/100)), who drives a
+Daikin through an Airzone Aidoo and had been keeping a fork of the card to work
+around them.
+
+### The card is for any climate entity, and says so
+
+`setConfig` has only ever asked for `entity: climate.*`, so the card has always
+drawn whatever thermostat it was pointed at. That was an accident of the
+implementation rather than a promise, and the README now states it.
+
+The first consequence is a bug fix. Home Assistant's climate domain has **two**
+automatic modes, `auto` and `heat_cool`, and the card knew only the first — so
+on an integration that reports `heat_cool` the mode button did not render at
+all. It now maps to the same paint as `auto`, with the label coming from Home
+Assistant's own translations. This integration is unaffected either way: it
+maps the Daikin automatic mode to `auto`.
+
+### The ambient temperature can show tenths
+
+`show_decimals: true` shows one decimal instead of rounding to whole degrees,
+dropping a trailing zero so a flat reading is `25` rather than `25.0`. Off by
+default: whole degrees are what the BRC1H screen shows, and mimicking it is why
+most people pick this card. It is on a thermostat that reports tenths that the
+rounding loses something worth keeping.
+
+### The sparkline's axis is time, and can be labelled
+
+Asking for time markers under the graph is what found this: **the axis was not
+time.** The points were spaced evenly by their position in the history, and the
+recorder writes a row when something changes rather than on a clock, so an hour
+in which the temperature moved fifty times was drawn as wide as a quiet night.
+Measured on a synthetic series of twelve hours: the last hour occupied 91% of
+the width where it should have occupied 8%. Any marker drawn under that axis
+would have stated something false with confidence, which is worse than a graph
+with no marker at all.
+
+The drawing now uses each reading's timestamp, which the code had been
+discarding. Flat stretches are wide and busy ones are narrow, as they were on
+the air. `show_graph_times: true` then adds the markers, off by default because
+they put a row of text under a card whose point is to look like a thermostat.
+They are drawn only where they fall inside the history that actually came back,
+so four hours of recorded data never claims `-12h`.
+
 ## v3.12.1 - September 2026
 
 ### The tile layout is one grid row tall, like every other card
