@@ -46,6 +46,17 @@ they put a row of text under a card whose point is to look like a thermostat.
 They are drawn only where they fall inside the history that actually came back,
 so four hours of recorded data never claims `-12h`.
 
+Checked on the author's own install, rendered through the screenshot add-on: the
+card is unchanged with default settings and, importantly, **no second Auto
+button appears** on a thermostat that reports `auto` rather than `heat_cool`.
+With `show_graph_times` the markers came out `-9h`, `-6h`, `-3h` and the current
+time, evenly spaced, with no `-12h` because the recorder had less than twelve
+hours to give — the guard doing its job on real data. Two halves belong to
+@speynaud's hardware, because a BRC1H cannot produce them: the `heat_cool`
+button, and a reading with a decimal in it (on a thermostat reporting exactly
+23, `show_decimals` correctly shows `23`, which is the trailing-zero trim and
+not the decimal).
+
 ## v3.12.1 - September 2026
 
 ### The tile layout is one grid row tall, like every other card
