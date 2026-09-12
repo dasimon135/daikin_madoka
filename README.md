@@ -441,11 +441,28 @@ integration** (no separate install) and registers itself automatically; pick
 ```yaml
 type: custom:madoka-card
 entity: climate.my_madoka
-# layout: full         # full | compact | tile  (default: full)
-# compact: true        # alias for layout: compact
-# name: "Bedroom"      # override the title
-# reconnect: auto      # auto | always | never  (default: auto)
+# layout: full           # full | compact | tile  (default: full)
+# compact: true          # alias for layout: compact
+# name: "Bedroom"        # override the title
+# reconnect: auto        # auto | always | never  (default: auto)
+# show_decimals: true    # ambient in tenths instead of whole degrees
+# show_graph_times: true # time markers under the sparkline
 ```
+
+**It works with any `climate` entity**, not only with a Madoka. The dial is
+modelled on the BRC1H and that is what it looks best on, but nothing in the
+card is specific to this integration: point it at any thermostat Home
+Assistant exposes and it draws it. The two options above exist because of one
+such user, driving a Daikin through an Airzone Aidoo.
+
+`show_decimals` shows the ambient temperature in tenths, dropping a trailing
+zero, so `23.9` stays `23.9` and a flat `25` stays `25`. Off by default,
+because whole degrees are what the physical screen shows.
+
+`show_graph_times` writes markers under the sparkline: the time of the newest
+reading, and `-3h`, `-6h`, `-9h`, `-12h` where those instants fall. Only the
+ones that exist are drawn, so four hours of recorded history never claims
+twelve.
 
 Three layouts: **full** (the dial with fan/brightness/graph), **compact**
 (dial + controls + modes only) and **tile** — an ultra-compact row (a
