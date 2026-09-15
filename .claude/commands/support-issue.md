@@ -93,7 +93,7 @@ Answering the wrong one is the single easiest way to waste the reporter's time.
 | Path | What runs | Where the code is |
 | --- | --- | --- |
 | **Direct BLE** | Home Assistant custom component, `bleak` stack, local adapter or ESPHome *Bluetooth proxy* | `custom_components/daikin_madoka/` |
-| **ESPHome component** | ESP32 talking to the thermostat itself, no HA integration involved | `esphome/components/madoka/`, `esphome/components/ble_client/` |
+| **ESPHome component** | ESP32 talking to the thermostat itself, no HA integration involved | `esphome/components/madoka/`, `esphome/components/madoka_base/` (shared BLE layer, required since #84), `esphome/components/madoka_vam/` (VAM ventilation units) |
 
 If the report does not make the path obvious, that is a case (b) — ask, and ask
 nothing else until you know. Note the trap: "ESPHome" appears in *both* paths.
@@ -132,7 +132,7 @@ behavioural answers still have to come from the source or the tests.
 | Startup failures, orphan devices, entry reload | `__init__.py`, `util.py`, `tests/test_init.py`, `tests/test_degraded_load.py` |
 | Download diagnostics content | `diagnostics.py`, `tests/test_diagnostics.py` |
 | Dashboard card, card not loading, stale card | `custom_components/daikin_madoka/frontend/madoka-card.js`, `frontend.py`, README § *Madoka Card (bundled)* |
-| ESPHome **madoka component** path | `esphome/components/madoka/`, `esphome/components/ble_client/`, `esphome/example-config.yaml`, `esphome/README.md`, `esphome/DEPLOYMENT.md` |
+| ESPHome **madoka component** path | `esphome/components/madoka/`, `esphome/components/madoka_base/` (shared BLE layer, required since #84), `esphome/components/madoka_vam/` (VAM ventilation units), `esphome/example-config.yaml`, `esphome/README.md`, `esphome/DEPLOYMENT.md` |
 | ESPHome **Bluetooth proxy** (direct-BLE path) | `docs/esphome-proxy.md`, README § *Requirements* |
 | Options, poll interval, preferred source | `config_flow.py` (options flow), `const.py` (`DEFAULT_SCAN_INTERVAL`, `CONF_PREFERRED_SOURCE`) |
 | Version, HA minimum, dependency pin | `manifest.json`, `hacs.json`, `CHANGELOG.md` |
@@ -185,8 +185,9 @@ source that it is still accurate.
 
 You cannot tell what is happening without data the user has not supplied.
 
-Ask for exactly what you need. Drop the lines you genuinely do not need; add
-none.
+The list below is a menu, not a form. Ask for the fewest items that let you
+tell what is going on, usually two or three, and say what each will tell you.
+Drop every line you do not need; add none.
 
 > I need a few things before I can tell what is going on.
 >
@@ -260,14 +261,16 @@ one — and say so in your closing line (section 8) so David knows to look.
 
 ## 5. Apply the label
 
-Exactly one of `bug`, `question`, `enhancement`, `needs-david`:
+Exactly one of `bug`, `question`, `enhancement`, `needs-david`, optionally plus
+`upstream` when the root cause is in `pymadoka-ng`, Home Assistant core,
+`habluetooth`/`bleak` or ESPHome:
 
     gh issue edit $1 --add-label "<label>"
 
-Check `gh label list` before applying anything: only `bug`, `question`,
-`enhancement` and `documentation` are guaranteed to exist in this repo. If the
-label you chose is missing, apply nothing and report it in section 8 rather than
-failing the run.
+Check `gh label list` before applying anything. `needs-david` and `upstream`
+exist in this repo (verified 2026-09-10), but a label can be renamed; if the
+label you chose is missing, apply nothing and report it in section 8 rather
+than failing the run.
 
 Do not remove a label a human already set. When triggered by a follow-up comment
 on an issue that already carries the right label, leave the label alone.
@@ -282,6 +285,14 @@ on an issue that already carries the right label, leave the label alone.
 - **No emoji.** None, anywhere.
 - No apologising for the integration, no promises about timelines, no speaking
   for the maintainer's plans.
+- **Shape, not vocabulary, is what gives a generated comment away.** So:
+  no em dash, use a comma or a full stop; no heading, no table, no bold in a
+  comment (bullets only for ordered steps or the list in case (b)); one
+  "not X, Y" at most; no "Two things worth knowing" opener; no adjective about
+  the reporter or the report, no staged self-blame, no "no rush", "no
+  obligation", "let me know" closer; 300 words at most, a diff or a YAML block
+  excluded. First sentence: the answer. Last sentence: what you need from them,
+  or nothing.
 - Say plainly when something is a known constraint — the RSSI-based proxy
   rescoring, the polled state, the authenticated-link requirement — rather than
   implying it will be fixed.
