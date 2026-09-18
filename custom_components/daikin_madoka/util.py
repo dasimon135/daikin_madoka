@@ -71,6 +71,28 @@ def _has_free_slot(scanner_device: "bluetooth.BluetoothScannerDevice") -> bool:
     return free > 0
 
 
+def _path_source(scanner_device: "bluetooth.BluetoothScannerDevice") -> str | None:
+    """The source a path is recorded under once a connect through it succeeds.
+
+    pymadoka records the scanner that actually carried the link
+    (``client._connected_scanner.source``), so the bonded list holds scanner
+    sources and this must read the same thing, or a recorded bond can never be
+    matched again. For an ESPHome proxy the scanner source and
+    ``details["source"]`` are the same MAC. A local adapter's BLEDevice comes
+    straight from BlueZ, whose details carry no ``source`` at all, so reading
+    details alone emptied the candidate list at every restart once the adapter
+    had been recorded (daikin_madoka#105). ``details`` stays as the fallback
+    for a scanner that does not name itself.
+    """
+    source = getattr(getattr(scanner_device, "scanner", None), "source", None)
+    if isinstance(source, str) and source:
+        return source
+    details = getattr(scanner_device.ble_device, "details", None)
+    if isinstance(details, dict):
+        return details.get("source")
+    return None
+
+
 def build_candidates(
     hass: HomeAssistant,
     address: str,
@@ -104,19 +126,11 @@ def build_candidates(
     if allowed_sources:
         allowed = set(allowed_sources)
         scanner_devices = [
-            sd
-            for sd in scanner_devices
-            if isinstance(getattr(sd.ble_device, "details", None), dict)
-            and sd.ble_device.details.get("source") in allowed
+            sd for sd in scanner_devices if _path_source(sd) in allowed
         ]
 
     def sort_key(sd: bluetooth.BluetoothScannerDevice) -> tuple[int, int, int]:
-        # details is backend-specific: ESPHome proxies expose their source MAC
-        # in a dict; other backends may carry something else (or nothing).
-        source = None
-        details = getattr(sd.ble_device, "details", None)
-        if isinstance(details, dict):
-            source = details.get("source")
+        source = _path_source(sd)
         # Some backends deliver an advertisement without an RSSI; a None here
         # would TypeError inside the sort and silently drop the candidates.
         rssi = (

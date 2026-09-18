@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### A thermostat reached through a local Bluetooth adapter reconnects after a restart again
+
+Reported by **@Quev1n**
+([#105](https://github.com/dasimon135/daikin_madoka/issues/105)): after every
+Home Assistant restart the thermostat stayed unreachable until the Reconnect
+button was pressed, and each automatic attempt failed within a few
+milliseconds, without touching the radio.
+
+The bug was here. Automatic reconnects only try the paths recorded as holding
+a bond, and the integration matched a path by the `source` in its BLEDevice
+details. An ESPHome proxy puts its MAC there. A local adapter does not: Home
+Assistant hands over the BLEDevice exactly as BlueZ built it, with no `source`
+at all. Since v3.9.0 (pymadoka-ng 0.3.11) the library records the scanner that
+actually carried the link, which for a local adapter is the adapter's own MAC.
+So once the adapter had been recorded, the filter could no longer recognise it
+and the candidate list came back empty after every restart. Reconnect worked
+because it opens the pairing window, which lifts the filter.
+
+Paths are now matched on the scanner's own source, the same value the library
+records, with the details kept as a fallback. Nothing changes for a thermostat
+reached through an ESPHome proxy, where the two values are the same MAC. Not
+yet validated on a local adapter: this setup cannot reproduce it, since every
+path here goes through a proxy.
+
 ## v3.13.0 - September 2026
 
 Three changes to the card, all of them from one report by **@speynaud**

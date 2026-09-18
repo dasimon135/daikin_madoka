@@ -214,3 +214,75 @@ def test_a_raising_allocation_read_is_assumed_free() -> None:
         result = build_candidates(HASS, ADDRESS, None)
 
     assert result == [grumpy.ble_device, saturated.ble_device]
+
+
+# --------------------------------------------------------------------------
+# Local adapter (daikin_madoka#105)
+#
+# habluetooth hands over a local adapter's BLEDevice exactly as BlueZ built it:
+# its details name a D-Bus path and carry no "source". pymadoka (0.3.11+)
+# records the scanner that carried the link, i.e. the adapter's own MAC, as the
+# bonded source. Matching on details alone therefore filtered the adapter out
+# of its own bonded list, and every reconnect after a restart failed in a few
+# milliseconds with an empty candidate list until the user pressed Reconnect.
+# --------------------------------------------------------------------------
+
+LOCAL_ADAPTER = "44:44:44:44:44:44"
+
+
+def _local_adapter_device(rssi: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        ble_device=SimpleNamespace(
+            details={"path": "/org/bluez/hci0/dev_D0_CF_13_0F_11_F6", "props": {}}
+        ),
+        advertisement=SimpleNamespace(rssi=rssi),
+        scanner=SimpleNamespace(source=LOCAL_ADAPTER),
+    )
+
+
+def test_a_bonded_local_adapter_passes_the_bonded_filter() -> None:
+    local = _local_adapter_device(-60)
+
+    with patch(PATCH_TARGET, return_value=[local]):
+        result = build_candidates(HASS, ADDRESS, LOCAL_ADAPTER, [LOCAL_ADAPTER])
+
+    assert result == [local.ble_device]
+
+
+def test_the_bonded_filter_still_drops_an_unbonded_proxy_beside_the_adapter() -> None:
+    local = _local_adapter_device(-85)
+    unbonded = _scanner_device(PROXY_B, -40)
+
+    with patch(PATCH_TARGET, return_value=[unbonded, local]):
+        result = build_candidates(HASS, ADDRESS, LOCAL_ADAPTER, [LOCAL_ADAPTER])
+
+    assert result == [local.ble_device]
+
+
+def test_a_preferred_local_adapter_beats_a_stronger_proxy() -> None:
+    local = _local_adapter_device(-85)
+    proxy = _scanner_device(PROXY_B, -40)
+
+    with patch(PATCH_TARGET, return_value=[proxy, local]):
+        result = build_candidates(HASS, ADDRESS, LOCAL_ADAPTER)
+
+    assert result == [local.ble_device, proxy.ble_device]
+
+
+def test_the_source_pymadoka_records_is_the_one_the_filter_matches() -> None:
+    """The contract itself: record, restart, match.
+
+    What the library stores after a connect through a path must be what the
+    builder reads from that same path, or a recorded bond is never matched.
+    """
+    from pymadoka.connection import connected_path_source
+
+    local = _local_adapter_device(-60)
+    client = SimpleNamespace(_connected_scanner=local.scanner)
+    recorded = connected_path_source(client)
+
+    with patch(PATCH_TARGET, return_value=[local]):
+        result = build_candidates(HASS, ADDRESS, recorded, [recorded])
+
+    assert recorded == LOCAL_ADAPTER
+    assert result == [local.ble_device]
