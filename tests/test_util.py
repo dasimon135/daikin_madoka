@@ -272,3 +272,22 @@ def test_a_preferred_local_adapter_is_offered_first() -> None:
         result = build_candidates(HASS, ADDRESS, LOCAL_ADAPTER)
 
     assert result == [local.ble_device, strong_proxy.ble_device]
+
+
+def test_the_source_pymadoka_records_is_the_one_the_filter_matches() -> None:
+    """The contract itself: record, restart, match.
+
+    What the library stores after a connect through a path must be what the
+    builder reads from that same path, or a recorded bond is never matched.
+    """
+    from pymadoka.connection import connected_path_source
+
+    local = _local_adapter_device(-60)
+    client = SimpleNamespace(_connected_scanner=local.scanner)
+    recorded = connected_path_source(client)
+
+    with patch(PATCH_TARGET, return_value=[local]):
+        result = build_candidates(HASS, ADDRESS, recorded, [recorded])
+
+    assert recorded == LOCAL_ADAPTER
+    assert result == [local.ble_device]
