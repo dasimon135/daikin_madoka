@@ -3,18 +3,26 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.8.1";
-const SETPOINT_MODES = ["cool", "heat", "auto"]; // modes where a target is meaningful
+const MADOKA_CARD_VERSION = "0.9.0";
+const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
   cool: { label: "Cooling", color: "var(--madoka-mode-cool, #38c6ff)", color2: "var(--madoka-mode-cool-2, #4d8bff)", mdi: "mdi:snowflake" },
   heat: { label: "Heating", color: "var(--madoka-mode-heat, #ff7a3d)", color2: "var(--madoka-mode-heat-2, #ff5152)", mdi: "mdi:fire" },
   auto: { label: "Auto", color: "var(--madoka-mode-auto, #8a5cff)", color2: "var(--madoka-mode-auto-2, #5b74ff)", mdi: "mdi:autorenew" },
+  // Home Assistant's climate domain has TWO automatic modes and this card knew
+  // only one, so on an integration that reports `heat_cool` the mode button did
+  // not render at all (issue 100, an Airzone Aidoo). Same paint as `auto`: to a user
+  // it is the same idea, and `_modeLabel` prefers HA's own translation anyway,
+  // so the label below is only the fallback. This integration is unaffected —
+  // it maps the Daikin automatic mode to `auto` — and an entity reporting both
+  // would show two buttons, which is what such an entity would be asking for.
+  heat_cool: { label: "Auto", color: "var(--madoka-mode-auto, #8a5cff)", color2: "var(--madoka-mode-auto-2, #5b74ff)", mdi: "mdi:autorenew" },
   fan_only: { label: "Fan", color: "var(--madoka-mode-fan, #35e0b0)", color2: "var(--madoka-mode-fan-2, #2bc6c6)", mdi: "mdi:fan" },
   dry: { label: "Dry", color: "var(--madoka-mode-dry, #ffc93d)", color2: "var(--madoka-mode-dry-2, #ff9f3d)", mdi: "mdi:water-percent" },
   off: { label: "Off", color: "var(--madoka-mode-off, #565a6e)", color2: "var(--madoka-mode-off-2, #3d4050)", mdi: "mdi:power" },
 };
-const MODE_ORDER = ["cool", "heat", "auto", "fan_only", "dry", "off"];
+const MODE_ORDER = ["cool", "heat", "auto", "heat_cool", "fan_only", "dry", "off"];
 
 // Card-specific words. Mode names come from HA's own climate translations
 // (hass.localize) so they always match the user's HA language; these cover
@@ -85,6 +93,15 @@ class MadokaCard extends HTMLElement {
     const l = this._lang();
     return (CARD_STRINGS[l] && CARD_STRINGS[l][key]) || CARD_STRINGS.en[key];
   }
+  _ambientText(cur) {
+    // Whole degrees by default, because that is what the BRC1H screen shows and
+    // mimicking it is why people pick this card. `show_decimals: true` is for a
+    // thermostat whose reading is the point — an Aidoo reports tenths — and it
+    // drops a trailing zero so a flat 25 reads as `25`, not `25.0` (issue 100).
+    if (!this._config.show_decimals) return Math.round(cur);
+    return parseFloat(Number(cur).toFixed(1));
+  }
+
   _modeLabel(mode) {
     // HA translates fan_only as the verbose "Fan only" / "Ventilation
     // uniquement"; use a short card-specific label for this one mode.
@@ -267,7 +284,7 @@ class MadokaCard extends HTMLElement {
       ? mdi(M.mdi) + `<span>${this._modeLabel(hvac)}</span>`
       : `<span>${unavailable ? this._unavailLabel(st) : this._modeLabel("off")}</span>`;
     const cur = a.current_temperature;
-    root.getElementById("ambient").textContent = cur != null ? Math.round(cur) : "--";
+    root.getElementById("ambient").textContent = cur != null ? this._ambientText(cur) : "--";
 
     const tb = root.getElementById("targetBox");
     const meaningful = SETPOINT_MODES.includes(hvac);
@@ -446,7 +463,10 @@ class MadokaCard extends HTMLElement {
           ? (r.a && r.a.current_temperature)
           : Number(r.s);
         if (v == null || isNaN(v)) continue;
-        pts.push(v);
+        // `lu` (last_updated, epoch seconds) was thrown away here, which is
+        // what made the axis below a row index rather than a clock (issue 100).
+        const t = r.lu != null ? Number(r.lu) * 1000 : null;
+        pts.push({ t: isNaN(t) ? null : t, v });
       }
       this._histPoints = pts.slice(-120);
       this._drawGraph(min, max);
@@ -455,19 +475,65 @@ class MadokaCard extends HTMLElement {
 
   _drawGraph(min, max) {
     const el = this.shadowRoot.getElementById("spark");
+    const times = this.shadowRoot.getElementById("sparkTimes");
+    if (times) { times.hidden = true; times.innerHTML = ""; }
     const pts = this._histPoints;
     if (!pts || pts.length < 2) { el.innerHTML = ""; return; }
     const W = 100, H = 28, pad = 2;
-    const lo = Math.min(...pts), hi = Math.max(...pts);
+    const vals = pts.map((p) => p.v);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
     const span = hi - lo || 1;
+    // The axis is TIME, not the row number. The recorder writes a row when
+    // something changes, not on a clock, so spacing points evenly made an hour
+    // of activity as wide as a quiet night — and any marker drawn under such an
+    // axis states something false with confidence (issue 100, where asking for
+    // markers is what exposed this). Falls back to even spacing when the rows
+    // carry no usable timestamp, which is also when no marker is drawn.
+    const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+    const tspan = (t0 != null && t1 != null && t1 > t0) ? t1 - t0 : 0;
     const stepX = (W - pad * 2) / (pts.length - 1);
+    const xAt = (p, i) => (tspan
+      ? pad + ((p.t - t0) / tspan) * (W - pad * 2)
+      : pad + i * stepX);
     const y = (v) => H - pad - ((v - lo) / span) * (H - pad * 2);
     let d = "";
-    pts.forEach((v, i) => { d += (i ? "L" : "M") + (pad + i * stepX).toFixed(1) + " " + y(v).toFixed(1) + " "; });
-    const area = d + `L${(pad + (pts.length - 1) * stepX).toFixed(1)} ${H} L${pad} ${H} Z`;
+    pts.forEach((p, i) => { d += (i ? "L" : "M") + xAt(p, i).toFixed(1) + " " + y(p.v).toFixed(1) + " "; });
+    const lastX = xAt(pts[pts.length - 1], pts.length - 1);
+    const area = d + `L${lastX.toFixed(1)} ${H} L${pad} ${H} Z`;
     el.innerHTML =
       `<path class="area" d="${area}"/><path class="line" d="${d}"/>` +
-      `<circle class="dot" cx="${(pad + (pts.length - 1) * stepX).toFixed(1)}" cy="${y(pts[pts.length - 1]).toFixed(1)}" r="1.6"/>`;
+      `<circle class="dot" cx="${lastX.toFixed(1)}" cy="${y(pts[pts.length - 1].v).toFixed(1)}" r="1.6"/>`;
+    if (times) this._drawGraphTimes(times, t0, t1, tspan);
+  }
+
+  _drawGraphTimes(el, t0, t1, tspan) {
+    // Markers every three hours back from the newest point, and the time of
+    // that point. Only those that actually fall inside the window the recorder
+    // returned are drawn: asking for twelve hours does not mean twelve hours
+    // exist, and a `-12h` sitting at the left edge of four hours of history
+    // would be the same lie the axis used to tell. Opt-in: they add a row of
+    // text under a card whose point is to look like a thermostat.
+    if (!this._config.show_graph_times || !tspan) return;
+    const marks = [];
+    for (let h = 3; h <= 12; h += 3) {
+      const t = t1 - h * 3600 * 1000;
+      if (t < t0) break;
+      marks.unshift({ t, label: `-${h}h` });
+    }
+    marks.push({
+      t: t1,
+      label: new Date(t1).toLocaleTimeString(
+        (this._hass && this._hass.language) || undefined,
+        { hour: "2-digit", minute: "2-digit" },
+      ),
+    });
+    // 2..98 of the viewBox is the plotted area, and the SVG is stretched to the
+    // full width, so a viewBox unit is one per cent of the element.
+    el.innerHTML = marks.map(({ t, label }) => {
+      const left = 2 + ((t - t0) / tspan) * 96;
+      return `<span class="${left > 88 ? "edge" : ""}" style="left:${left.toFixed(1)}%">${label}</span>`;
+    }).join("");
+    el.hidden = false;
   }
 
   /* ---------------------------- services ---------------------------- */
@@ -664,6 +730,7 @@ class MadokaCard extends HTMLElement {
     ${mdi("mdi:brightness-6", "brighticon")}
   </div>
   <svg class="graph" id="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg>
+  <div class="graphtimes" id="sparkTimes" aria-hidden="true" hidden></div>
   <div class="modes" id="modes" role="tablist"></div>
 </ha-card>`;
   }
@@ -703,7 +770,7 @@ class MadokaCard extends HTMLElement {
     root.getElementById("tname").textContent =
       this._config.name || a.friendly_name || "Madoka";
 
-    const cur = a.current_temperature != null ? Math.round(a.current_temperature) : "--";
+    const cur = a.current_temperature != null ? this._ambientText(a.current_temperature) : "--";
     const meaningful = SETPOINT_MODES.includes(hvac);
     let sub;
     if (unavailable) {
@@ -855,6 +922,9 @@ class MadokaCard extends HTMLElement {
 .graph .area { fill: color-mix(in srgb,var(--state) 16%,transparent); stroke:none; }
 .graph .line { fill:none; stroke:var(--state); stroke-width:1.4; stroke-linejoin:round; stroke-linecap:round; }
 .graph .dot { fill:var(--state); }
+.graphtimes { position:relative; height:11px; margin-top:1px; font-size:.6rem; color:var(--ink-soft); }
+.graphtimes span { position:absolute; top:0; transform:translateX(-50%); white-space:nowrap; }
+.graphtimes span.edge { transform:translateX(-100%); }
 .modes { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; }
 .mode-btn { display:inline-flex; align-items:center; gap:6px; font-size:.74rem; font-weight:600; color:var(--ink-soft);
   background:transparent; border:1px solid var(--hairline); border-radius:999px; padding:6px 12px; cursor:pointer; transition:all .18s; }
@@ -901,7 +971,8 @@ class MadokaCard extends HTMLElement {
 .card.compact .fan { margin-top:8px; }
 .card.compact .controls { gap:22px; }
 .card.compact .ctl { width:40px; height:40px; font-size:1.2rem; }
-.card.compact .fanrow, .card.compact .brightrow, .card.compact .graph { display:none !important; }
+.card.compact .fanrow, .card.compact .brightrow, .card.compact .graph,
+.card.compact .graphtimes { display:none !important; }
 @media (prefers-reduced-motion: reduce) { .halo, .fan.auto i.on, .reconbtn.busy, .tbtn.recon.busy { animation:none; } * { transition-duration:60ms !important; } }
 `;
   }

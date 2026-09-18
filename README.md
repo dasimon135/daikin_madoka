@@ -70,8 +70,13 @@ or an ESPHome Bluetooth proxy, using the
 ### Installation
 
 **From HACS (recommended).** This integration is in the default HACS store, so
-there is no custom repository to add: open HACS, search for **Daikin Madoka**,
-download it, and restart Home Assistant.
+there is no custom repository to add. This button opens it straight in your own
+Home Assistant:
+
+[![Open the Daikin Madoka repository inside your Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=dasimon135&repository=daikin_madoka&category=integration)
+
+Download it there, then restart Home Assistant. If the button does not reach
+your instance, open HACS yourself and search for **Daikin Madoka**.
 
 **Manual:**
 Copy `custom_components/daikin_madoka/` into your HA `custom_components/` directory, then restart.
@@ -233,7 +238,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v3.12.0
+      ref: v3.12.1
       path: esphome/components
     components: [madoka, madoka_base]
 
@@ -369,7 +374,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v3.12.0       # replace with latest tag
+      ref: v3.12.1       # replace with latest tag
       path: esphome/components
     components: [madoka_vam, madoka_base]
 
@@ -408,7 +413,7 @@ external_components:
   - source:
       type: git
       url: https://github.com/dasimon135/daikin_madoka
-      ref: v3.12.0       # replace with latest tag
+      ref: v3.12.1       # replace with latest tag
       path: esphome/components
     components: [madoka, madoka_base]
 ```
@@ -436,11 +441,28 @@ integration** (no separate install) and registers itself automatically; pick
 ```yaml
 type: custom:madoka-card
 entity: climate.my_madoka
-# layout: full         # full | compact | tile  (default: full)
-# compact: true        # alias for layout: compact
-# name: "Bedroom"      # override the title
-# reconnect: auto      # auto | always | never  (default: auto)
+# layout: full           # full | compact | tile  (default: full)
+# compact: true          # alias for layout: compact
+# name: "Bedroom"        # override the title
+# reconnect: auto        # auto | always | never  (default: auto)
+# show_decimals: true    # ambient in tenths instead of whole degrees
+# show_graph_times: true # time markers under the sparkline
 ```
+
+**It works with any `climate` entity**, not only with a Madoka. The dial is
+modelled on the BRC1H and that is what it looks best on, but nothing in the
+card is specific to this integration: point it at any thermostat Home
+Assistant exposes and it draws it. The two options above exist because of one
+such user, driving a Daikin through an Airzone Aidoo.
+
+`show_decimals` shows the ambient temperature in tenths, dropping a trailing
+zero, so `23.9` stays `23.9` and a flat `25` stays `25`. Off by default,
+because whole degrees are what the physical screen shows.
+
+`show_graph_times` writes markers under the sparkline: the time of the newest
+reading, and `-3h`, `-6h`, `-9h`, `-12h` where those instants fall. Only the
+ones that exist are drawn, so four hours of recorded history never claims
+twelve.
 
 Three layouts: **full** (the dial with fan/brightness/graph), **compact**
 (dial + controls + modes only) and **tile** — an ultra-compact row (a
