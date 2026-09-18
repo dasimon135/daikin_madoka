@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.13.1 - September 2026
+
+### A thermostat on the host's own Bluetooth adapter reconnects after a restart
+
+Reported by **@Quev1n** ([#105](https://github.com/dasimon135/daikin_madoka/issues/105)):
+after every Home Assistant restart the thermostat stayed unavailable, for hours
+if nobody intervened, until the device's Reconnect button was pressed.
+
+Automatic reconnects only offer paths known to hold a bond, and the bonded list
+records the scanner that actually carried the last session. The candidate list
+was matched against something else: the `source` key of the BLEDevice's
+details. ESPHome proxies set that key, but a local adapter's BLEDevice comes
+straight from bleak with BlueZ details and has no such key. So a thermostat
+bonded through the host's adapter was filtered out of its own candidate list,
+and every automatic attempt failed within milliseconds as "not seen by any
+adapter/proxy". Reconnect worked because it opens the pairing window, which
+lifts the restriction.
+
+Candidates are now matched on the scanner's source, the same key the bonded
+list is written with. Proxy-only setups are unaffected: for a proxy the two
+keys hold the same MAC. An unbonded path is still never offered to an
+unattended reconnect.
+
 ## v3.13.0 - September 2026
 
 Three changes to the card, all of them from one report by **@speynaud**
