@@ -674,9 +674,10 @@ Three things that never happen:
   goes out.
 - **The agent never changes code.** No commits, no branches, no pull requests.
   A proposed fix appears as a diff inside the comment and nothing more.
-- **Nothing is posted outside this issue tracker.** I do not post generated
-  replies on [community.home-assistant.io](https://community.home-assistant.io),
-  the HACF forum, or anywhere else, where AI-written answers are not allowed.
+- **Nothing is posted anywhere by a tool.** On
+  [community.home-assistant.io](https://community.home-assistant.io), on the
+  HACF forum and everywhere else, every reply is posted by me, in my own name,
+  after I have read it. The agent has no account there and never sends a word.
 
 If a triage reply is wrong or misses the point, say so in the thread. I read
 every issue myself and I would rather know.
