@@ -214,3 +214,61 @@ def test_a_raising_allocation_read_is_assumed_free() -> None:
         result = build_candidates(HASS, ADDRESS, None)
 
     assert result == [grumpy.ble_device, saturated.ble_device]
+
+
+# --------------------------------------------------------------------------
+# Local adapter (#105)
+#
+# habluetooth hands a local adapter's BLEDevice over straight from bleak, so
+# its details are BlueZ's {"path", "props"} and carry no "source". The path
+# pymadoka records after a connect is the scanner's own source (the adapter
+# MAC), which is what lands in the bonded list. Matching on details["source"]
+# therefore filtered a bonded local adapter out of its own candidate list, and
+# every reconnect after an HA restart failed until the user pressed Reconnect.
+# --------------------------------------------------------------------------
+
+LOCAL_ADAPTER = "10:5A:95:33:9D:2F"
+
+
+def _local_adapter_device(rssi: int) -> SimpleNamespace:
+    """Fake BluetoothScannerDevice as habluetooth builds it for a local HaScanner."""
+    return SimpleNamespace(
+        ble_device=SimpleNamespace(
+            details={"path": "/org/bluez/hci0/dev_D0_CF_13_0F_11_F6", "props": {}}
+        ),
+        advertisement=SimpleNamespace(rssi=rssi),
+        scanner=SimpleNamespace(source=LOCAL_ADAPTER),
+    )
+
+
+def test_a_bonded_local_adapter_survives_the_bond_filter() -> None:
+    local = _local_adapter_device(-60)
+
+    with patch(PATCH_TARGET, return_value=[local]):
+        result = build_candidates(
+            HASS, ADDRESS, LOCAL_ADAPTER, allowed_sources=[LOCAL_ADAPTER]
+        )
+
+    assert result == [local.ble_device]
+
+
+def test_an_unbonded_local_adapter_is_still_filtered_out() -> None:
+    local = _local_adapter_device(-30)
+    bonded_proxy = _scanner_device(PROXY_A, -80)
+
+    with patch(PATCH_TARGET, return_value=[local, bonded_proxy]):
+        result = build_candidates(
+            HASS, ADDRESS, PROXY_A, allowed_sources=[PROXY_A]
+        )
+
+    assert result == [bonded_proxy.ble_device]
+
+
+def test_a_preferred_local_adapter_is_offered_first() -> None:
+    local = _local_adapter_device(-85)
+    strong_proxy = _scanner_device(PROXY_A, -40)
+
+    with patch(PATCH_TARGET, return_value=[strong_proxy, local]):
+        result = build_candidates(HASS, ADDRESS, LOCAL_ADAPTER)
+
+    assert result == [local.ble_device, strong_proxy.ble_device]

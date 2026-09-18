@@ -42,6 +42,23 @@ def entry_macs(entry: ConfigEntry) -> list[str]:
     return [normalize_mac(mac) or mac for mac in raw_macs]
 
 
+def _path_source(scanner_device: "bluetooth.BluetoothScannerDevice") -> str | None:
+    """The source this path is recorded under once a connection succeeds.
+
+    pymadoka records the scanner's own source (connected_path_source), so the
+    scanner is the key that matches the bonded list. details["source"] is only
+    a fallback: a local adapter's BLEDevice comes straight from bleak with
+    BlueZ details and has no "source" at all.
+    """
+    source = getattr(getattr(scanner_device, "scanner", None), "source", None)
+    if isinstance(source, str) and source:
+        return source
+    details = getattr(scanner_device.ble_device, "details", None)
+    if isinstance(details, dict):
+        return details.get("source")
+    return None
+
+
 def _has_free_slot(scanner_device: "bluetooth.BluetoothScannerDevice") -> bool:
     """True unless the scanner positively reports zero free connection slots.
 
@@ -104,19 +121,11 @@ def build_candidates(
     if allowed_sources:
         allowed = set(allowed_sources)
         scanner_devices = [
-            sd
-            for sd in scanner_devices
-            if isinstance(getattr(sd.ble_device, "details", None), dict)
-            and sd.ble_device.details.get("source") in allowed
+            sd for sd in scanner_devices if _path_source(sd) in allowed
         ]
 
     def sort_key(sd: bluetooth.BluetoothScannerDevice) -> tuple[int, int, int]:
-        # details is backend-specific: ESPHome proxies expose their source MAC
-        # in a dict; other backends may carry something else (or nothing).
-        source = None
-        details = getattr(sd.ble_device, "details", None)
-        if isinstance(details, dict):
-            source = details.get("source")
+        source = _path_source(sd)
         # Some backends deliver an advertisement without an RSSI; a None here
         # would TypeError inside the sort and silently drop the candidates.
         rssi = (
