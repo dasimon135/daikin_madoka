@@ -59,7 +59,8 @@
       "init": {
         "title": "Opzioni Daikin Madoka",
         "data": {
-          "scan_interval": "Intervallo di interrogazione (secondi)"
+          "scan_interval": "Intervallo di interrogazione (secondi)",
+          "enable_energy_consumption": "Leggi il consumo energetico (oggi ogni cinque minuti, gli altri periodi una volta al giorno)"
         }
       }
     }
@@ -95,6 +96,24 @@
       },
       "operating_time": {
         "name": "Tempo di funzionamento"
+      },
+      "energy_today": {
+        "name": "Energia oggi"
+      },
+      "energy_yesterday": {
+        "name": "Energia ieri"
+      },
+      "energy_this_week": {
+        "name": "Energia questa settimana"
+      },
+      "energy_last_week": {
+        "name": "Energia la settimana scorsa"
+      },
+      "energy_this_year": {
+        "name": "Energia quest'anno"
+      },
+      "energy_last_year": {
+        "name": "Energia l'anno scorso"
       },
       "connection_source": {
         "name": "Origine della connessione"
@@ -141,6 +160,10 @@
     "pairing_slow": {
       "title": "{device} non completa l'associazione Bluetooth",
       "description": "Le connessioni verso {device} scadono di continuo mentre viene stabilita l'associazione Bluetooth (tentativi tramite: {proxies}). Questo non dimostra che il termostato abbia rifiutato qualcosa — anche un proxy sovraccarico produce lo stesso sintomo — perciò Home Assistant continua a provare, ma molto più di rado, per non sommergere il termostato di richieste di associazione. Se non si ripristina da solo: mettiti davanti al termostato, premi il pulsante Riconnetti del dispositivo in Home Assistant e conferma la richiesta di associazione sul suo schermo. Consulta la documentazione sull'associazione per i dettagli."
+    },
+    "unbonded_path": {
+      "title": "{device} è raggiungibile solo tramite un proxy non associato",
+      "description": "Home Assistant continua a instradare la connessione verso {device} tramite {proxies}, con cui questo termostato non è mai stato associato. Non è stata tentata alcuna associazione, quindi sullo schermo del termostato non è comparsa alcuna richiesta — ma nemmeno la connessione è utilizzabile. Spesso si risolve da solo quando cambiano le condizioni del segnale Bluetooth. Per risolverlo definitivamente: mettiti davanti al termostato, premi il pulsante Riconnetti del dispositivo in Home Assistant e conferma la richiesta di associazione sul suo schermo — l'associazione è necessaria una volta per ogni proxy. Consulta la documentazione sull'associazione per i dettagli."
     }
   }
 }

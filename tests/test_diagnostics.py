@@ -109,3 +109,32 @@ async def test_loaded_entry_reports_its_devices(hass: HomeAssistant) -> None:
     assert device["issues"]["pairing_slow"] is False
     # Every repair the coordinator can raise is reported, this one included.
     assert device["issues"]["unbonded_path"] is False
+
+
+async def test_the_thermostat_mac_appears_nowhere_in_the_payload(
+    hass: HomeAssistant,
+) -> None:
+    """Redaction is by key name, so a MAC used AS a key, or inside a message, leaks.
+
+    The persisted pairing state is keyed by MAC, and PairingRequiredError's text
+    starts with the address. Diagnostics get pasted into public issues.
+    """
+    from pymadoka import PairingRequiredError
+
+    from custom_components.daikin_madoka.const import CONF_PAIRING_STATE
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: MAC, CONF_PAIRING_STATE: {MAC: {"suspended": True}}},
+    )
+    entry.add_to_hass(hass)
+    state = async_pairing_state(hass, MAC)
+    state.suspended = True
+    state.last_error = PairingRequiredError(MAC, [SOURCE])
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert MAC not in repr(result)
+    # Still useful: the verdict and the error survive, minus the address.
+    assert result["pairing_state"]["suspended"] is True
+    assert result["pairing_state"]["last_error"]
