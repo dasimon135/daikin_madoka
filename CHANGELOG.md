@@ -23,6 +23,13 @@ list is written with. Proxy-only setups are unaffected: for a proxy the two
 keys hold the same MAC. An unbonded path is still never offered to an
 unattended reconnect.
 
+Validated by **@Quev1n** on a TP-Link UB500 Plus plugged into the Home
+Assistant host: after a restart the thermostat reconnects by itself
+([#105](https://github.com/dasimon135/daikin_madoka/issues/105)). The
+proxy-only path was checked on the maintainer's four BRC1H behind ESPHome
+proxies: after a restart all four came back on their usual proxies within
+three minutes.
+
 ## v3.13.0 - September 2026
 
 Three changes to the card, all of them from one report by **@speynaud**
