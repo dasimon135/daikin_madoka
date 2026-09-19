@@ -370,3 +370,92 @@ async def test_a_rebuilt_coordinator_keeps_the_brake(hass: HomeAssistant) -> Non
 
     assert rebuilt.update_interval == BACKOFF
     assert rebuilt.backoff_reason == BACKOFF_UNREACHABLE
+
+
+# --------------------------------------------------------------------------
+# An absent device is not a stalling one
+#
+# The brake exists because every connect attempt takes a proxy slot and
+# re-initiates SMP against a thermostat that answers none of it. A poll that
+# fails fast on "not advertising" does neither: it never touches a radio. Braking
+# on those made a thermostat that lost power for six minutes wait up to fifteen
+# more after it came back, for an attempt that cost nothing to make.
+# --------------------------------------------------------------------------
+
+
+async def _refresh_absent(coordinator: MadokaCoordinator, times: int = 1) -> None:
+    for _ in range(times):
+        with patch(f"{BLUETOOTH}.async_address_present", return_value=False):
+            await coordinator.async_refresh()
+
+
+async def test_an_absent_device_is_not_braked(hass: HomeAssistant) -> None:
+    entry = _entry(hass)
+    controller = _controller()
+    coordinator = _coordinator(hass, entry, controller)
+
+    await _refresh_absent(coordinator, UNREACHABLE_THRESHOLD + 2)
+
+    controller.start.assert_not_awaited()
+    assert coordinator.update_interval == NORMAL
+    assert coordinator.pairing_backoff is False
+
+
+async def test_an_absent_device_still_gets_its_unreachable_repair(
+    hass: HomeAssistant,
+) -> None:
+    """Not braking must not mean not telling: the repair is about the user."""
+    entry = _entry(hass)
+    coordinator = _coordinator(hass, entry, _controller())
+
+    await _refresh_absent(coordinator, UNREACHABLE_THRESHOLD)
+
+    assert coordinator.unreachable_issue_active is True
+
+
+async def test_absence_does_not_lift_a_brake_that_real_failures_earned(
+    hass: HomeAssistant,
+) -> None:
+    """Going quiet is not a recovery; only a success or a human lifts the brake."""
+    entry = _entry(hass)
+    coordinator = _coordinator(hass, entry, _controller())
+    await _refresh(coordinator, UNREACHABLE_THRESHOLD)
+    assert coordinator.update_interval == BACKOFF
+
+    await _refresh_absent(coordinator, 2)
+
+    assert coordinator.update_interval == BACKOFF
+    assert coordinator.backoff_reason == BACKOFF_UNREACHABLE
+
+
+async def test_one_real_failure_after_an_absence_does_not_brake(
+    hass: HomeAssistant,
+) -> None:
+    """The first connect after a power cut often fails; it is ONE radio failure.
+
+    The absent polls before it filled the failure counter, and the brake used to
+    read that counter: the thermostat came back, stumbled once, and was put on
+    the 15-minute cadence on the spot.
+    """
+    entry = _entry(hass)
+    coordinator = _coordinator(hass, entry, _controller())
+    await _refresh_absent(coordinator, UNREACHABLE_THRESHOLD + 1)
+
+    await _refresh(coordinator, 1)
+
+    assert coordinator.update_interval == NORMAL
+    assert coordinator.pairing_backoff is False
+
+
+async def test_radio_failures_still_brake_across_an_absence(
+    hass: HomeAssistant,
+) -> None:
+    """Absence in between does not reset what the radio failures established."""
+    entry = _entry(hass)
+    coordinator = _coordinator(hass, entry, _controller())
+    await _refresh(coordinator, UNREACHABLE_THRESHOLD - 1)
+    await _refresh_absent(coordinator, 1)
+
+    await _refresh(coordinator, 1)
+
+    assert coordinator.update_interval == BACKOFF
