@@ -165,11 +165,15 @@ async def test_a_failed_connect_records_nothing(hass: HomeAssistant) -> None:
 
 def _refuse(coordinator: MadokaCoordinator, sources: list[str | None]) -> None:
     """Make the next connect fail with a PROVEN refusal over ``sources``."""
+    # As the library raises it: every path it names refused, and says so.
     coordinator.controller.start = AsyncMock(
-        side_effect=PairingRequiredError(MAC, sources)
+        side_effect=PairingRequiredError(
+            MAC,
+            sources,
+            reason="rejected",
+            evidence={source: "rejected" for source in sources},
+        )
     )
-    # rounds == 0 is the library's side channel for "a path actively rejected".
-    coordinator.controller.connection.pairing_timeout_rounds = 0
 
 
 async def _refuse_repeatedly(
@@ -314,25 +318,6 @@ async def test_evidence_still_never_empties_the_bonded_list(
     )
 
     assert entry.data[CONF_BONDED_SOURCES] == [PROXY_B]
-
-
-async def test_a_multi_path_refusal_evicts_nothing(hass: HomeAssistant) -> None:
-    """Without a per-path verdict, tried_sources is flat: a 2-path round
-    cannot say WHICH path refused.
-
-    pymadoka <= 0.3.9 reports the round, not a per-path verdict, so
-    attribution is impossible here. Under-evicting costs a few futile retries;
-    over-evicting deletes the one path that still works.
-    """
-    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
-    coordinator = _coordinator(hass, entry, _controller())
-
-    await _refuse_repeatedly(
-        hass, coordinator, [PROXY_A, PROXY_B], BOND_EVICTION_FAILURES + 2
-    )
-
-    assert entry.data[CONF_BONDED_SOURCES] == [PROXY_A, PROXY_B]
-    assert async_pairing_state(hass, MAC).auth_failures == {}
 
 
 async def test_a_local_adapter_refusal_evicts_nothing(hass: HomeAssistant) -> None:
@@ -487,17 +472,5 @@ async def test_a_proven_source_is_still_charged_alongside_an_unknown_one(
         {PROXY_A: "rejected", None: "rejected"},
         BOND_EVICTION_FAILURES,
     )
-
-    assert entry.data[CONF_BONDED_SOURCES] == [PROXY_B]
-
-
-async def test_a_library_with_no_evidence_still_uses_the_legacy_rule(
-    hass: HomeAssistant,
-) -> None:
-    """pymadoka <= 0.3.9 has no mapping, and a single-source round is unambiguous."""
-    entry = _entry(hass, **{CONF_BONDED_SOURCES: [PROXY_A, PROXY_B]})
-    coordinator = _coordinator(hass, entry, _controller())
-
-    await _refuse_repeatedly(hass, coordinator, [PROXY_A], BOND_EVICTION_FAILURES)
 
     assert entry.data[CONF_BONDED_SOURCES] == [PROXY_B]

@@ -107,3 +107,5 @@ async def test_loaded_entry_reports_its_devices(hass: HomeAssistant) -> None:
     assert device["connection_status"] == "CONNECTED"
     assert device["connected_source"] == "Proxy"
     assert device["issues"]["pairing_slow"] is False
+    # Every repair the coordinator can raise is reported, this one included.
+    assert device["issues"]["unbonded_path"] is False

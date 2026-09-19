@@ -115,6 +115,7 @@ async def async_get_config_entry_diagnostics(
                 "device_unreachable": coordinator.unreachable_issue_active,
                 "pairing_required": coordinator.pairing_issue_active,
                 "pairing_slow": coordinator.pairing_slow_issue_active,
+                "unbonded_path": coordinator.unbonded_path_issue_active,
             },
             "pairing_suspended": coordinator.pairing_suspended,
             "pairing_backoff": coordinator.pairing_backoff,
