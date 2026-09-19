@@ -28,6 +28,27 @@ Also in the card:
 Checked on the maintainer's dashboard and in the Android app: the three layouts
 render as before.
 
+### Diagnostics no longer carry the thermostat's address
+
+The download redacted the `address` field, but the address also appeared in two
+places redaction by field name cannot reach: as the key of the saved pairing
+state, and inside the text of the last pairing error. Both now read `device_0`.
+Worth knowing if you attached a diagnostics file to a public issue: the proxy
+addresses were, and still are, left in on purpose, because they are what makes
+a multi-proxy report readable.
+
+### The minimum Home Assistant version is 2025.3, and says so
+
+HACS advertised 2025.1.0, but every platform imports a helper that first
+shipped in 2025.3.0, so on 2025.1 or 2025.2 the integration could not load at
+all. Nothing changes for anyone it already worked for.
+
+### Italian catches up
+
+Nine strings had been added without their Italian version, so they showed in
+English: the six energy sensors, the energy option, and the "unpaired proxy"
+repair. A test now fails when a language falls behind `strings.json`.
+
 ## v3.13.1 - September 2026
 
 ### A thermostat on the host's own Bluetooth adapter reconnects after a restart
@@ -57,27 +78,6 @@ Assistant host: after a restart the thermostat reconnects by itself
 proxy-only path was checked on the maintainer's four BRC1H behind ESPHome
 proxies: after a restart all four came back on their usual proxies within
 three minutes.
-
-### Diagnostics no longer carry the thermostat's address
-
-The download redacted the `address` field, but the address also appeared in two
-places redaction by field name cannot reach: as the key of the saved pairing
-state, and inside the text of the last pairing error. Both now read `device_0`.
-Worth knowing if you attached a diagnostics file to a public issue: the proxy
-addresses were, and still are, left in on purpose, because they are what makes
-a multi-proxy report readable.
-
-### The minimum Home Assistant version is 2025.3, and says so
-
-HACS advertised 2025.1.0, but every platform imports a helper that first
-shipped in 2025.3.0, so on 2025.1 or 2025.2 the integration could not load at
-all. Nothing changes for anyone it already worked for.
-
-### Italian catches up
-
-Nine strings had been added without their Italian version, so they showed in
-English: the six energy sensors, the energy option, and the "unpaired proxy"
-repair. A test now fails when a language falls behind `strings.json`.
 
 ## v3.13.0 - September 2026
 
