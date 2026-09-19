@@ -186,3 +186,38 @@ async def test_a_successful_poll_still_closes_the_window(
     assert controller.connection.pair_timeout == AUTOMATIC_PAIR_TIMEOUT
 
     await coordinator.async_shutdown()
+
+
+async def test_a_poll_already_in_flight_does_not_spend_the_window(
+    hass: HomeAssistant,
+) -> None:
+    """The window belongs to the attempt made FOR it, not to one that predates it.
+
+    Reconnect acts outside the coordinator's refresh lock. A struggling device
+    spends half its time inside a connect, so the press often lands while an
+    automatic attempt is still failing. That attempt used to close the window on
+    its way out, and the attempt the user asked for then ran under the automatic
+    profile: bonded proxies only, machine-sized pairing budget.
+    """
+    entry = _entry(hass)
+    controller = _controller()
+    coordinator = _coordinator(hass, entry, controller)
+    state = async_pairing_state(hass, MAC)
+
+    async def _connect_while_the_user_presses() -> None:
+        # The press lands mid-attempt: the window opens under this attempt's feet.
+        coordinator._async_open_pairing_window()
+        raise ConnectionException("proxy busy")
+
+    controller.start = AsyncMock(side_effect=_connect_while_the_user_presses)
+
+    present, scanner = _patched_bluetooth()
+    with present, scanner:
+        await coordinator.async_refresh()
+
+    assert state.pairing_window is True
+    assert controller.connection.pair_timeout == PAIRING_WINDOW_TIMEOUT
+
+    # The window is still open on purpose, so its TTL timer is still armed.
+    coordinator.async_shutdown_extras()
+    await coordinator.async_shutdown()
