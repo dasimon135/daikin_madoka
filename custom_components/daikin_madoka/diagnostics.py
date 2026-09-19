@@ -5,7 +5,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_DEVICES
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_MAC, CONF_PREFERRED_SOURCE
+from .const import CONF_MAC, CONF_PAIRING_STATE, CONF_PREFERRED_SOURCE
 from .coordinator import (
     PAIRING_STATE_KEY,
     MadokaConfigEntry,
@@ -15,6 +15,22 @@ from .coordinator import (
 from .util import entry_macs
 
 TO_REDACT = {CONF_MAC, CONF_DEVICES, "title", "unique_id"}
+
+
+def _device_labels(entry: MadokaConfigEntry) -> dict[str, str]:
+    """Stand-in for each thermostat MAC, in entry order.
+
+    async_redact_data matches KEY NAMES, so it cannot reach a MAC that is
+    itself a key (the persisted pairing state) or sits inside a message.
+    """
+    return {mac: f"device_{index}" for index, mac in enumerate(entry_macs(entry))}
+
+
+def _scrub(text: str, labels: dict[str, str]) -> str:
+    """Replace every thermostat MAC in a free-form string."""
+    for mac, label in labels.items():
+        text = text.replace(mac, label)
+    return text
 
 
 def _resolve_source(hass: HomeAssistant, source: str | None) -> str | None:
@@ -33,12 +49,13 @@ def _pairing_states(hass: HomeAssistant, entry: MadokaConfigEntry) -> dict | Non
     window open — none of which is visible anywhere else once setup fails.
     """
     store: dict[str, MadokaPairingState] = hass.data.get(PAIRING_STATE_KEY, {})
+    labels = _device_labels(entry)
     states = {}
-    for mac in entry_macs(entry):
+    for mac, label in labels.items():
         state = store.get(mac)
         if state is None:
             continue
-        states[mac] = {
+        states[label] = {
             "suspended": state.suspended,
             "backoff": state.backoff,
             # Which of the two independent triggers braked the cadence: a
@@ -68,12 +85,13 @@ def _pairing_states(hass: HomeAssistant, entry: MadokaConfigEntry) -> dict | Non
                 _resolve_source(hass, source) or source: count
                 for source, count in state.timeout_sources.items()
             },
-            "last_error": str(state.last_error) if state.last_error else None,
+            "last_error": (
+                _scrub(str(state.last_error), labels) if state.last_error else None
+            ),
         }
     if not states:
         return None
-    # Single-device entries (the normal shape) read better flattened, and the
-    # MAC is redacted elsewhere in this payload anyway.
+    # Single-device entries (the normal shape) read better flattened.
     if len(states) == 1:
         return next(iter(states.values()))
     return states
@@ -123,8 +141,17 @@ async def async_get_config_entry_diagnostics(
             "skipped_polls": coordinator.skipped_polls,
         }
 
+    labels = _device_labels(entry)
+    data = dict(entry.data)
+    stored = data.get(CONF_PAIRING_STATE)
+    if isinstance(stored, dict):
+        data[CONF_PAIRING_STATE] = {
+            labels.get(mac, "device_unknown"): verdict
+            for mac, verdict in stored.items()
+        }
+
     return {
-        "entry": async_redact_data(dict(entry.data), TO_REDACT),
+        "entry": async_redact_data(data, TO_REDACT),
         "options": dict(entry.options),
         "state": entry.state.value,
         # False means no coordinator exists: either the entry never finished
