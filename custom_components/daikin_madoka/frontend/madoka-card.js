@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.0";
+const MADOKA_CARD_VERSION = "0.9.1";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -49,8 +49,22 @@ const FAN_SHORT = {
 const ARC_LEN = 207; // visible arc length (270° of the r=44 ring)
 const MIN_FALLBACK = 16, MAX_FALLBACK = 32;
 
-const svg = (inner, cls) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"${cls ? ` class="${cls}"` : ""}>${inner}</svg>`;
+// Attribute values (fan modes, sensor states) come from whatever climate entity
+// the card is pointed at, and they end up in innerHTML.
+const esc = (v) => String(v).replace(/[&<>"']/g, (c) => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Presses are gathered for this long and sent as ONE write: a BLE write takes
+// seconds to read back, so computing each press from the state HA still shows
+// turned + + + into three writes of the same value.
+const BUMP_SEND_MS = 600;
+// How long an unconfirmed target may stand in for the entity's own.
+const BUMP_PENDING_MS = 15000;
+// Registry translation keys of the integration's sibling entities. The
+// entity_id is only a fallback: it is generated in the user's language.
+const SIBLING_KEYS = {
+  outdoor_temperature: "outdoor", indoor_temperature: "indoor",
+  eye_brightness: "brightness", clean_filter: "filter", rssi: "rssi", reconnect: "reconnect",
+};
 // Native HA / Material Design icons — crisp and familiar.
 const mdi = (name, cls) => `<ha-icon icon="${name}"${cls ? ` class="${cls}"` : ""}></ha-icon>`;
 
@@ -70,6 +84,11 @@ class MadokaCard extends HTMLElement {
     this._reconTimer = null;
     this._reconPending = false;
     this._reconErr = false;
+    this._builtLayout = null;
+    this._resolved = null;
+    this._seen = null;
+    this._pending = null;
+    this._bumpTimer = null;
   }
 
   static getStubConfig(hass) {
@@ -82,7 +101,13 @@ class MadokaCard extends HTMLElement {
       throw new Error("Set an 'entity' pointing at a climate.* entity");
     }
     this._config = config;
-    if (this._built) this._update();
+    this._resolved = null;
+    this._seen = null;
+    if (!this._built) return;
+    // The dial and the tile are two different templates: updating one with the
+    // other's code dereferences elements that are not there.
+    if (this._builtLayout !== this._templateKind()) this._build();
+    this._update();
   }
 
   getCardSize() { return this._config && this._layout() === "tile" ? 1 : 7; }
@@ -128,14 +153,31 @@ class MadokaCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._built) this._build();
-    this._update();
     if (this._dialogCard) this._dialogCard.hass = hass;
+    if (!this._built) this._build();
+    // HA hands every card a new hass on ANY state change in the house. State
+    // objects are replaced, never mutated, so identity says whether anything
+    // this card shows has moved.
+    const seen = this._watched();
+    const graphDue = Date.now() - this._histAt >= 5 * 60 * 1000;
+    if (!graphDue && this._seen && seen.length === this._seen.length &&
+        seen.every((v, i) => v === this._seen[i])) return;
+    this._seen = seen;
+    this._update();
+  }
+
+  _watched() {
+    const hass = this._hass, ids = this._resolve();
+    return [hass.entities, hass.language, hass.states[this._config.entity],
+      ...Object.values(ids).map((id) => (id ? hass.states[id] : undefined))];
   }
 
   /* ---------- entity resolution (zero-config sibling discovery) ---------- */
   _resolve() {
     const cfg = this._config, hass = this._hass;
+    // The registry object is replaced when it changes, so its identity is the
+    // cache key; without it this walked every entity in the house per render.
+    if (this._resolved && this._resolved.reg === hass.entities) return this._resolved.ids;
     const out = {
       outdoor: cfg.outdoor_entity || null,
       indoor: cfg.temperature_entity || null,
@@ -146,11 +188,16 @@ class MadokaCard extends HTMLElement {
     };
     const reg = hass.entities || {};
     const devId = reg[cfg.entity] && reg[cfg.entity].device_id;
+    // A sibling whose state has not arrived yet (startup) cannot be classified
+    // by the fallbacks below, so such a walk must not be cached.
+    let complete = true;
     if (devId) {
       for (const eid of Object.keys(reg)) {
         if (reg[eid].device_id !== devId || eid === cfg.entity) continue;
+        const slot = SIBLING_KEYS[reg[eid].translation_key];
+        if (slot) { if (!out[slot]) out[slot] = eid; continue; }
         const st = hass.states[eid];
-        if (!st) continue;
+        if (!st) { complete = false; continue; }
         const domain = eid.split(".")[0];
         const dc = st.attributes.device_class;
         if (!out.outdoor && domain === "sensor" && /outdoor|exterieur|exterior/.test(eid)) out.outdoor = eid;
@@ -167,6 +214,7 @@ class MadokaCard extends HTMLElement {
         }
       }
     }
+    this._resolved = complete ? { reg: hass.entities, ids: out } : null;
     return out;
   }
 
@@ -270,6 +318,7 @@ class MadokaCard extends HTMLElement {
     const min = a.min_temp != null ? a.min_temp : MIN_FALLBACK;
     const max = a.max_temp != null ? a.max_temp : MAX_FALLBACK;
     const isRange = a.target_temp_low != null && a.target_temp_high != null;
+    const goal = this._goal(a, isRange);
 
     // state color
     root.host.style.setProperty("--state", M.color);
@@ -299,11 +348,11 @@ class MadokaCard extends HTMLElement {
     } else if (isRange) {
       tb.className = "target range";
       tb.innerHTML = `<span class="goal low">${Math.round(a.target_temp_low)}°</span><span>–</span>` +
-        `<span class="goal high">${Math.round(a.target_temp_high)}°</span>`;
-      this._setArc(a.target_temp_high, min, max);
+        `<span class="goal high">${Math.round(goal)}°</span>`;
+      this._setArc(goal, min, max);
     } else {
       tb.className = "target";
-      const t = a.temperature;
+      const t = goal;
       tb.innerHTML = `<span>${this._t("to")}</span><span class="goal">${t != null ? Math.round(t) : "--"}°</span>`;
       this._setArc(t, min, max);
     }
@@ -328,8 +377,11 @@ class MadokaCard extends HTMLElement {
     // reconnect (offline recovery)
     this._renderReconnect(ids, unavailable);
 
-    // nothing to command while the thermostat is unreachable
-    root.querySelectorAll(".ctl").forEach((b) => { b.disabled = unavailable; });
+    // nothing to command while the thermostat is unreachable; and no setpoint
+    // to move when it is off or in a mode that has none (the tile does the same)
+    root.getElementById("power").disabled = unavailable;
+    root.getElementById("plus").disabled = !on || !meaningful;
+    root.getElementById("minus").disabled = !on || !meaningful;
 
     // brightness slider
     this._renderBrightness(ids);
@@ -340,6 +392,16 @@ class MadokaCard extends HTMLElement {
     // aria
     root.getElementById("dial").setAttribute("aria-valuenow", a.temperature != null ? a.temperature : "");
     this._min = min; this._max = max; this._isRange = isRange; this._on = on;
+  }
+
+  // The target to show: what the user is heading for while HA has not caught
+  // up, the entity's own otherwise. Reaching it is what retires the pending one.
+  _goal(a, isRange) {
+    const own = isRange ? a.target_temp_high : a.temperature;
+    const pending = this._pendingTarget();
+    if (pending == null) return own;
+    if (own != null && Math.round(own) === pending) { this._pending = null; return own; }
+    return pending;
   }
 
   _setArc(temp, min, max) {
@@ -367,7 +429,7 @@ class MadokaCard extends HTMLElement {
     if (!modes.length) { sel.style.display = "none"; return; }
     sel.style.display = "flex";
     sel.innerHTML = modes.map((m) =>
-      `<button class="fanbtn" data-fan="${m}" aria-pressed="${m === cur}">${this._fanLabel(m)}</button>`
+      `<button class="fanbtn" data-fan="${esc(m)}" aria-pressed="${m === cur}">${esc(this._fanLabel(m))}</button>`
     ).join("");
   }
 
@@ -378,7 +440,7 @@ class MadokaCard extends HTMLElement {
     if (ids.rssi && hass.states[ids.rssi]) {
       const v = hass.states[ids.rssi].state;
       chips.push(`<span class="chip" title="Bluetooth signal">` +
-        mdi("mdi:bluetooth") + `${v}</span>`);
+        mdi("mdi:bluetooth") + `${esc(v)}</span>`);
     }
     if (ids.outdoor && hass.states[ids.outdoor]) {
       const v = hass.states[ids.outdoor].state;
@@ -410,7 +472,6 @@ class MadokaCard extends HTMLElement {
 
   _renderReconnect(ids, unavailable) {
     const row = this.shadowRoot.getElementById("reconRow");
-    this._reconEntity = ids.reconnect;
     if (!this._showReconnect(ids, unavailable)) { row.style.display = "none"; return; }
     row.style.display = "flex";
     const btn = this.shadowRoot.getElementById("reconBtn");
@@ -475,6 +536,9 @@ class MadokaCard extends HTMLElement {
 
   _drawGraph(min, max) {
     const el = this.shadowRoot.getElementById("spark");
+    // A history request can land after the card was rebuilt as a tile, which
+    // has no graph.
+    if (!el) return;
     const times = this.shadowRoot.getElementById("sparkTimes");
     if (times) { times.hidden = true; times.innerHTML = ""; }
     const pts = this._histPoints;
@@ -540,16 +604,33 @@ class MadokaCard extends HTMLElement {
   _call(domain, service, data) {
     this._hass.callService(domain, service, Object.assign({ entity_id: this._config.entity }, data));
   }
+  // The target the user is heading for, while HA has not caught up with it.
+  _pendingTarget() {
+    if (this._pending && Date.now() - this._pending.at > BUMP_PENDING_MS) this._pending = null;
+    return this._pending ? this._pending.value : null;
+  }
+
   _bump(delta) {
-    if (!this._on) return;
-    const st = this._hass.states[this._config.entity].attributes;
-    if (this._isRange) {
-      const hi = Math.min(this._max, Math.round(st.target_temp_high) + delta);
-      this._call("climate", "set_temperature", { target_temp_low: st.target_temp_low, target_temp_high: hi });
-    } else {
-      const t = Math.min(this._max, Math.max(this._min, Math.round(st.temperature) + delta));
-      this._call("climate", "set_temperature", { temperature: t });
-    }
+    const entity = this._hass.states[this._config.entity];
+    // Fan and dry have no setpoint worth moving, and Math.round(null) is 0:
+    // without this guard a press there wrote min_temp.
+    if (!this._on || !entity || !SETPOINT_MODES.includes(entity.state)) return;
+    const st = entity.attributes;
+    const shown = this._isRange ? st.target_temp_high : st.temperature;
+    const base = this._pendingTarget() != null ? this._pendingTarget() : shown;
+    if (base == null || isNaN(Number(base))) return;
+    const value = Math.min(this._max, Math.max(this._min, Math.round(base) + delta));
+    this._pending = { value, at: Date.now() };
+    if (this._bumpTimer) clearTimeout(this._bumpTimer);
+    this._bumpTimer = setTimeout(() => {
+      this._bumpTimer = null;
+      const now = this._hass.states[this._config.entity];
+      if (!now || this._pending == null) return;
+      this._call("climate", "set_temperature", this._isRange
+        ? { target_temp_low: now.attributes.target_temp_low, target_temp_high: this._pending.value }
+        : { temperature: this._pending.value });
+    }, BUMP_SEND_MS);
+    this._update();
   }
   _setMode(m) { this._call("climate", "set_hvac_mode", { hvac_mode: m }); }
   _setFan(m) { this._call("climate", "set_fan_mode", { fan_mode: m }); }
@@ -568,6 +649,8 @@ class MadokaCard extends HTMLElement {
   _layout() {
     return this._config.layout || (this._config.compact ? "compact" : "full");
   }
+  // "compact" is the dial template with a class on it; only the tile differs.
+  _templateKind() { return this._layout() === "tile" ? "tile" : "dial"; }
 
   _buildTile() {
     this.shadowRoot.innerHTML = this._tileTemplate();
@@ -652,12 +735,14 @@ class MadokaCard extends HTMLElement {
 
   disconnectedCallback() {
     if (this._reconTimer) { clearTimeout(this._reconTimer); this._reconTimer = null; }
+    if (this._bumpTimer) { clearTimeout(this._bumpTimer); this._bumpTimer = null; }
     this._closeCardDialog();
   }
 
   _build() {
     this._built = true;
-    if (this._layout() === "tile") { this._buildTile(); return; }
+    this._builtLayout = this._templateKind();
+    if (this._builtLayout === "tile") { this._buildTile(); return; }
     this.shadowRoot.innerHTML = this._template();
     const root = this.shadowRoot;
     root.getElementById("plus").addEventListener("click", () => this._bump(1));
@@ -781,9 +866,9 @@ class MadokaCard extends HTMLElement {
         ? `${cur}° · ${this._modeLabel("off")}`
         : this._modeLabel("off");
     } else if (a.target_temp_low != null && a.target_temp_high != null) {
-      sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(a.target_temp_high)}° · ${this._modeLabel(hvac)}`;
+      sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(this._goal(a, true))}° · ${this._modeLabel(hvac)}`;
     } else if (meaningful && a.temperature != null) {
-      sub = `${cur}° → ${Math.round(a.temperature)}° · ${this._modeLabel(hvac)}`;
+      sub = `${cur}° → ${Math.round(this._goal(a, false))}° · ${this._modeLabel(hvac)}`;
     } else {
       sub = `${cur}° · ${this._modeLabel(hvac)}`;
     }
