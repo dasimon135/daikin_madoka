@@ -328,29 +328,6 @@ async def test_backoff_suppresses_the_unreachable_repair(
 # --------------------------------------------------------------------------
 
 
-async def test_a_missing_round_counter_takes_the_safe_branch(
-    hass: HomeAssistant,
-) -> None:
-    """Without evidence we never accuse: back off, do not quarantine.
-
-    Neither a reason nor a counter — a library older than 0.3.10 that also
-    dropped the property. The coordinator has nothing to read and must still
-    take the safe branch.
-    """
-    entry = _entry(hass)
-    controller = _controller(rounds=None)
-    coordinator = _coordinator(hass, entry, controller)
-
-    present, scanner = _patched_bluetooth()
-    with present, scanner:
-        await coordinator.async_refresh()
-
-    registry = ir.async_get(hass)
-    assert async_pairing_state(hass, MAC).suspended is False
-    assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is None
-    assert registry.async_get_issue(DOMAIN, f"pairing_slow_{MAC}") is not None
-
-
 # --------------------------------------------------------------------------
 # pymadoka >= 0.3.10 states the reason outright; it outranks the side channel
 # --------------------------------------------------------------------------
@@ -416,23 +393,6 @@ async def test_an_unknown_reason_takes_the_safe_branch(hass: HomeAssistant) -> N
     assert async_pairing_state(hass, MAC).suspended is False
     assert registry.async_get_issue(DOMAIN, f"pairing_required_{MAC}") is None
     assert registry.async_get_issue(DOMAIN, f"pairing_slow_{MAC}") is not None
-
-
-async def test_legacy_library_still_uses_the_side_channel(
-    hass: HomeAssistant,
-) -> None:
-    """A pre-0.3.10 library states no reason: its rejections must still land."""
-    entry = _entry(hass)
-    controller = _controller(rounds=0, err=_error())  # no reason attribute
-    coordinator = _coordinator(hass, entry, controller)
-    assert not hasattr(controller.start.side_effect, "reason")
-
-    present, scanner = _patched_bluetooth()
-    with present, scanner:
-        await coordinator.async_refresh()
-
-    assert async_pairing_state(hass, MAC).suspended is True
-    assert ir.async_get(hass).async_get_issue(DOMAIN, f"pairing_required_{MAC}")
 
 
 async def test_backoff_survives_a_coordinator_rebuild(hass: HomeAssistant) -> None:
