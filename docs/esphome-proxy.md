@@ -49,16 +49,24 @@ packages:
   esphome.bluetooth-proxy: github://esphome/bluetooth-proxies/m5stack/m5stack-atom-s3.yaml@main
 
 # --- Pairing support for the Daikin BRC1H (Madoka) ---
-# io_capability is the only change the stock proxy package needs: it enables
-# the MITM-capable pairing (display + yes/no confirmation) the BRC1H
-# requires, overriding the esp32_ble default (io_capability: none), which
-# the BRC1H rejects. No sdkconfig_options are needed — the Bluedroid stack
+# io_capability enables the MITM-capable pairing (display + yes/no
+# confirmation) the BRC1H requires, overriding the esp32_ble default
+# (io_capability: none), which the BRC1H rejects. No sdkconfig_options are
+# needed — the Bluedroid stack
 # already ships with SMP enabled and persists bonds to NVS across reboots
 # by default (CONFIG_BT_BLE_SMP_ENABLE and CONFIG_BT_BLE_SMP_BOND_NVS_FLASH
 # are both default y; the CONFIG_BLE_SM_* options previously listed here
 # are NimBLE symbols that Bluedroid never reads).
+#
+# max_connections is NOT optional. esp32_ble allows 3 connections by default
+# and bluetooth_proxy reserves all 3 for itself (connection_slots), so the
+# responders below would find no slot. ESPHome only WARNS about it at compile
+# time ("BLE components require 5 connection slot(s) but only 3 configured"):
+# the build succeeds, each ble_client fails at boot, and its trigger never
+# runs. Count 3 for the proxy plus 1 per responder, 9 at most.
 esp32_ble:
   io_capability: display_yes_no
+  max_connections: 5   # 3 proxy slots + 2 responders
 
 # Pairing responders — one per thermostat this proxy can reach.
 # They never connect on their own (auto_connect: false); they only react
@@ -142,6 +150,7 @@ the guesswork:
 | Symptom | Cause | Fix |
 |---|---|---|
 | Entities unavailable; logs show `Insufficient authentication` | An **unpaired ACTIVE proxy** is winning the connection (it has the strongest signal but no bond) | Pair that proxy: flash the config above, trigger a reconnect, and watch for the prompt + notification — or set it to `bluetooth_proxy: active: false` |
+| The thermostat shows a code, the proxy log shows `BT_SMP: Value for numeric comparison`, but no notification arrives and `on_numeric_comparison_request` never runs | The responder has no connection slot: `max_connections` does not cover the proxy's 3 slots plus one per `ble_client` (look for the "connection slot(s)" warning in the compile log) — or the thermostat being paired has no responder of its own | Set `esp32_ble: max_connections` to 3 + the number of responders, and declare one `ble_client` per thermostat |
 | Pairing times out; prompt appears on the thermostat screen and then disappears | The numeric-comparison prompt was not answered on the thermostat | Retry and **confirm the prompt on the thermostat screen within a few seconds** (the proxy side is auto-confirmed by the responder) |
 | A discovery card appears for a Madoka you don't recognize | Likely a neighbour's out-of-home BRC1H at the edge of range | Since v3.2.0 the integration ignores discoveries below −90 dBm; on older versions, just ignore/dismiss the card |
 | A `pairing_required` repair shows up in Home Assistant | Every connection path refused the link for lack of a bond | Open the repair — it **names the proxies that refused**; pair each of them (or make them passive) following the steps above |

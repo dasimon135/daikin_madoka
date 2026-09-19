@@ -139,12 +139,19 @@ The BRC1H requires an **authenticated (MITM) pairing** — it silently ignores e
 The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_capability: none` and nothing answers the numeric-comparison confirmation). Add this to the proxy's YAML and reflash:
 
 ```yaml
-# io_capability is the only required change: the Bluedroid stack already
-# ships with SMP enabled and persists bonds to NVS by default
-# (CONFIG_BT_BLE_SMP_ENABLE and CONFIG_BT_BLE_SMP_BOND_NVS_FLASH are
-# both default y).
+# io_capability enables the pairing the BRC1H requires. No sdkconfig option is
+# needed: the Bluedroid stack already ships with SMP enabled and persists bonds
+# to NVS by default (CONFIG_BT_BLE_SMP_ENABLE and
+# CONFIG_BT_BLE_SMP_BOND_NVS_FLASH are both default y).
+#
+# max_connections is NOT optional. esp32_ble allows 3 connections by default
+# and bluetooth_proxy reserves all 3 (connection_slots), so a responder below
+# finds no slot: ESPHome only WARNS at compile time ("BLE components require 4
+# connection slot(s) but only 3 configured"), the ble_client fails at boot, and
+# its trigger never runs. Count 3 for the proxy plus 1 per responder.
 esp32_ble:
   io_capability: display_yes_no
+  max_connections: 4   # 3 proxy slots + 1 responder
 
 # Pairing responder: never connects (auto_connect: false), only auto-confirms
 # the numeric-comparison pairing for the thermostat's address.
