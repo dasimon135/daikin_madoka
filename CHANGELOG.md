@@ -1,5 +1,33 @@
 # Changelog
 
+## v3.13.2 - September 2026
+
+### The card keeps up with your fingers
+
+Pressing `+` three times quickly used to raise the target by one degree, not
+three. Every press was computed from the target Home Assistant still showed, and
+a write over Bluetooth takes a few seconds to read back, so the three presses
+asked for the same value three times. Presses are now gathered for a moment and
+sent as one write, and the readout follows them at once instead of waiting for
+the thermostat.
+
+Also in the card:
+
+- In fan and dry modes the dial's `+` and `−` stayed live although there is no
+  setpoint to move; on a climate entity that reports no target there, a press
+  wrote the minimum temperature. They are now disabled, as the tile already did.
+- Changing `layout` on a card that was already on screen (in the editor) broke
+  it until the page was reloaded. It now rebuilds itself.
+- The outdoor temperature, brightness, filter and signal are found whatever
+  language Home Assistant named their entities in. They were matched on the
+  entity id, which only worked in English, French and Spanish.
+- The card re-rendered on every state change anywhere in Home Assistant, and
+  walked the whole entity registry each time. It now renders only when
+  something it shows has changed.
+
+Checked on the maintainer's dashboard and in the Android app: the three layouts
+render as before.
+
 ## v3.13.1 - September 2026
 
 ### A thermostat on the host's own Bluetooth adapter reconnects after a restart
