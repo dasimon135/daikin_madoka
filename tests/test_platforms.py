@@ -25,6 +25,7 @@ from custom_components.daikin_madoka import (
 )
 from custom_components.daikin_madoka.const import (
     CONF_DEVICE_TYPE,
+    CONF_ENABLE_ENERGY,
     CONF_MAC,
     CONF_PREFERRED_SOURCE,
     DEVICE_TYPE_VENTILATION,
@@ -102,15 +103,52 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
         f"{MAC}_outdoor_temperature",
         f"{MAC}_rssi",
         f"{MAC}_operating_time",
-        f"{MAC}_energy_today",
-        f"{MAC}_energy_yesterday",
-        f"{MAC}_energy_this_week",
-        f"{MAC}_energy_last_week",
-        f"{MAC}_energy_this_year",
-        f"{MAC}_energy_last_year",
         f"{MAC}_connection_source",
         f"{MAC}_connection_status",
     }
+
+
+ENERGY_UNIQUE_IDS = {
+    f"{MAC}_energy_today",
+    f"{MAC}_energy_yesterday",
+    f"{MAC}_energy_this_week",
+    f"{MAC}_energy_last_week",
+    f"{MAC}_energy_this_year",
+    f"{MAC}_energy_last_year",
+}
+
+
+async def test_energy_sensors_exist_only_when_the_option_is_on(
+    hass: HomeAssistant,
+) -> None:
+    """Off is the default, and six sensors stuck at unknown are not a feature."""
+    coordinator, entry = _coordinator(hass, _mock_controller())
+    hass.config_entries.async_update_entry(entry, options={CONF_ENABLE_ENERGY: True})
+
+    entities = await _setup_platform(sensor_platform, hass, coordinator, entry)
+
+    assert ENERGY_UNIQUE_IDS <= {entity.unique_id for entity in entities}
+
+
+async def test_turning_the_option_off_removes_the_energy_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """Including the ones every install created before they followed the option."""
+    from homeassistant.helpers import entity_registry as er
+
+    coordinator, entry = _coordinator(hass, _mock_controller())
+    registry = er.async_get(hass)
+    for unique_id in ENERGY_UNIQUE_IDS:
+        registry.async_get_or_create("sensor", DOMAIN, unique_id, config_entry=entry)
+    kept = registry.async_get_or_create(
+        "sensor", DOMAIN, f"{MAC}_indoor_temperature", config_entry=entry
+    )
+
+    await _setup_platform(sensor_platform, hass, coordinator, entry)
+
+    for unique_id in ENERGY_UNIQUE_IDS:
+        assert registry.async_get_entity_id("sensor", DOMAIN, unique_id) is None
+    assert registry.async_get(kept.entity_id) is not None
 
 
 async def test_ventilation_setup_skips_the_outdoor_sensor(
@@ -149,6 +187,7 @@ async def test_energy_sensors_report_controller_counter_totals(
     hass: HomeAssistant,
 ) -> None:
     coordinator, entry = _coordinator(hass, _mock_controller())
+    hass.config_entries.async_update_entry(entry, options={CONF_ENABLE_ENERGY: True})
     coordinator.data = {
         "energy_consumption": {
             "energy_today": (12.3, 1.0),

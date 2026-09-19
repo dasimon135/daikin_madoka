@@ -1590,6 +1590,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     @callback
     def async_apply_energy_enabled(self, enabled: bool) -> None:
         """Add or remove energy polling without rebuilding the BLE session."""
+        # Kept as a plain flag: controller.energy_consumption is swapped out
+        # for the length of a poll when its cache is fresh, so it cannot say
+        # what the entry was set up with.
+        self.energy_enabled = enabled
         if enabled and self.controller.energy_consumption is None:
             self.controller.energy_consumption = MadokaEnergyConsumption(
                 self.controller.connection

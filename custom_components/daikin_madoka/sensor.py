@@ -21,14 +21,17 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEVICE_TYPE,
+    CONF_ENABLE_ENERGY,
     CONF_PREFERRED_SOURCE,
     DEFAULT_DEVICE_TYPE,
     DEVICE_TYPE_VENTILATION,
+    DOMAIN,
     ENERGY_PARAMETERS,
 )
 from .coordinator import MadokaConfigEntry, MadokaCoordinator
@@ -48,19 +51,41 @@ async def async_setup_entry(
     is_ventilation = (
         entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE) == DEVICE_TYPE_VENTILATION
     )
+    # The energy counters are opt-in, and so are their sensors. They used to be
+    # created regardless, which left six entities per thermostat at "unknown"
+    # for good on every install that never turned the option on, and on every
+    # unit that keeps no counters at all.
+    energy_enabled = entry.options.get(CONF_ENABLE_ENERGY, False)
     for coordinator in entry.runtime_data.values():
         entities.append(MadokaIndoorSensor(coordinator))
         if not is_ventilation:
             entities.append(MadokaOutdoorSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
-        entities.extend(
-            MadokaEnergySensor(coordinator, description)
-            for description in ENERGY_SENSORS
-        )
+        if energy_enabled:
+            entities.extend(
+                MadokaEnergySensor(coordinator, description)
+                for description in ENERGY_SENSORS
+            )
+        else:
+            _async_remove_energy_sensors(hass, coordinator)
         entities.append(MadokaConnectionSourceSensor(coordinator))
         entities.append(MadokaConnectionStatusSensor(coordinator))
     async_add_entities(entities)
+
+
+@callback
+def _async_remove_energy_sensors(
+    hass: HomeAssistant, coordinator: MadokaCoordinator
+) -> None:
+    """Drop the energy sensors an earlier setup registered for this device."""
+    registry = er.async_get(hass)
+    for description in ENERGY_SENSORS:
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{coordinator.address}_{description.key}"
+        )
+        if entity_id is not None:
+            registry.async_remove(entity_id)
 
 
 class MadokaLinkSensor(MadokaEntity, SensorEntity):

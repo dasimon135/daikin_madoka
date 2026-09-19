@@ -99,9 +99,11 @@ One device per thermostat, carrying:
 - **running hours** — how long the unit has been on in total, kept across
   restarts. It counts in poll-sized steps, so treat it as a trend, not a stopwatch;
 - **electricity used** — daily, weekly and yearly totals the thermostat keeps by
-  itself, on units that report them. Switch it on in the integration options.
-  Today's figure refreshes every five minutes, the older totals once a day, to
-  keep Bluetooth traffic down;
+  itself, on units that report them. Switch it on in the integration options:
+  the six sensors exist only while it is on, and changing it reloads the entry
+  (the thermostat reconnects within a few minutes). Today's figure refreshes
+  every five minutes, the older totals once a day, to keep Bluetooth traffic
+  down;
 - a **filter alert**, and a **button to clear it** once you have cleaned the filter;
 - **screen brightness**, 0 to 19.
 

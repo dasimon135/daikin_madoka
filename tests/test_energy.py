@@ -382,3 +382,59 @@ def test_energy_polling_is_opt_in() -> None:
 
     coordinator.async_apply_energy_enabled(False)
     assert controller.energy_consumption is None
+
+
+# --------------------------------------------------------------------------
+# The option decides which ENTITIES exist, so changing it reloads the entry
+# --------------------------------------------------------------------------
+
+
+def _listener_entry(hass, options: dict, enabled_at_setup: bool):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.daikin_madoka.const import CONF_MAC, DOMAIN
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_MAC: "D0:CF:13:0F:11:F6"}, options=options
+    )
+    entry.add_to_hass(hass)
+    coordinator = MagicMock()
+    coordinator.energy_enabled = enabled_at_setup
+    entry.runtime_data = {"D0:CF:13:0F:11:F6": coordinator}
+    return entry, coordinator
+
+
+async def test_changing_the_energy_option_reloads_the_entry(hass) -> None:
+    from unittest.mock import patch
+
+    from custom_components.daikin_madoka import _async_update_listener
+    from custom_components.daikin_madoka.const import CONF_ENABLE_ENERGY
+
+    entry, _coordinator = _listener_entry(
+        hass, {CONF_ENABLE_ENERGY: True}, enabled_at_setup=False
+    )
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        await _async_update_listener(hass, entry)
+
+    reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_an_entry_update_that_leaves_the_option_alone_does_not_reload(
+    hass,
+) -> None:
+    """The listener fires on every persisted verdict; those must stay cheap."""
+    from unittest.mock import patch
+
+    from custom_components.daikin_madoka import _async_update_listener
+    from custom_components.daikin_madoka.const import CONF_ENABLE_ENERGY
+
+    entry, coordinator = _listener_entry(
+        hass, {CONF_ENABLE_ENERGY: True}, enabled_at_setup=True
+    )
+
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        await _async_update_listener(hass, entry)
+
+    reload.assert_not_called()
+    coordinator.async_apply_scan_interval.assert_called_once()
