@@ -289,11 +289,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
                 connection_error,
             )
 
-        try:
-            await controller.read_info()
-        except Exception:
-            _LOGGER.debug("Could not read device info for %s", mac, exc_info=True)
-
         coordinators[mac] = coordinator
 
     if not coordinators:

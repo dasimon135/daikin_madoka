@@ -119,28 +119,6 @@ async def test_timeout_round_streak_survives_a_config_entry_retry(
     )
 
 
-async def test_the_streak_resumes_on_a_library_without_the_setter(
-    hass: HomeAssistant,
-) -> None:
-    """A pre-0.3.10 library exposes a read-only property and no setter."""
-    entry = _entry(hass)
-    present, scanner = _patched_bluetooth()
-
-    first = _coordinator(hass, entry, _disconnected_controller())
-    first.controller.connection.pairing_timeout_rounds = 2
-    first.controller.start = AsyncMock(
-        side_effect=ConnectionException("cancelled mid-round")
-    )
-    with present, scanner:
-        await first.async_refresh()
-
-    legacy = _disconnected_controller()
-    del legacy.connection.resume_pairing_timeout_rounds
-    second = _coordinator(hass, entry, legacy)
-
-    assert second.controller.connection._pairing_timeout_rounds == 2
-
-
 async def test_a_streak_is_never_regressed_by_a_roundless_failure(
     hass: HomeAssistant,
 ) -> None:

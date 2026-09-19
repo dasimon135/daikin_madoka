@@ -10,7 +10,7 @@ from time import monotonic
 from typing import Any
 
 from pymadoka import ConnectionException, Controller, PairingRequiredError
-from pymadoka.connection import ConnectionStatus
+from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
 
 from homeassistant.components import bluetooth
@@ -53,11 +53,6 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
-
-try:  # pragma: no cover - exercised only against a future pymadoka
-    from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS
-except ImportError:  # pragma: no cover - upstream rename guard
-    PAIRING_TIMEOUT_ROUNDS = 3
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -581,8 +576,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
         self._issue_active = False
-        # Attempts spent reading the GATT device information. Setup gets one
-        # shot, before the link exists; see _async_backfill_device_info.
+        # Attempts spent reading the GATT device information; see
+        # _async_backfill_device_info, the only place it is read.
         self._device_info_attempts = 0
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
@@ -599,14 +594,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # pairing situation rather than an ordinary dropout.
         self._pairing = async_pairing_state(hass, controller.connection.address)
         # Resume the all-paths-timed-out streak on the freshly built
-        # Connection. pymadoka >= 0.3.10 exposes a supported setter for this;
-        # before that the read-only property left no option but the private
-        # attribute (async_reconnect already pokes sibling privates).
-        resume = getattr(controller.connection, "resume_pairing_timeout_rounds", None)
-        if callable(resume):
-            resume(self._pairing.timeout_rounds)
-        else:
-            controller.connection._pairing_timeout_rounds = self._pairing.timeout_rounds
+        # Connection.
+        controller.connection.resume_pairing_timeout_rounds(
+            self._pairing.timeout_rounds
+        )
         super().__init__(
             hass,
             _LOGGER,
@@ -1083,12 +1074,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         round (#53). An attempt whose path cannot be proven is now keyed under
         None and charges nobody.
 
-        Without that verdict (pymadoka <= 0.3.9) tried_sources is a flat list:
-        a round over three proxies cannot say WHICH of them rejected, so only
-        a single-source round is unambiguous and anything else records
-        nothing. Under-evicting merely costs a few futile retries on a dead
-        path, while over-evicting deletes the one path that still works and
-        needs a human at the thermostat to restore.
+        Under-evicting merely costs a few futile retries on a dead path, while
+        over-evicting deletes the one path that still works and needs a human
+        at the thermostat to restore.
         """
         for source in self._attributable_refusals(err):
             self._async_charge_bond_refusal(source)
@@ -1096,29 +1084,21 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     @callback
     def _attributable_refusals(self, err: PairingRequiredError) -> list[str]:
         """The sources this error PROVES hold no bond, if any."""
-        evidence = getattr(err, "evidence", None)
-        if isinstance(evidence, Mapping) and evidence:
-            # A mapping that exists is AUTHORITATIVE, including when it names
-            # nobody. Since pymadoka-ng 0.3.11 an attempt whose path could not
-            # be proven — no link was ever established, so nothing named the
-            # scanner — is keyed under None, so "no proven source" is a
-            # statement ("this round cannot say which proxy failed"), not
-            # silence. Falling through to the legacy rule here would answer it
-            # with a guess, and the guess is the whole defect: under HA the
-            # candidate we offered is not the path that was used (#53).
-            #
-            # Only "rejected" counts: a per-path "timeout" is congestion until
-            # proven otherwise, exactly as a whole-round timeout streak is.
-            return [
-                source
-                for source, verdict in evidence.items()
-                if verdict == "rejected" and source
-            ]
-        # No mapping at all: pymadoka <= 0.3.9, where tried_sources is a flat
-        # list and only a single-source round is unambiguous.
-        if len(err.tried_sources) != 1 or not err.tried_sources[0]:
-            return []
-        return [err.tried_sources[0]]
+        # The mapping is AUTHORITATIVE, including when it names nobody. An
+        # attempt whose path could not be proven — no link was ever
+        # established, so nothing named the scanner — is keyed under None, so
+        # "no proven source" is a statement ("this round cannot say which proxy
+        # failed"), not silence. Answering it with tried_sources would be a
+        # guess, and the guess is the whole defect: under HA the candidate we
+        # offered is not the path that was used (#53).
+        #
+        # Only "rejected" counts: a per-path "timeout" is congestion until
+        # proven otherwise, exactly as a whole-round timeout streak is.
+        return [
+            source
+            for source, verdict in err.evidence.items()
+            if verdict == "rejected" and source
+        ]
 
     @callback
     def _async_charge_bond_refusal(self, source: str) -> None:
@@ -1319,16 +1299,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _timed_out_rounds(self, err: PairingRequiredError) -> int:
         """How many all-timed-out rounds are behind this verdict, for the log.
 
-        0.3.10 states it on the error; before that, the connection's counter
-        was the only source and it is stale as soon as the library resets it.
+        The error states it. It is 0 for a rejection, which only gets here when
+        a fresh session contradicted it; the library's threshold is then the
+        honest figure.
         """
-        rounds = getattr(err, "timeout_rounds", None)
-        if isinstance(rounds, int) and not isinstance(rounds, bool) and rounds > 0:
-            return rounds
-        rounds = getattr(self.controller.connection, "pairing_timeout_rounds", None)
-        if isinstance(rounds, int) and not isinstance(rounds, bool) and rounds > 0:
-            return rounds
-        return PAIRING_TIMEOUT_ROUNDS
+        return err.timeout_rounds or PAIRING_TIMEOUT_ROUNDS
 
     @callback
     def _async_note_pairing_error(self, err: PairingRequiredError) -> None:
@@ -1340,23 +1315,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         PAIRING_TIMEOUT_ROUNDS rounds (an inference congestion alone can
         produce).
 
-        Since 0.3.10 the library says which it is, in `err.reason`, and that
-        is the only thing worth reading: it is the raise site's own verdict
-        rather than something reconstructed from a side effect.
+        The library says which it is, in `err.reason`, and that is the only
+        thing worth reading: it is the raise site's own verdict rather than
+        something reconstructed from a side effect. The round counter is NOT a
+        substitute — the library resets it at both raise sites.
 
-        Before 0.3.10 (0.3.10 is the pin, but an older library can still be
-        installed in a container that has not been rebuilt) there was no
-        verdict, only the public round counter — reset to 0 by the rejection
-        raise, left at the threshold by the streak raise. Fragile, and note
-        that 0.3.10 resets it at BOTH sites, so reading it there would invert
-        the diagnosis: `reason` must be consulted FIRST, and the counter only
-        when the attribute is absent.
-
-        Anything we can read neither way takes the non-convicting branch — a
-        wrong quarantine needs a human at the thermostat to undo, a wrong
-        backoff only costs time.
+        A reason we do not recognise takes the non-convicting branch — a wrong
+        quarantine needs a human at the thermostat to undo, a wrong backoff
+        only costs time.
         """
-        reason = getattr(err, "reason", None)
+        reason = err.reason
         if reason == "unbonded_path":
             # A fourth tier, and the only one that is a statement about
             # ROUTING rather than about a bond. pymadoka refused to pair on
@@ -1367,16 +1335,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # convict and no timeout to infer from.
             self._async_enter_unbonded_path_backoff(err)
             return
-        if isinstance(reason, str):
-            # A reason we do not recognise is not evidence of a refusal.
-            proven_rejection = reason == "rejected"
-        else:
-            rounds = getattr(
-                self.controller.connection, "pairing_timeout_rounds", None
-            )
-            proven_rejection = (
-                isinstance(rounds, int) and not isinstance(rounds, bool) and rounds == 0
-            )
+        proven_rejection = reason == "rejected"
         if proven_rejection and self._async_spend_acquittal():
             # Contradicted by our own evidence. Fall through to the timeout
             # tier: still slowed down, still reported, but nothing convicted
@@ -1499,10 +1458,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         which proxy failed", and guessing there is exactly the defect the
         evidence mapping exists to prevent.
         """
-        evidence = getattr(err, "evidence", None)
-        if not isinstance(evidence, Mapping):
-            return
-        for source, verdict in evidence.items():
+        for source, verdict in err.evidence.items():
             if verdict != "timeout" or not source:
                 continue
             # Clamped, like the refusal counter: past the threshold a bigger
@@ -1887,11 +1843,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     async def _async_backfill_device_info(self) -> None:
         """Read the GATT device information once the link is actually up.
 
-        Setup calls read_info() immediately after building the controller,
-        before the BLE link exists. pymadoka returns an empty dict in that
-        state without raising and without caching it, so the model marking and
-        the firmware revision never reach the device registry and the device
-        page shows a bare "BRC1H" with no version for the life of the entry.
+        This is the only place it is read, and it has to be after a poll:
+        pymadoka returns an empty dict on a link that is not up, without
+        raising and without caching it, which is how the device page used to
+        show a bare "BRC1H" with no version for the life of the entry.
 
         The information matters beyond cosmetics: behaviour differs between
         firmware revisions of the same controller, and every report that turns
