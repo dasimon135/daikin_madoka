@@ -792,6 +792,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                     f"{self.address} needs pairing; automatic reconnects are "
                     "suspended until the reconnect button is pressed"
                 ) from self._pairing.last_error
+            # Whether THIS attempt is the one the window was opened for. Read
+            # before connecting: Reconnect acts outside the refresh lock, so the
+            # press can land while an automatic attempt is still failing.
+            spends_window = self._pairing.pairing_window
             try:
                 await self._async_connect()
             except UpdateFailed:
@@ -801,7 +805,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 # polls, keep the human-sized SMP budget on them, and keep the
                 # dead-bond quarantine disarmed — the exact combination that
                 # turns one failed Reconnect into a pairing storm.
-                self._async_close_pairing_window()
+                #
+                # ...but only the attempt that ran under the window spends it.
+                # One that started before the press never had the unrestricted
+                # candidates or the human-sized budget, so closing on its way
+                # out handed the user's own attempt the automatic profile. The
+                # window's TTL still bounds it if that attempt never comes.
+                if spends_window:
+                    self._async_close_pairing_window()
                 raise
 
         energy = self.controller.energy_consumption
