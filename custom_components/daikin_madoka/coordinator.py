@@ -325,12 +325,12 @@ def connection_profile(
 class MadokaPairingState:
     """Per-device pairing state that must outlive a config entry retry.
 
-    A failed setup raises ConfigEntryNotReady, and HA then re-runs
-    async_setup_entry with a brand-new Controller, Connection and coordinator.
-    Anything held on those objects resets on every retry, so it never
-    accumulates and the device gets hammered forever — which is exactly how a
-    single pairing problem turned into a storm. Keyed by MAC in hass.data,
-    this survives.
+    A configured device now always loads (see async_setup_entry), but a reload,
+    an options change and a coordinator rebuild all replace the Controller and
+    the Connection. Anything held on those objects would reset with them, so it
+    could never accumulate and the device would be hammered forever — which is
+    exactly how a single pairing problem turned into a storm. Keyed by MAC in
+    hass.data, this survives them, and as_stored() carries it across restarts.
     """
 
     last_error: PairingRequiredError | None = None
@@ -1014,6 +1014,39 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self.hass.config_entries.async_update_entry(entry, data=data)
 
     @callback
+    def _async_acquit_path(self, source: str) -> None:
+        """This path just authenticated: drop every accusation against it.
+
+        An eviction streak only means anything while it is CONSECUTIVE, and a
+        completed authenticated session is the strongest possible acquittal.
+        """
+        self._pairing.auth_failures.pop(source, None)
+        self._pairing.timeout_sources.pop(source, None)
+        self._pairing.timeout_corroborated.discard(source)
+
+    @callback
+    def _async_connected_source(self) -> str | None:
+        """The proxy that carried this session, when it can be charged to one.
+
+        connected_source is None on the library's fallback single-device path
+        (it only ever sets it in the candidates loop), and that path is exactly
+        the one that lets HA's scorer pick a proxy and pair with it
+        unconditionally: recording it would launder an auto-pairing into a
+        policy-approved bond. The None guard is deliberate, keep it.
+
+        Legacy multi-MAC entries (no CONF_MAC) share one entry, so no per-device
+        bookkeeping can be right for all of them.
+        """
+        source = self.controller.connection.connected_source
+        if (
+            not source
+            or self.config_entry is None
+            or CONF_MAC not in self.config_entry.data
+        ):
+            return None
+        return source
+
+    @callback
     def _async_persist_preferred_source(self) -> None:
         """Remember which proxy carried the successful session.
 
@@ -1024,39 +1057,29 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         proof that this proxy holds a bond, and automatic reconnects are
         restricted to that list so they never start a new pairing.
 
-        Skipped for legacy multi-MAC entries (no CONF_MAC): they share one
-        entry, and a single preferred_source cannot be right for several
-        thermostats. None means local adapter / unknown backend — nothing
-        worth pinning.
+        Runs after a successful POLL, which also covers a poll over an
+        already-open link — that one never goes through the connect path, so
+        _async_record_bonded_source never sees it.
         """
-        source = self.controller.connection.connected_source
-        if (
-            not source
-            or self.config_entry is None
-            or CONF_MAC not in self.config_entry.data
-        ):
+        source = self._async_connected_source()
+        if source is None:
             return
-        # A completed session is the strongest possible acquittal for this path,
-        # and an eviction streak only means anything while it is CONSECUTIVE.
-        # Cleared here as well as in _async_record_bonded_source because a poll
-        # over an already-open link never goes through the connect path at all.
-        self._pairing.auth_failures.pop(source, None)
-        self._pairing.timeout_sources.pop(source, None)
-        self._pairing.timeout_corroborated.discard(source)
-        bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
+        self._async_acquit_path(source)
+        entry = self.config_entry
+        bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
         if source not in bonded:
             bonded.append(source)
         if (
-            self.config_entry.data.get(CONF_PREFERRED_SOURCE) == source
-            and self.config_entry.data.get(CONF_BONDED_SOURCES) == bonded
+            entry.data.get(CONF_PREFERRED_SOURCE) == source
+            and entry.data.get(CONF_BONDED_SOURCES) == bonded
         ):
             return
         # async_update_entry fires the entry's update listener; ours only
         # re-applies the poll interval from options, so no side effects here.
         self.hass.config_entries.async_update_entry(
-            self.config_entry,
+            entry,
             data={
-                **self.config_entry.data,
+                **entry.data,
                 CONF_PREFERRED_SOURCE: source,
                 CONF_BONDED_SOURCES: bonded,
             },
@@ -1069,32 +1092,18 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         Called as soon as controller.start() returns CONNECTED, which is the
         moment the bond is proven — everything after it (the GATT poll) can fail
         for reasons that say nothing about pairing.
-
-        connected_source is None on the library's fallback single-device path
-        (it only ever sets it in the candidates loop), and that path is exactly
-        the one that lets HA's scorer pick a proxy and pair with it
-        unconditionally: recording it would launder an auto-pairing into a
-        policy-approved bond. The None guard is deliberate, keep it.
         """
-        source = self.controller.connection.connected_source
-        if (
-            not source
-            or self.config_entry is None
-            or CONF_MAC not in self.config_entry.data
-        ):
+        source = self._async_connected_source()
+        if source is None:
             return
-        # This path just authenticated, so whatever it was accused of before is
-        # over: a streak has to be CONSECUTIVE to mean anything.
-        self._pairing.auth_failures.pop(source, None)
-        self._pairing.timeout_sources.pop(source, None)
-        self._pairing.timeout_corroborated.discard(source)
-        bonded = list(self.config_entry.data.get(CONF_BONDED_SOURCES, []))
+        self._async_acquit_path(source)
+        entry = self.config_entry
+        bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
         if source in bonded:
             return
         bonded.append(source)
         self.hass.config_entries.async_update_entry(
-            self.config_entry,
-            data={**self.config_entry.data, CONF_BONDED_SOURCES: bonded},
+            entry, data={**entry.data, CONF_BONDED_SOURCES: bonded}
         )
 
     @callback
@@ -1781,7 +1790,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         )
 
     def _proxy_names(self, sources: list[str | None]) -> str:
-        """Resolve proxy source MACs to human-readable scanner names."""
+        """Resolve source MACs to human-readable scanner names.
+
+        A local adapter usually has an address of its own since pymadoka-ng
+        0.3.11, so None means the backend named no path; the library renders
+        that case as "local adapter" in its own messages, and so does this.
+        """
         names = []
         for source in sources:
             if source is None:
