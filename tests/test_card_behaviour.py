@@ -67,3 +67,10 @@ def test_the_pending_target_is_dropped_once_the_entity_reports_it(results: dict)
 def test_the_dial_disables_its_bump_buttons_without_a_setpoint(results: dict) -> None:
     """Plus and minus go, power stays: it is how you leave fan mode."""
     assert results["bump_buttons_disabled_without_a_setpoint"] == [True, True, False]
+
+
+def test_the_graph_markers_are_absolute_hours(results: dict) -> None:
+    """Issue #100: no mental arithmetic, and no mixing with the absolute "now"."""
+    result = results["graph_times_are_absolute_hours"]
+    assert result["relative"] is False
+    assert all(":" in label for label in result["labels"]), result["labels"]
