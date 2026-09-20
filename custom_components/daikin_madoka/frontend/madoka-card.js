@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.1";
+const MADOKA_CARD_VERSION = "0.9.2";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -570,27 +570,34 @@ class MadokaCard extends HTMLElement {
     if (times) this._drawGraphTimes(times, t0, t1, tspan);
   }
 
+  _clockLabel(t) {
+    return new Date(t).toLocaleTimeString(
+      (this._hass && this._hass.language) || undefined,
+      { hour: "2-digit", minute: "2-digit" },
+    );
+  }
+
   _drawGraphTimes(el, t0, t1, tspan) {
     // Markers every three hours back from the newest point, and the time of
     // that point. Only those that actually fall inside the window the recorder
     // returned are drawn: asking for twelve hours does not mean twelve hours
-    // exist, and a `-12h` sitting at the left edge of four hours of history
+    // exist, and a marker sitting at the left edge of four hours of history
     // would be the same lie the axis used to tell. Opt-in: they add a row of
     // text under a card whose point is to look like a thermostat.
+    //
+    // Clock times, not offsets like "-3h" (asked for by @speynaud in the Aidoo
+    // issue): reading an offset means doing the arithmetic yourself, the row
+    // already ended with the absolute time of the last point, and Home
+    // Assistant's own history charts label their axis this way. Formatted in
+    // the user's locale, so a 12-hour locale gets 12-hour labels.
     if (!this._config.show_graph_times || !tspan) return;
     const marks = [];
     for (let h = 3; h <= 12; h += 3) {
       const t = t1 - h * 3600 * 1000;
       if (t < t0) break;
-      marks.unshift({ t, label: `-${h}h` });
+      marks.unshift({ t, label: this._clockLabel(t) });
     }
-    marks.push({
-      t: t1,
-      label: new Date(t1).toLocaleTimeString(
-        (this._hass && this._hass.language) || undefined,
-        { hour: "2-digit", minute: "2-digit" },
-      ),
-    });
+    marks.push({ t: t1, label: this._clockLabel(t1) });
     // 2..98 of the viewBox is the plotted area, and the SVG is stretched to the
     // full width, so a viewBox unit is one per cent of the element.
     el.innerHTML = marks.map(({ t, label }) => {

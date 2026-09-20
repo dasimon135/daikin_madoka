@@ -455,7 +455,8 @@ entity: climate.my_madoka
 # name: "Bedroom"        # override the title
 # reconnect: auto        # auto | always | never  (default: auto)
 # show_decimals: true    # ambient in tenths instead of whole degrees
-# show_graph_times: true # time markers under the sparkline
+# show_graph_times: true # clock times under the sparkline
+# tile_tap: popup        # popup | more-info  (tile layout, default: popup)
 ```
 
 **It works with any `climate` entity**, not only with a Madoka. The dial is
@@ -468,10 +469,9 @@ such user, driving a Daikin through an Airzone Aidoo.
 zero, so `23.9` stays `23.9` and a flat `25` stays `25`. Off by default,
 because whole degrees are what the physical screen shows.
 
-`show_graph_times` writes markers under the sparkline: the time of the newest
-reading, and `-3h`, `-6h`, `-9h`, `-12h` where those instants fall. Only the
-ones that exist are drawn, so four hours of recorded history never claims
-twelve.
+`show_graph_times` writes clock times under the sparkline: the newest reading
+and the three-hour marks before it, in your locale's format. Only the ones that
+exist are drawn, so four hours of recorded history never claims twelve.
 
 Three layouts: **full** (the dial with fan/brightness/graph), **compact**
 (dial + controls + modes only) and **tile** — an ultra-compact row (a

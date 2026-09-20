@@ -173,6 +173,21 @@ const scenarios = {
     return [card.shadowRoot.getElementById("plus").disabled, card.shadowRoot.getElementById("minus").disabled,
       card.shadowRoot.getElementById("power").disabled];
   },
+  // speynaud, issue #100: reading "-3h" means doing mental arithmetic, and the
+  // row already ended with an absolute time, so it mixed the two.
+  graph_times_are_absolute_hours() {
+    const hass = makeHass();
+    const card = makeCard({ show_graph_times: true }, hass);
+    const now = Date.UTC(2026, 8, 20, 14, 30) ;
+    card._histPoints = [
+      { t: now - 11 * 3600 * 1000, v: 20 },
+      { t: now - 5 * 3600 * 1000, v: 22 },
+      { t: now, v: 24 },
+    ];
+    card._drawGraph(16, 32);
+    const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
+    return { relative: /-\d+h/.test(html), labels: (html.match(/>([^<]+)</g) || []).map((m) => m.slice(1, -1)) };
+  },
   // Attribute values from any climate entity end up in innerHTML: they must be escaped.
   fan_mode_markup_is_escaped() {
     const hass = makeHass({ attrs: { fan_modes: ['<img src=x onerror=1>'], fan_mode: null } });
