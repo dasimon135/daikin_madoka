@@ -1025,8 +1025,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing.timeout_corroborated.discard(source)
 
     @callback
-    def _async_connected_source(self) -> str | None:
-        """The proxy that carried this session, when it can be charged to one.
+    def _async_charged_session(self) -> tuple[ConfigEntry, str] | None:
+        """The entry and the proxy this session can be charged to, or None.
 
         connected_source is None on the library's fallback single-device path
         (it only ever sets it in the candidates loop), and that path is exactly
@@ -1038,13 +1038,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         bookkeeping can be right for all of them.
         """
         source = self.controller.connection.connected_source
-        if (
-            not source
-            or self.config_entry is None
-            or CONF_MAC not in self.config_entry.data
-        ):
+        entry = self.config_entry
+        if not source or entry is None or CONF_MAC not in entry.data:
             return None
-        return source
+        return entry, source
 
     @callback
     def _async_persist_preferred_source(self) -> None:
@@ -1061,11 +1058,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         already-open link — that one never goes through the connect path, so
         _async_record_bonded_source never sees it.
         """
-        source = self._async_connected_source()
-        if source is None:
+        charged = self._async_charged_session()
+        if charged is None:
             return
+        entry, source = charged
         self._async_acquit_path(source)
-        entry = self.config_entry
         bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
         if source not in bonded:
             bonded.append(source)
@@ -1093,11 +1090,11 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         moment the bond is proven — everything after it (the GATT poll) can fail
         for reasons that say nothing about pairing.
         """
-        source = self._async_connected_source()
-        if source is None:
+        charged = self._async_charged_session()
+        if charged is None:
             return
+        entry, source = charged
         self._async_acquit_path(source)
-        entry = self.config_entry
         bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
         if source in bonded:
             return
