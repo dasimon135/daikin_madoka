@@ -53,6 +53,7 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
+from .util import device_for_address
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1918,7 +1919,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if not self.controller.info:
             return
         registry = dr.async_get(self.hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, self.address)})
+        device = device_for_address(
+            registry, self.config_entry, DOMAIN, self.address
+        )
         if device is None:
             return
         info = self.device_info

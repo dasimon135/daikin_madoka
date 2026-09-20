@@ -38,7 +38,7 @@ from .coordinator import (
     async_restore_pairing_state,
 )
 from .frontend import async_register_card
-from .util import build_candidates, entry_macs, normalize_mac
+from .util import build_candidates, entry_macs, normalize_mac, registry_devices
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -62,7 +62,7 @@ def _async_purge_orphan_devices(hass: HomeAssistant) -> None:
     can be reassessed for removal once field reports confirm that.
     """
     dev_reg = dr.async_get(hass)
-    for device in list(dev_reg.devices.values()):
+    for device in registry_devices(dev_reg):
         # Identifier tuples are not fixed at two elements — rfxtrx registers
         # four — so match on the domain slot instead of destructuring, which
         # raised ValueError and aborted setup for anyone running such an

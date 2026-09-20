@@ -1,6 +1,7 @@
 """Shared helpers for Daikin Madoka."""
 
 import re
+from typing import Any
 
 from bleak.backends.device import BLEDevice
 
@@ -40,6 +41,34 @@ def entry_macs(entry: ConfigEntry) -> list[str]:
     else:
         raw_macs = list(entry.data.get(CONF_DEVICES, []))
     return [normalize_mac(mac) or mac for mac in raw_macs]
+
+
+def registry_devices(dev_reg: Any) -> list[Any]:
+    """Every entry of the device registry, on old and new cores alike.
+
+    Since Home Assistant 2026.9 iterating `registry.devices` yields the entries
+    and any mapping access (`.values()` included) is deprecated, for removal in
+    2027.9. Older cores expose a plain mapping, whose iteration yields ids.
+    """
+    devices = list(dev_reg.devices)
+    if devices and isinstance(devices[0], str):
+        return list(dev_reg.devices.values())
+    return devices
+
+
+def device_for_address(
+    registry: Any, entry: ConfigEntry | None, domain: str, address: str
+) -> Any:
+    """The registry device of one thermostat.
+
+    `async_get_device(identifiers=...)` is deprecated since 2026.9 (removal in
+    2027.8) because identifiers are no longer unique across config entries; the
+    entry-scoped replacement does not exist before that release.
+    """
+    lookup = getattr(registry, "async_get_device_by_identifier", None)
+    if lookup is not None and entry is not None:
+        return lookup((domain, address), entry.entry_id)
+    return registry.async_get_device(identifiers={(domain, address)})
 
 
 def _path_source(scanner_device: "bluetooth.BluetoothScannerDevice") -> str | None:
