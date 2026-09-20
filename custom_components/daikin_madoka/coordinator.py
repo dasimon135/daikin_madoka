@@ -261,6 +261,15 @@ class _PollSkipped(Exception):
     """
 
 
+class _NotAdvertising(UpdateFailed):
+    """The poll failed fast because HA's tracker does not see the device.
+
+    A real failure (it counts, and it earns the unreachable repair), but one
+    that touched no radio: no proxy slot taken, no SMP initiated. It must not
+    engage the cadence brake, whose whole justification is that cost.
+    """
+
+
 def _describe(err: BaseException) -> str:
     """Render an exception for a user-visible message.
 
@@ -364,6 +373,13 @@ class MadokaPairingState:
     # and the device_unreachable repair could never fire — two dead thermostats
     # produced zero notifications (field incident 2026-07-26).
     fail_count: int = 0
+    # The part of fail_count that actually touched a radio: failed polls that
+    # were not a fast "not advertising". This, not fail_count, is what engages
+    # the cadence brake — fail_count also fills while the device is simply
+    # absent, and reading it let ONE stumble after a power cut brake a device
+    # that had just come back. Not persisted: the brake it engages is (backoff),
+    # and a fresh process has touched no radio yet.
+    radio_fail_count: int = 0
     # Consecutive polls that never reached the device because the shared connect
     # lock stayed busy. Deliberately NOT persisted: it is a statement about
     # contention between our own coordinators right now, worthless after a
@@ -675,14 +691,28 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # being starved by the connect lock.
             self._pairing.skipped_polls = 0
             self._pairing.fail_count += 1
+            touched_radio = not isinstance(err, _NotAdvertising)
+            if touched_radio:
+                self._pairing.radio_fail_count += 1
             if self._pairing.fail_count >= UNREACHABLE_THRESHOLD:
+                # The repair is for the user, so every kind of failure counts.
                 self._raise_unreachable_issue()
-                # Verdict-INDEPENDENT brake. Whether or not pymadoka ever
-                # concluded anything (it needs a full candidate round to
-                # complete, and for a whole release it never got one), a device
-                # that has failed five polls in a row must stop being retried
-                # every 60s: each attempt takes a proxy connection slot and
-                # re-initiates SMP against a thermostat that answers none of it.
+            # Verdict-INDEPENDENT brake. Whether or not pymadoka ever concluded
+            # anything (it needs a full candidate round to complete, and for a
+            # whole release it never got one), a device that has failed five
+            # connects in a row must stop being retried every 60s: each attempt
+            # takes a proxy connection slot and re-initiates SMP against a
+            # thermostat that answers none of it.
+            #
+            # ...which is exactly what a fast "not advertising" failure does NOT
+            # do, so only failures that touched a radio count here. Counting the
+            # others made a thermostat back from a power cut wait up to a
+            # quarter of an hour for an attempt that costs nothing. A brake
+            # already on stays on: absence is not a recovery.
+            if (
+                touched_radio
+                and self._pairing.radio_fail_count >= UNREACHABLE_THRESHOLD
+            ):
                 self._async_slow_to_backoff_cadence(BACKOFF_UNREACHABLE)
             # Stale-value grace: a short BLE micro-drop should not punch holes
             # in graphs or flip entities unavailable, so the first STALE_GRACE
@@ -717,6 +747,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             raise
         self._pairing.skipped_polls = 0
         self._pairing.fail_count = 0
+        self._pairing.radio_fail_count = 0
         # The device answered over an authenticated link. Stamped here rather
         # than at connect time on purpose: this is the strongest statement
         # available — the bond held AND the GATT session worked — and it also
@@ -747,7 +778,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             if not bluetooth.async_address_present(
                 self.hass, self.address, connectable=True
             ):
-                raise UpdateFailed(f"Device {self.address} is not advertising")
+                raise _NotAdvertising(f"Device {self.address} is not advertising")
             if self._pairing.suspended and not self._pairing.pairing_window:
                 # Deliberately do NOT touch the device: a concluded pairing
                 # refusal never heals on its own, and re-initiating SMP would
@@ -761,6 +792,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                     f"{self.address} needs pairing; automatic reconnects are "
                     "suspended until the reconnect button is pressed"
                 ) from self._pairing.last_error
+            # Whether THIS attempt is the one the window was opened for. Read
+            # before connecting: Reconnect acts outside the refresh lock, so the
+            # press can land while an automatic attempt is still failing.
+            spends_window = self._pairing.pairing_window
             try:
                 await self._async_connect()
             except UpdateFailed:
@@ -770,7 +805,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 # polls, keep the human-sized SMP budget on them, and keep the
                 # dead-bond quarantine disarmed — the exact combination that
                 # turns one failed Reconnect into a pairing storm.
-                self._async_close_pairing_window()
+                #
+                # ...but only the attempt that ran under the window spends it.
+                # One that started before the press never had the unrestricted
+                # candidates or the human-sized budget, so closing on its way
+                # out handed the user's own attempt the automatic profile. The
+                # window's TTL still bounds it if that attempt never comes.
+                if spends_window:
+                    self._async_close_pairing_window()
                 raise
 
         energy = self.controller.energy_consumption
@@ -1643,6 +1685,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if not self._pairing.backoff and not self._pairing.fail_count:
             return
         self._pairing.fail_count = 0
+        self._pairing.radio_fail_count = 0
         self._async_restore_normal_interval()
         self._async_persist_pairing_state()
 
