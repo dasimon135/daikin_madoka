@@ -455,6 +455,15 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         # be carried over. The validation above just
                         # authenticated, so that path is the new device's first
                         # known bond.
+                        #
+                        # entry.data is rebuilt below, which drops the OLD MAC's
+                        # persisted verdict with it, but the live copy lives in
+                        # hass.data keyed by MAC and would outlive this entry:
+                        # re-adding that thermostat later would inherit a
+                        # quarantine it never earned.
+                        async_forget_pairing_state(
+                            self.hass, entry, current_mac or entry.data[CONF_MAC]
+                        )
                         if source is not None:
                             data[CONF_PREFERRED_SOURCE] = source
                             data[CONF_BONDED_SOURCES] = [source]
