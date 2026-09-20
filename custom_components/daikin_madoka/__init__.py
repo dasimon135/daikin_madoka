@@ -325,9 +325,18 @@ async def _async_update_listener(
     """
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     energy_enabled = entry.options.get(CONF_ENABLE_ENERGY, False)
-    for coordinator in entry.runtime_data.values():
+    coordinators = entry.runtime_data.values()
+    if any(
+        coordinator.energy_enabled != energy_enabled for coordinator in coordinators
+    ):
+        # The energy option decides which entities exist, and entities are only
+        # created at setup: this is the one change that needs a reload. It costs
+        # a reconnect, which is acceptable for a deliberate, rare action; the
+        # verdict writes that fire this listener all day never get here.
+        hass.config_entries.async_schedule_reload(entry.entry_id)
+        return
+    for coordinator in coordinators:
         coordinator.async_apply_scan_interval(scan_interval)
-        coordinator.async_apply_energy_enabled(energy_enabled)
 
 
 async def async_unload_entry(
