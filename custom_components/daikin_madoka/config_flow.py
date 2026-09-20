@@ -146,8 +146,8 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         }
         # Prime the sticky proxy with the path that just validated, so the
         # very first setup reconnects through the bonded proxy instead of
-        # whichever proxy wins on RSSI. None means the validation went
-        # through the local adapter — nothing useful to store.
+        # whichever proxy wins on RSSI. None means the backend named no path
+        # (typically the local adapter) — nothing useful to store.
         if preferred_source is not None:
             data[CONF_PREFERRED_SOURCE] = preferred_source
         return self.async_create_entry(title=title, data=data)

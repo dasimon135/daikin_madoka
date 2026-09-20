@@ -246,8 +246,10 @@ class MadokaConnectionSourceSensor(MadokaLinkSensor):
         connection = self.controller.connection
         if connection.connection_status is ConnectionStatus.CONNECTED:
             source = connection.connected_source
-            # None means the local adapter (or a backend that does not
-            # report a source).
+            # Since pymadoka-ng 0.3.11 a local adapter usually reports its own
+            # address here, like a proxy, and the scanner name resolves it. None
+            # is what is left when the backend named no path at all, which under
+            # the HA wrapper is the local adapter.
             return self._display_name(source) if source else "Local adapter"
         entry = self.coordinator.config_entry
         preferred = entry.data.get(CONF_PREFERRED_SOURCE) if entry else None
