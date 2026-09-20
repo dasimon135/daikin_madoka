@@ -723,13 +723,11 @@ class MadokaCard extends HTMLElement {
     </style>
     <div class="scrim"><div class="wrap"><button class="x" aria-label="Close">✕</button></div></div>`;
     const card = document.createElement("madoka-card");
-    card.setConfig({
-      entity: this._config.entity,
-      name: this._config.name,
-      layout: "full",
-      reconnect: this._config.reconnect,
-      reconnect_entity: this._config.reconnect_entity,
-    });
+    // The whole configuration, with only the layout overridden: this popup is
+    // meant to be the same card at full size. Listing the keys to carry over
+    // meant every option added later was silently dropped here, which is what
+    // happened to show_decimals, show_graph_times and the entity overrides.
+    card.setConfig({ ...this._config, layout: "full" });
     card.hass = this._hass;
     sr.querySelector(".wrap").appendChild(card);
     const close = () => this._closeCardDialog();

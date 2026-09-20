@@ -85,3 +85,14 @@ def test_the_graph_markers_sit_on_round_hours(results: dict) -> None:
     assert len(result["withMinutes"]) == 1, result["labels"]
     assert result["withMinutes"][0] == result["labels"][-1]
     assert len(result["labels"]) >= 3, result["labels"]
+
+
+def test_the_popup_keeps_the_options_set_on_the_tile(results: dict) -> None:
+    """Everything but the layout, which is the whole point of the popup."""
+    assert results["popup_keeps_the_card_options"] == {
+        "layout": "full",
+        "show_graph_times": True,
+        "show_decimals": True,
+        "outdoor_entity": "sensor.outside",
+        "name": "Salon",
+    }

@@ -14,6 +14,17 @@ alone, and only the newest reading keeps its minutes: `11 h 14 h 17 h 20:37`.
 A whole hour falling within twenty-five minutes of the newest reading is
 dropped rather than printed on top of it.
 
+### The tile's popup keeps the options you set on the tile
+
+Tapping a tile opens the full card, and that card was built from five named
+options. Everything else you had configured was dropped on the way: the
+decimals, the graph times, and the entities you had pointed at by hand. It now
+opens with your own configuration, the layout aside.
+
+(Worth knowing while we are here: `show_graph_times` only draws anything in the
+`full` and `compact` layouts, since the tile has no graph. On a tile it now
+reaches the graph through the popup.)
+
 ## v3.13.4 - September 2026
 
 ### The sparkline's markers are clock times
