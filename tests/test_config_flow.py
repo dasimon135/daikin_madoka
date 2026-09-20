@@ -523,8 +523,9 @@ def _stub_controller(status: object, source: str | None = None) -> MagicMock:
 async def _validate_with(controller: MagicMock) -> tuple[str | None, str | None]:
     """Run _async_validate_device against a stubbed Controller class."""
     handler = FlowHandler()
-    # The stub never touches hass (candidates_callback is never invoked).
-    handler.hass = None
+    # The stub never touches hass beyond hass.data, where the connect lock
+    # shared with the coordinators lives.
+    handler.hass = SimpleNamespace(data={})
     with patch("pymadoka.Controller", return_value=controller):
         return await handler._async_validate_device(MAC)
 
@@ -600,7 +601,7 @@ async def test_validator_pairs_with_the_human_budget() -> None:
 
     controller = _stub_controller(ConnectionStatus.CONNECTED, source=PROXY_SOURCE)
     handler = FlowHandler()
-    handler.hass = None
+    handler.hass = SimpleNamespace(data={})
 
     with patch("pymadoka.Controller", return_value=controller) as controller_cls:
         await handler._async_validate_device(MAC)
@@ -610,3 +611,60 @@ async def test_validator_pairs_with_the_human_budget() -> None:
     # outer connect budget, or pymadoka's own timeout never fires, no pairing
     # round is ever classified, and no verdict can form (see const.py).
     assert PAIRING_WINDOW_TIMEOUT < VALIDATE_TIMEOUT
+
+
+async def test_validation_holds_the_shared_connect_lock() -> None:
+    """One BLE connect at a time, the config flow's included.
+
+    The BRC1H accepts a single central and the coordinators serialize their
+    connects for that reason. A validation that ignored the lock could collide
+    with a coordinator poll at the one moment a human is standing at the
+    thermostat.
+    """
+    from pymadoka import ConnectionStatus
+
+    from custom_components.daikin_madoka.coordinator import _async_connect_lock
+
+    handler = FlowHandler()
+    handler.hass = SimpleNamespace(data={})
+    lock = _async_connect_lock(handler.hass)
+    held_during_start: list[bool] = []
+    controller = _stub_controller(ConnectionStatus.CONNECTED, PROXY_SOURCE)
+
+    async def _start() -> None:
+        held_during_start.append(lock.locked())
+
+    controller.start.side_effect = _start
+    with patch("pymadoka.Controller", return_value=controller):
+        result = await handler._async_validate_device(MAC)
+
+    assert result == (None, PROXY_SOURCE)
+    assert held_during_start == [True]
+    assert lock.locked() is False
+
+
+async def test_validation_gives_up_when_the_lock_stays_busy() -> None:
+    """A stuck device elsewhere must not hang the flow: report, let the user retry."""
+    from pymadoka import ConnectionStatus
+
+    from custom_components.daikin_madoka.coordinator import _async_connect_lock
+
+    handler = FlowHandler()
+    handler.hass = SimpleNamespace(data={})
+    lock = _async_connect_lock(handler.hass)
+    await lock.acquire()
+    controller = _stub_controller(ConnectionStatus.CONNECTED, PROXY_SOURCE)
+
+    try:
+        with (
+            patch("pymadoka.Controller", return_value=controller),
+            patch(
+                "custom_components.daikin_madoka.config_flow.VALIDATE_TIMEOUT", 0.05
+            ),
+        ):
+            result = await handler._async_validate_device(MAC)
+    finally:
+        lock.release()
+
+    assert result == ("cannot_connect", None)
+    controller.start.assert_not_awaited()

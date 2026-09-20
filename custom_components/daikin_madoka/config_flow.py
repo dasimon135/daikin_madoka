@@ -45,7 +45,7 @@ from .const import (
     RSSI_DISCOVERY_FLOOR,
     VALIDATE_TIMEOUT,
 )
-from .coordinator import async_forget_pairing_state
+from .coordinator import _async_connect_lock, async_forget_pairing_state
 from .util import normalize_mac
 
 if TYPE_CHECKING:
@@ -208,6 +208,17 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             candidates_callback=_candidates,
             pair_timeout=PAIRING_WINDOW_TIMEOUT,
         )
+        # One BLE connect at a time across the whole integration, this one
+        # included: the BRC1H accepts a single central, and a coordinator poll
+        # colliding with the validation would do so at the one moment a human is
+        # standing at the thermostat. The wait is bounded like every other wait
+        # on this lock — a device stuck elsewhere must not hang the flow.
+        lock = _async_connect_lock(self.hass)
+        try:
+            async with asyncio.timeout(VALIDATE_TIMEOUT):
+                await lock.acquire()
+        except TimeoutError:
+            return "cannot_connect", None
         try:
             await asyncio.wait_for(controller.start(), timeout=VALIDATE_TIMEOUT)
             # start() can return NORMALLY with status ABORTED: its connect
@@ -226,6 +237,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             # disconnect cannot hang the config flow.
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(controller.stop(), timeout=10)
+            lock.release()
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
