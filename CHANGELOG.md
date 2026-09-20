@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.13.5 - September 2026
+
+### The sparkline's markers sit on whole hours
+
+Reported by **@speynaud** ([#100](https://github.com/dasimon135/daikin_madoka/issues/100))
+on v3.13.4: the markers were three hours apart counting back from the newest
+reading, so they all carried the same minutes as it did, and the row read
+`11:37 14:37 17:37 20:37`. Those minutes said nothing.
+
+The marks now sit on whole hours, which lets them be labelled by the hour
+alone, and only the newest reading keeps its minutes: `11 h 14 h 17 h 20:37`.
+A whole hour falling within twenty-five minutes of the newest reading is
+dropped rather than printed on top of it.
+
+### The tile's popup keeps the options you set on the tile
+
+Tapping a tile opens the full card, and that card was built from five named
+options. Everything else you had configured was dropped on the way: the
+decimals, the graph times, and the entities you had pointed at by hand. It now
+opens with your own configuration, the layout aside.
+
+(Worth knowing while we are here: `show_graph_times` only draws anything in the
+`full` and `compact` layouts, since the tile has no graph. On a tile it now
+reaches the graph through the popup.)
+
 ## v3.13.4 - September 2026
 
 ### The sparkline's markers are clock times

@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.2";
+const MADOKA_CARD_VERSION = "0.9.3";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -38,6 +38,8 @@ const CARD_STRINGS = {
 // How long the reconnect button stays in its "working" state before it can be
 // pressed again — a BLE reconnect through a proxy takes a few seconds.
 const RECONNECT_BUSY_MS = 30000;
+// A whole-hour marker closer than this to the newest reading would overprint it.
+const HOUR_MARK_MIN_GAP_MS = 25 * 60 * 1000;
 const FAN_SHORT = {
   en: { auto: "Auto", low: "Low", medium: "Mid", high: "High" },
   fr: { auto: "Auto", low: "Bas", medium: "Moy", high: "Haut" },
@@ -570,10 +572,10 @@ class MadokaCard extends HTMLElement {
     if (times) this._drawGraphTimes(times, t0, t1, tspan);
   }
 
-  _clockLabel(t) {
+  _clockLabel(t, withMinutes) {
     return new Date(t).toLocaleTimeString(
       (this._hass && this._hass.language) || undefined,
-      { hour: "2-digit", minute: "2-digit" },
+      withMinutes ? { hour: "2-digit", minute: "2-digit" } : { hour: "numeric" },
     );
   }
 
@@ -592,12 +594,20 @@ class MadokaCard extends HTMLElement {
     // the user's locale, so a 12-hour locale gets 12-hour labels.
     if (!this._config.show_graph_times || !tspan) return;
     const marks = [];
-    for (let h = 3; h <= 12; h += 3) {
-      const t = t1 - h * 3600 * 1000;
-      if (t < t0) break;
-      marks.unshift({ t, label: this._clockLabel(t) });
+    // Walk back in three-hour steps from the whole hour at or before the newest
+    // reading. On round hours the hour alone says everything, which is what
+    // makes the row readable: relative marks carried the same minutes as "now"
+    // over and over (17:37, 14:37, 11:37), and those minutes meant nothing.
+    const hour = new Date(t1);
+    hour.setMinutes(0, 0, 0);
+    for (let t = hour.getTime(); t >= t0; t -= 3 * 3600 * 1000) {
+      // The newest reading brings its own label just below; a whole hour a few
+      // minutes behind it would print on top of it.
+      if (t1 - t < HOUR_MARK_MIN_GAP_MS) continue;
+      marks.unshift({ t, label: this._clockLabel(t, false) });
     }
-    marks.push({ t: t1, label: this._clockLabel(t1) });
+    // Only this one needs its minutes: it is the one instant the graph ends on.
+    marks.push({ t: t1, label: this._clockLabel(t1, true) });
     // 2..98 of the viewBox is the plotted area, and the SVG is stretched to the
     // full width, so a viewBox unit is one per cent of the element.
     el.innerHTML = marks.map(({ t, label }) => {
@@ -713,13 +723,11 @@ class MadokaCard extends HTMLElement {
     </style>
     <div class="scrim"><div class="wrap"><button class="x" aria-label="Close">✕</button></div></div>`;
     const card = document.createElement("madoka-card");
-    card.setConfig({
-      entity: this._config.entity,
-      name: this._config.name,
-      layout: "full",
-      reconnect: this._config.reconnect,
-      reconnect_entity: this._config.reconnect_entity,
-    });
+    // The whole configuration, with only the layout overridden: this popup is
+    // meant to be the same card at full size. Listing the keys to carry over
+    // meant every option added later was silently dropped here, which is what
+    // happened to show_decimals, show_graph_times and the entity overrides.
+    card.setConfig({ ...this._config, layout: "full" });
     card.hass = this._hass;
     sr.querySelector(".wrap").appendChild(card);
     const close = () => this._closeCardDialog();

@@ -40,7 +40,7 @@ function makeShadowRoot(host) {
     // Like a browser: an id the current template does not have is null.
     getElementById(id) { return byId.get(id) || null; },
     querySelectorAll() { return []; },
-    querySelector() { return null; },
+    querySelector() { return makeElement(); },
   };
 }
 
@@ -52,7 +52,21 @@ global.HTMLElement = class {
 };
 global.customElements = { define: (n, c) => registry.set(n, c), get: (n) => registry.get(n) };
 global.window = { customCards: [], addEventListener() {}, removeEventListener() {} };
-global.document = { createElement: () => makeElement(), body: makeElement() };
+global.document = {
+  // The dialog host gets a shadow root of its own, like a real element, and a
+  // registered tag name builds its class, like customElements does.
+  createElement: (tag) => {
+    const Registered = registry.get(String(tag).toLowerCase());
+    if (Registered) return new Registered();
+    const el = makeElement();
+    el.attachShadow = () => {
+      el.shadowRoot = makeShadowRoot(el);
+      return el.shadowRoot;
+    };
+    return el;
+  },
+  body: makeElement(),
+};
 global.CustomEvent = class { constructor(t, i) { this.type = t; Object.assign(this, i); } };
 const realSetTimeout = setTimeout;
 const timers = [];
@@ -187,6 +201,51 @@ const scenarios = {
     card._drawGraph(16, 32);
     const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
     return { relative: /-\d+h/.test(html), labels: (html.match(/>([^<]+)</g) || []).map((m) => m.slice(1, -1)) };
+  },
+  // @speynaud on the Aidoo issue: the hour marks repeated the same minutes as
+  // "now" four times over. Round hours can be labelled by the hour alone, and
+  // only the newest reading needs its minutes.
+  graph_times_are_round_hours() {
+    const hass = makeHass();
+    hass.language = "fr";
+    const card = makeCard({ show_graph_times: true }, hass);
+    const now = new Date("2026-09-20T18:37:00Z").getTime();
+    card._histPoints = [
+      { t: now - 11 * 3600 * 1000, v: 20 },
+      { t: now - 5 * 3600 * 1000, v: 22 },
+      { t: now, v: 24 },
+    ];
+    card._drawGraph(16, 32);
+    const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
+    const labels = (html.match(/>([^<]+)</g) || []).map((m) => m.slice(1, -1));
+    return {
+      labels,
+      // Only the last one carries minutes, and they are the newest point's.
+      withMinutes: labels.filter((l) => /[0-9][:h ][0-9][0-9]/.test(l)),
+    };
+  },
+  // The popup is "this card, full size": dropping the options the user set on
+  // the tile made show_graph_times, show_decimals and the entity overrides
+  // vanish the moment it opened.
+  popup_keeps_the_card_options() {
+    const hass = makeHass();
+    const card = makeCard({
+      layout: "tile",
+      show_graph_times: true,
+      show_decimals: true,
+      outdoor_entity: "sensor.outside",
+      name: "Salon",
+    }, hass);
+    card._openCardDialog();
+    const cfg = card._dialogCard._config;
+    card._closeCardDialog();
+    return {
+      layout: cfg.layout,
+      show_graph_times: cfg.show_graph_times,
+      show_decimals: cfg.show_decimals,
+      outdoor_entity: cfg.outdoor_entity,
+      name: cfg.name,
+    };
   },
   // Attribute values from any climate entity end up in innerHTML: they must be escaped.
   fan_mode_markup_is_escaped() {
