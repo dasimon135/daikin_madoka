@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.13.4 - September 2026
+
+### The sparkline's markers are clock times
+
+Asked for by **@speynaud** ([#100](https://github.com/dasimon135/daikin_madoka/issues/100)):
+`show_graph_times` labelled its markers `-3h`, `-6h`, `-9h`, and then ended the
+row with the actual time of the newest reading. So it mixed two ways of reading
+the same axis, and the offsets made you do the arithmetic yourself. They are all
+clock times now, in your locale's format. Nothing else about the row changes: it
+is still off by default, and still only labels hours the recorder really
+returned.
+
+### Smaller things
+
+- The config flow takes the same one-connect-at-a-time lock the thermostats use
+  for their own reconnects. It could previously connect while a poll was in
+  flight, which the BRC1H does not allow, at the one moment somebody is standing
+  at it.
+- Changing a thermostat's Bluetooth address in the options now forgets what the
+  integration had concluded about the old one. That verdict outlived the entry,
+  so putting the old thermostat back (without restarting Home Assistant) could
+  start it off quarantined.
+- Home Assistant 2026.9 deprecated two device-registry calls this integration
+  made on every start, for removal in 2027.8 and 2027.9. Both warnings are gone,
+  and the older cores this integration still supports keep working.
+- `tile_tap` is documented in the README; it was shipped without.
+
 ## v3.13.3 - September 2026
 
 Three changes of behaviour that came out of a full review of the integration.
