@@ -471,9 +471,10 @@ such user, driving a Daikin through an Airzone Aidoo.
 zero, so `23.9` stays `23.9` and a flat `25` stays `25`. Off by default,
 because whole degrees are what the physical screen shows.
 
-`show_graph_times` writes clock times under the sparkline: the newest reading
-and the three-hour marks before it, in your locale's format. Only the ones that
-exist are drawn, so four hours of recorded history never claims twelve.
+`show_graph_times` writes clock times under the sparkline: whole hours every
+three hours, plus the newest reading with its minutes, in your locale's format.
+Only the marks that exist are drawn, so four hours of recorded history never
+claims twelve.
 
 Three layouts: **full** (the dial with fan/brightness/graph), **compact**
 (dial + controls + modes only) and **tile** — an ultra-compact row (a

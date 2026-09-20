@@ -70,7 +70,18 @@ def test_the_dial_disables_its_bump_buttons_without_a_setpoint(results: dict) ->
 
 
 def test_the_graph_markers_are_absolute_hours(results: dict) -> None:
-    """Issue #100: no mental arithmetic, and no mixing with the absolute "now"."""
+    """No offsets to work out in your head; every label names a clock time.
+
+    Their exact shape is the next test's business.
+    """
     result = results["graph_times_are_absolute_hours"]
     assert result["relative"] is False
-    assert all(":" in label for label in result["labels"]), result["labels"]
+    assert result["labels"], result
+
+
+def test_the_graph_markers_sit_on_round_hours(results: dict) -> None:
+    """Only the newest reading carries minutes; the rest are whole hours."""
+    result = results["graph_times_are_round_hours"]
+    assert len(result["withMinutes"]) == 1, result["labels"]
+    assert result["withMinutes"][0] == result["labels"][-1]
+    assert len(result["labels"]) >= 3, result["labels"]

@@ -188,6 +188,28 @@ const scenarios = {
     const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
     return { relative: /-\d+h/.test(html), labels: (html.match(/>([^<]+)</g) || []).map((m) => m.slice(1, -1)) };
   },
+  // @speynaud on the Aidoo issue: the hour marks repeated the same minutes as
+  // "now" four times over. Round hours can be labelled by the hour alone, and
+  // only the newest reading needs its minutes.
+  graph_times_are_round_hours() {
+    const hass = makeHass();
+    hass.language = "fr";
+    const card = makeCard({ show_graph_times: true }, hass);
+    const now = new Date("2026-09-20T18:37:00Z").getTime();
+    card._histPoints = [
+      { t: now - 11 * 3600 * 1000, v: 20 },
+      { t: now - 5 * 3600 * 1000, v: 22 },
+      { t: now, v: 24 },
+    ];
+    card._drawGraph(16, 32);
+    const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
+    const labels = (html.match(/>([^<]+)</g) || []).map((m) => m.slice(1, -1));
+    return {
+      labels,
+      // Only the last one carries minutes, and they are the newest point's.
+      withMinutes: labels.filter((l) => /[0-9][:h ][0-9][0-9]/.test(l)),
+    };
+  },
   // Attribute values from any climate entity end up in innerHTML: they must be escaped.
   fan_mode_markup_is_escaped() {
     const hass = makeHass({ attrs: { fan_modes: ['<img src=x onerror=1>'], fan_mode: null } });
