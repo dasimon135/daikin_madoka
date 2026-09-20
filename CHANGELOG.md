@@ -1,5 +1,48 @@
 # Changelog
 
+## v3.13.3 - September 2026
+
+Three changes of behaviour that came out of a full review of the integration.
+
+### A thermostat that was simply absent is no longer put on the slow cadence
+
+After five failed polls in a row the integration retries only every fifteen
+minutes. That brake exists because each connect attempt takes a Bluetooth proxy
+slot and starts a pairing exchange with a thermostat that answers none of it.
+But a poll that fails because the thermostat is not advertising at all costs
+nothing: it never touches a radio. Those polls filled the same counter, so a
+thermostat that lost power for six minutes came back to a quarter of an hour of
+waiting, and with the counter already full, a single failed connect on its
+return was enough to brake it on the spot.
+
+Only failures that actually reached a radio count towards the brake now. The
+"unreachable" repair still appears after five failed polls of any kind, absent
+thermostat included, and a brake earned by real failures is not lifted by the
+thermostat going quiet.
+
+### Reconnect keeps its pairing window when a poll was already running
+
+Pressing Reconnect opens a short window in which unpaired proxies may be used
+and the pairing gets a human-sized delay. When the press landed while an
+automatic attempt was still failing, that attempt closed the window on its way
+out, and the attempt you had asked for ran like any automatic one. Only the
+attempt that started under the window closes it now.
+
+### The energy sensors exist only while the energy option is on
+
+The six energy sensors were created whether or not *Read energy consumption*
+was on, so every install that never enabled it carried six entities per
+thermostat stuck at `unknown`. They are now created with the option and removed
+without it, **so on this update they disappear if the option is off**. Turning
+the option on or off reloads the integration, and the thermostat reconnects
+within a few minutes.
+
+Checked on the maintainer's four BRC1H behind ESPHome proxies: after a restart
+all four came back by themselves within four minutes, the 24 idle energy
+entities were gone, and Reconnect on a healthy thermostat brought it back in
+five seconds. The absent-thermostat case needs a thermostat without power to
+observe; it is covered by tests, not by this check.
+
 ## v3.13.2 - September 2026
 
 ### The card keeps up with your fingers
