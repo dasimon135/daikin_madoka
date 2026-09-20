@@ -150,7 +150,9 @@ The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_c
 # and bluetooth_proxy reserves all 3 (connection_slots), so a responder below
 # finds no slot: ESPHome only WARNS at compile time ("BLE components require 4
 # connection slot(s) but only 3 configured"), the ble_client fails at boot, and
-# its trigger never runs. Count 3 for the proxy plus 1 per responder.
+# its trigger never runs. Count 3 for the proxy plus 1 per responder, and
+# RE-COUNT every time you add a thermostat to this proxy: a number that was
+# right for one responder is wrong for two, and the build still succeeds.
 esp32_ble:
   io_capability: display_yes_no
   max_connections: 4   # 3 proxy slots + 1 responder
