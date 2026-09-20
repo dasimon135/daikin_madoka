@@ -350,6 +350,64 @@ async def test_reconfigure_mac_change_drops_the_old_devices_bonds(
     assert CONF_PAIRING_STATE not in entry.data
 
 
+async def test_reconfigure_mac_change_forgets_the_old_macs_live_verdict(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """The in-memory verdict is keyed by MAC and outlives the entry it came from.
+
+    Dropping it from entry.data is not enough: hass.data keeps the live copy for
+    the whole run, so re-adding that thermostat later inherits a quarantine it
+    never earned.
+    """
+    from custom_components.daikin_madoka.coordinator import (
+        PAIRING_STATE_KEY,
+        async_pairing_state,
+    )
+
+    entry = _add_configured_entry(hass)
+    async_pairing_state(hass, MAC).suspended = True
+    result = await entry.start_reconfigure_flow(hass)
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch(VALIDATE, return_value=(None, OTHER_SOURCE)),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MAC: OTHER_MAC, CONF_FRIENDLY_NAME: "Salon"},
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert MAC not in hass.data.get(PAIRING_STATE_KEY, {})
+
+
+async def test_reconfigure_rename_keeps_the_live_verdict(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """Same thermostat, so what the integration concluded about it still holds."""
+    from custom_components.daikin_madoka.coordinator import (
+        PAIRING_STATE_KEY,
+        async_pairing_state,
+    )
+
+    entry = _add_configured_entry(hass)
+    async_pairing_state(hass, MAC).suspended = True
+    result = await entry.start_reconfigure_flow(hass)
+
+    with patch(SETUP_ENTRY, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_MAC: MAC, CONF_FRIENDLY_NAME: "Salon renamed"},
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert hass.data[PAIRING_STATE_KEY][MAC].suspended is True
+
+
 async def test_reconfigure_mac_change_validates_and_resets_source(
     hass: HomeAssistant,
     enable_bluetooth: None,
