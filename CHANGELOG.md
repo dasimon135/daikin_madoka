@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.13.6 - September 2026
+
+### The last hour marker no longer prints over the newest reading
+
+Seen on **@speynaud**'s own card on v3.13.5 ([#100](https://github.com/dasimon135/daikin_madoka/issues/100)):
+with history ending at 19:29, the 19 h marker printed right on top of it, which
+read `19 h19:29`. The guard that was meant to drop a whole hour too close to the
+newest reading measured that closeness in minutes, and 29 minutes cleared it.
+But how close two labels sit on screen depends on how many hours the graph
+spans, so the guard now measures a share of the graph's width, sized for the
+narrowest case (the tile popup with a 12-hour clock).
+
 ## v3.13.5 - September 2026
 
 ### The sparkline's markers sit on whole hours

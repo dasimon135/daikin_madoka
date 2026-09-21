@@ -96,3 +96,13 @@ def test_the_popup_keeps_the_options_set_on_the_tile(results: dict) -> None:
         "outdoor_entity": "sensor.outside",
         "name": "Salon",
     }
+
+
+def test_no_hour_mark_prints_over_the_newest_reading(results: dict) -> None:
+    """The reporter's own 09:05 to 19:29 window: "19 h" collided with "19:29"."""
+    result = results["graph_marks_do_not_overprint_the_last_reading"]
+    assert "19 h" not in result["labels"], result
+    assert result["labels"][-1] == "19:29", result
+    assert "16 h" in result["labels"], result
+    # Every mark before the last stays clear of the right-aligned final label.
+    assert all(left <= 80 for left in result["lefts"][:-1]), result

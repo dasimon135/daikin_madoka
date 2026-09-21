@@ -247,6 +247,23 @@ const scenarios = {
       name: cfg.name,
     };
   },
+  // @speynaud's own card on v3.13.5: history from about 09:00 to 19:29, and the
+  // 19 h mark (29 minutes before the end) printed over "19:29". Both sit past
+  // 88% of the width, where labels are right-aligned, so they overlapped.
+  graph_marks_do_not_overprint_the_last_reading() {
+    const hass = makeHass();
+    hass.language = "fr";
+    const card = makeCard({ show_graph_times: true }, hass);
+    const end = new Date(2026, 8, 21, 19, 29).getTime();
+    const start = new Date(2026, 8, 21, 9, 5).getTime();
+    card._histPoints = [
+      { t: start, v: 23 }, { t: start + 4 * 3600 * 1000, v: 24 }, { t: end, v: 23 },
+    ];
+    card._drawGraph(16, 32);
+    const html = card.shadowRoot.getElementById("sparkTimes").innerHTML;
+    const spans = [...html.matchAll(/left:([0-9.]+)%">([^<]+)</g)].map((m) => ({ left: Number(m[1]), label: m[2] }));
+    return { labels: spans.map((s) => s.label), lefts: spans.map((s) => s.left) };
+  },
   // Attribute values from any climate entity end up in innerHTML: they must be escaped.
   fan_mode_markup_is_escaped() {
     const hass = makeHass({ attrs: { fan_modes: ['<img src=x onerror=1>'], fan_mode: null } });
