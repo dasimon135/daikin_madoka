@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.3";
+const MADOKA_CARD_VERSION = "0.9.4";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -38,8 +38,12 @@ const CARD_STRINGS = {
 // How long the reconnect button stays in its "working" state before it can be
 // pressed again — a BLE reconnect through a proxy takes a few seconds.
 const RECONNECT_BUSY_MS = 30000;
-// A whole-hour marker closer than this to the newest reading would overprint it.
-const HOUR_MARK_MIN_GAP_MS = 25 * 60 * 1000;
+// A whole-hour marker closer than this share of the graph's width to the newest
+// reading would overprint it. A share, not a duration: the same 30 minutes is a
+// sliver of a 12 h graph and a fifth of a 3 h one. Sized for the narrowest case,
+// the 360 px popup with a 12-hour locale, where the last label ("04:30 PM") is
+// about an eighth of the width and sits right-aligned against the edge.
+const HOUR_MARK_MIN_GAP = 0.18;
 const FAN_SHORT = {
   en: { auto: "Auto", low: "Low", medium: "Mid", high: "High" },
   fr: { auto: "Auto", low: "Bas", medium: "Moy", high: "Haut" },
@@ -601,9 +605,9 @@ class MadokaCard extends HTMLElement {
     const hour = new Date(t1);
     hour.setMinutes(0, 0, 0);
     for (let t = hour.getTime(); t >= t0; t -= 3 * 3600 * 1000) {
-      // The newest reading brings its own label just below; a whole hour a few
-      // minutes behind it would print on top of it.
-      if (t1 - t < HOUR_MARK_MIN_GAP_MS) continue;
+      // The newest reading brings its own label just below; a whole hour too
+      // close behind it would print on top of it.
+      if ((t1 - t) / tspan < HOUR_MARK_MIN_GAP) continue;
       marks.unshift({ t, label: this._clockLabel(t, false) });
     }
     // Only this one needs its minutes: it is the one instant the graph ends on.
