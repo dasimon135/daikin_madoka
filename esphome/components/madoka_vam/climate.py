@@ -18,6 +18,7 @@ CONF_CLEAN_FILTER = "clean_filter"
 CONF_FIRMWARE_VERSION = "firmware_version"
 CONF_EYE_BRIGHTNESS = "eye_brightness"
 CONF_RESET_FILTER = "reset_filter"
+CONF_DUMP_RAW = "dump_raw"
 
 # Declared here rather than imported from the madoka_base component: an
 # external component that is not itself listed in `external_components:`
@@ -57,6 +58,9 @@ CONFIG_SCHEMA = (
                 MadokaResetFilterButton,
                 icon="mdi:air-filter",
             ),
+            # Log every received frame as hex at INFO. For probing the VAM's
+            # undocumented functions with send_raw_command().
+            cv.Optional(CONF_DUMP_RAW, default=False): cv.boolean,
         }
     )
 )
@@ -67,6 +71,7 @@ async def to_code(config):
     await cg.register_component(var, config)
     await climate.register_climate(var, config)
     await ble_client.register_ble_node(var, config)
+    cg.add(var.set_dump_raw(config[CONF_DUMP_RAW]))
 
     if conf := config.get(CONF_CLEAN_FILTER):
         clean_filter_sensor = await binary_sensor.new_binary_sensor(conf)
