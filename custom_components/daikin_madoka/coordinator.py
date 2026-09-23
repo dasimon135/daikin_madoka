@@ -80,6 +80,13 @@ BACKOFF_UNBONDED_PATH = "unbonded_path"
 # reconnecting through the same proxies) would flip healthy entities
 # unavailable for no reason.
 MAX_CONSECUTIVE_SKIPS = 3
+# Consecutive answered polls in which one feature stayed silent before its
+# last value stops being presented as current. pymadoka's Controller.update
+# skips a failing feature and still counts the poll as good if any other
+# feature answered, so without this a feature that keeps failing froze its
+# entities at their last value forever, "available". Three: one garbled
+# notification, or two, must not blank a sensor.
+FEATURE_MISS_LIMIT = 3
 # Follow-up refresh delay after a command, to catch the device applying it
 # without waiting a whole poll interval.
 BOOST_DELAY = 4
@@ -611,6 +618,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._window_pinned = False
         self._window_attempt_running = False
         self._window_expired = False
+        # Consecutive answered polls each feature sat out, by attribute name;
+        # see _async_drop_silent_features. Per instance on purpose: a rebuilt
+        # coordinator comes with a rebuilt Controller whose statuses are empty.
+        self._feature_misses: dict[str, int] = {}
         # Pairing suspension and window live in hass.data keyed by MAC, so
         # they survive the Controller/coordinator being rebuilt on a config
         # entry retry. last_error is chained onto the skipped polls'
@@ -841,6 +852,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # unresponsive device look healthy. Restore it before refresh_status
             # so the cached counters remain in the coordinator snapshot.
             self.controller.energy_consumption = None
+        # Taken after the cached energy feature was set aside: a feature that
+        # is deliberately not queried this cycle cannot miss it.
+        before = self._feature_statuses()
         try:
             async with asyncio.timeout(POLL_TIMEOUT):
                 await self.controller.update()
@@ -855,6 +869,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         finally:
             if use_cached_energy:
                 self.controller.energy_consumption = energy
+        self._async_drop_silent_features(before)
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.
@@ -876,6 +891,58 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         await self._async_backfill_device_info()
 
         return status
+
+    def _feature_statuses(self) -> dict[str, Any]:
+        """The current status object of every feature that has one."""
+        return {
+            name: feature.status
+            for name, feature in vars(self.controller).items()
+            if isinstance(feature, Feature) and feature.status is not None
+        }
+
+    @callback
+    def _async_drop_silent_features(self, before: dict[str, Any]) -> None:
+        """Stop presenting a feature's last value once it keeps not answering.
+
+        Feature.query() replaces the status object on every answer and leaves
+        it alone when it fails, and Controller.update() reports nothing per
+        feature, so object identity is the signal: the same object after the
+        poll means no answer this cycle.
+
+        Past FEATURE_MISS_LIMIT consecutive misses the status goes to None
+        (every entity reads it directly and already treats None as unknown)
+        and the entry leaves the library's accumulated status dict, which
+        refresh_status() never prunes on its own. The next answer brings it
+        back.
+        """
+        silent = [
+            name
+            for name, status in before.items()
+            if getattr(self.controller, name, None) is not None
+            and getattr(self.controller, name).status is status
+        ]
+        if len(silent) == len(before):
+            # update() returning proves at least one answer, so a poll where
+            # none is visible says nothing usable. Count nothing.
+            return
+        for name in before:
+            if name not in silent:
+                self._feature_misses.pop(name, None)
+        for name in silent:
+            misses = self._feature_misses.get(name, 0) + 1
+            self._feature_misses[name] = misses
+            if misses != FEATURE_MISS_LIMIT:
+                continue
+            _LOGGER.warning(
+                "%s: %s has not answered %d polls in a row; its entities show "
+                "unknown until it answers again",
+                self.address,
+                name,
+                misses,
+            )
+            getattr(self.controller, name).status = None
+            self.controller.status.pop(name, None)
+            self._feature_misses.pop(name, None)
 
     async def _async_connect(self) -> None:
         """Establish the BLE link under the profile this attempt earned.
