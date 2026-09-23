@@ -127,7 +127,7 @@ async def test_the_allowed_sources_callback_never_raises(
     kwargs = await _captured_kwargs(hass, entry)
 
     with patch(
-        "custom_components.daikin_madoka.async_pairing_state",
+        "custom_components.daikin_madoka.async_get_pairing_state",
         side_effect=RuntimeError("state store went away"),
     ):
         assert kwargs["allowed_sources_callback"]() is None

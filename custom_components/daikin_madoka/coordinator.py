@@ -90,6 +90,8 @@ FEATURE_MISS_LIMIT = 3
 # Follow-up refresh delay after a command, to catch the device applying it
 # without waiting a whole poll interval.
 BOOST_DELAY = 4
+# How long an unload waits for a cancelled poll to wind down.
+POLL_CANCEL_TIMEOUT = 10
 DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
 
 # One BLE connect at a time across every Madoka device. Several thermostats
@@ -530,6 +532,20 @@ def async_pairing_state(hass: HomeAssistant, address: str) -> MadokaPairingState
     return store.setdefault(address, MadokaPairingState())
 
 
+def async_get_pairing_state(
+    hass: HomeAssistant, address: str
+) -> MadokaPairingState | None:
+    """Return the shared pairing state for a device, WITHOUT creating it.
+
+    For readers that can run after an unload dropped the state (the pairing
+    callbacks pymadoka may still be calling). Creating an empty one there would
+    make the next setup skip async_restore_pairing_state, which never
+    overwrites a live state, and silently lose the persisted verdict.
+    """
+    store: dict[str, MadokaPairingState] = hass.data.get(PAIRING_STATE_KEY) or {}
+    return store.get(address)
+
+
 @callback
 def async_restore_pairing_state(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Rehydrate the verdicts this entry persisted, once per MAC.
@@ -622,6 +638,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # see _async_drop_silent_features. Per instance on purpose: a rebuilt
         # coordinator comes with a rebuilt Controller whose statuses are empty.
         self._feature_misses: dict[str, int] = {}
+        # The task running a poll right now, if any.
+        self._poll_task: asyncio.Task[Any] | None = None
         # Pairing suspension and window live in hass.data keyed by MAC, so
         # they survive the Controller/coordinator being rebuilt on a config
         # entry retry. last_error is chained onto the skipped polls'
@@ -663,9 +681,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # _async_enter_timeout_backoff could re-apply was silently dropped
             # by the first failure that carried no pairing verdict.
             self._async_slow_to_backoff_cadence()
+        # Remembered so an unload can cancel it: see async_stop_polling.
+        self._poll_task = asyncio.current_task()
         try:
             return await self._async_update_data_inner()
         finally:
+            self._poll_task = None
             # Every branch below mutates the shared verdict (failure counter,
             # suspension, backoff), and every mutation must reach the durable
             # copy — including the clearing a success performs. A persisted
@@ -1095,6 +1116,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if entry is None or self.hass.config_entries.async_get_entry(
             entry.entry_id
         ) is None:
+            return
+        # Only the state still on record speaks for this device. Once an unload
+        # or the reauth flow dropped it, this object is a stale copy: writing
+        # it back would resurrect the very verdict the reauth just cleared.
+        store: dict[str, MadokaPairingState] = (
+            self.hass.data.get(PAIRING_STATE_KEY) or {}
+        )
+        if store.get(self.address) is not self._pairing:
             return
         saved = entry.data.get(CONF_PAIRING_STATE)
         saved = dict(saved) if isinstance(saved, Mapping) else {}
@@ -1948,6 +1977,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_required_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"unbonded_path_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_slow_{self.address}")
+
+    async def async_stop_polling(self) -> None:
+        """Stop scheduling polls and end the one in flight. For unload.
+
+        HA cancels an entry's background tasks only after async_unload_entry
+        returns, and a refresh started by a button press or the debouncer is
+        not one of them at all. A poll parked on the shared connect lock could
+        therefore resume after the controller was stopped and open a link
+        nobody owns: the BRC1H accepts a single central, so the reloaded entry
+        was locked out of its own thermostat. Cancelled rather than awaited:
+        waiting could take two connect budgets for an attempt nobody wants.
+        """
+        await self.async_shutdown()
+        task = self._poll_task
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        # Bounded: the library tears its half-open link down on cancellation,
+        # but an unload must never hang on a radio.
+        await asyncio.wait({task}, timeout=POLL_CANCEL_TIMEOUT)
 
     @callback
     def async_shutdown_extras(self) -> None:
