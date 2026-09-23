@@ -604,6 +604,13 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # poll interval to go back to once a timeout backoff ends.
         self._pairing_window_unsub: CALLBACK_TYPE | None = None
         self._normal_interval: timedelta | None = None
+        # What may keep an open window alive past its TTL, and whether the TTL
+        # already fired while one of them held it (see
+        # _async_arm_pairing_window_timer): a Reconnect press that has not got
+        # its attempt yet, and an attempt that started under the window.
+        self._window_pinned = False
+        self._window_attempt_running = False
+        self._window_expired = False
         # Pairing suspension and window live in hass.data keyed by MAC, so
         # they survive the Controller/coordinator being rebuilt on a config
         # entry retry. last_error is chained onto the skipped polls'
@@ -797,6 +804,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # before connecting: Reconnect acts outside the refresh lock, so the
             # press can land while an automatic attempt is still failing.
             spends_window = self._pairing.pairing_window
+            # The TTL must not expire under this attempt: it would hand the
+            # automatic pairing budget back mid-handshake. Expiry is deferred
+            # to the end of the attempt instead.
+            self._window_attempt_running = spends_window
             try:
                 await self._async_connect()
             except UpdateFailed:
@@ -815,8 +826,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 if spends_window:
                     self._async_close_pairing_window()
                 raise
+            finally:
+                self._window_attempt_running = False
+                if spends_window:
+                    # The TTL ran out while this attempt held the window; now
+                    # that the attempt is over, honour it.
+                    self._async_close_expired_pairing_window()
 
-        energy = self.controller.energy_consumption
+        energy =self.controller.energy_consumption
         use_cached_energy = energy is not None and energy.cache_is_fresh
         if use_cached_energy:
             # Controller.update() counts every Feature.query() return as a device
@@ -971,15 +988,31 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # configured cadence and — crucially — the NEXT one does too if this
         # attempt fails. Without it the poll triggered here re-armed the brake
         # on its way in and a failed reconnect was followed by 900s of
-        # silence, which is what made the button look inert.
+        # silence, which is what made the button look inert. It also forgets
+        # the library's timeout streak, which cleanup() does not.
         self.async_clear_backoff()
         self._async_persist_pairing_state()
         self._async_open_pairing_window()
-        # The BRC1H stops advertising while connected and takes a moment to
-        # resume after a disconnect; refreshing instantly would fail fast with
-        # "not advertising" and defer the reconnect to the next poll.
-        await asyncio.sleep(3)
-        await self.async_request_refresh()
+        # Pinned until this press has had its attempt: a poll already in
+        # flight can hold the refresh lock for a whole connect budget (or two,
+        # parked on the shared connect lock first), and the TTL must not run
+        # out before the attempt the window was opened for even starts.
+        self._window_pinned = True
+        try:
+            # The BRC1H stops advertising while connected and takes a moment
+            # to resume after a disconnect; refreshing instantly would fail
+            # fast with "not advertising" and defer the reconnect to the next
+            # poll.
+            await asyncio.sleep(3)
+            # NOT async_request_refresh: that goes through HA's Debouncer,
+            # which defers the call while a poll holds the refresh lock and
+            # then drops it if the lock is still held ("any call is good").
+            # A connect lasts 30-90s, so the user's attempt used to be lost
+            # to the next scheduled poll. async_refresh waits for the lock.
+            await self.async_refresh()
+        finally:
+            self._window_pinned = False
+            self._async_close_expired_pairing_window()
 
     @callback
     def _async_persist_pairing_state(self) -> None:
@@ -1302,10 +1335,17 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _async_arm_pairing_window_timer(self) -> None:
         """(Re)start the window's time-to-live."""
         self._async_cancel_pairing_window_timer()
+        self._window_expired = False
 
         @callback
         def _expire(_now) -> None:
             self._pairing_window_unsub = None
+            if self._window_pinned or self._window_attempt_running:
+                # The deliberate attempt is still pending or running. Closing
+                # now would drop it to the automatic profile halfway through;
+                # whoever holds the window closes it when they let go.
+                self._window_expired = True
+                return
             if self._pairing.pairing_window:
                 _LOGGER.debug(
                     "Pairing window for %s expired after %ss",
@@ -1333,10 +1373,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         restriction and disarms the quarantine, so it must always end.
         """
         self._async_cancel_pairing_window_timer()
+        self._window_expired = False
         if not self._pairing.pairing_window:
             return
         self._pairing.pairing_window = False
         self._async_apply_pair_budget()
+
+    @callback
+    def _async_close_expired_pairing_window(self) -> None:
+        """Honour a TTL that fired while the window was held open.
+
+        Only once nothing holds it any more: a Reconnect press waiting for its
+        attempt and the attempt itself each defer the expiry, and each calls
+        this on the way out.
+        """
+        if (
+            self._window_expired
+            and not self._window_pinned
+            and not self._window_attempt_running
+        ):
+            self._async_close_pairing_window()
 
     @callback
     def _note_timeout_rounds(self) -> None:
@@ -1686,11 +1742,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         are removed by _clear_issues when an attempt actually succeeds, which
         is the only thing that proves the situation is over.
 
+        The all-paths-timed-out streak goes too, on both sides: ours and the
+        library's, which cleanup() does not reset. Rounds gathered before the
+        human intervened would otherwise let the brake and the pairing_slow
+        verdict come straight back during the attempt they asked for.
+
         Callers must trigger the attempt themselves: this is a @callback and
         the poll it enables is theirs to schedule.
         """
-        if not self._pairing.backoff and not self._pairing.fail_count:
-            return
+        self.controller.connection.reset_pairing_timeout_rounds()
+        self._pairing.timeout_rounds = 0
         self._pairing.fail_count = 0
         self._pairing.radio_fail_count = 0
         self._async_restore_normal_interval()
