@@ -12,6 +12,7 @@ from typing import Any
 from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.features.clean_filter import ResetCleanFilterTimer
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -929,11 +930,19 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         return status
 
     def _feature_statuses(self) -> dict[str, Any]:
-        """The current status object of every feature that has one."""
+        """The current status object of every queryable feature that has one.
+
+        ResetCleanFilterTimer is write-only (its query raises, and
+        Controller.update skips it by class exactly like this): a reset press
+        leaves a status on it that no poll will ever refresh, which is not a
+        device failing to answer.
+        """
         return {
             name: feature.status
             for name, feature in vars(self.controller).items()
-            if isinstance(feature, Feature) and feature.status is not None
+            if isinstance(feature, Feature)
+            and not isinstance(feature, ResetCleanFilterTimer)
+            and feature.status is not None
         }
 
     @callback

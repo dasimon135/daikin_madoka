@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 from pymadoka import Controller
 from pymadoka.connection import ConnectionStatus
-from pymadoka.feature import Feature
+from pymadoka.feature import Feature, NotImplementedException
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
@@ -139,3 +139,24 @@ async def test_a_fresh_energy_cache_is_not_a_miss(hass: HomeAssistant) -> None:
 
     assert energy.status is not None
     assert coordinator.data["energy_consumption"] == {"energy_today": (1.0,)}
+
+
+async def test_a_write_only_feature_is_not_a_silent_one(
+    hass: HomeAssistant, caplog
+) -> None:
+    """The filter-reset feature cannot be queried at all, by design.
+
+    A reset press leaves a status on it (Feature.update sets one), and every
+    poll then "misses" it. That is not a device failing to answer.
+    """
+    controller = _controller()
+    reset = controller.reset_clean_filter_timer
+    reset.query = AsyncMock(side_effect=NotImplementedException("write only"))
+    coordinator = _coordinator(hass, controller)
+    reset.status = SimpleNamespace(reset=True)
+
+    for _ in range(FEATURE_MISS_LIMIT + 1):
+        await _poll(coordinator)
+
+    assert reset.status is not None
+    assert "has not answered" not in caplog.text
