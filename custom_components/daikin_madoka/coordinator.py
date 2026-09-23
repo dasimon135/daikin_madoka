@@ -53,7 +53,7 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
-from .util import device_for_address
+from .util import device_for_address, entry_macs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -561,8 +561,13 @@ def async_restore_pairing_state(hass: HomeAssistant, entry: ConfigEntry) -> None
     if not isinstance(stored, Mapping):
         return
     store: dict[str, MadokaPairingState] = hass.data.setdefault(PAIRING_STATE_KEY, {})
+    # Only the devices this entry covers NOW. A verdict left under another MAC
+    # (the entry was reconfigured for a new thermostat) describes a device no
+    # coordinator of this entry will ever poll, and rehydrating it would hand
+    # it to whichever entry gets that MAC next.
+    own = set(entry_macs(entry))
     for address, raw in stored.items():
-        if address in store or not isinstance(raw, Mapping):
+        if address not in own or address in store or not isinstance(raw, Mapping):
             continue
         store[address] = MadokaPairingState.from_stored(address, raw)
 
@@ -1110,12 +1115,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         entry keeps it across an HA restart. Written on every change, so the
         stored copy can never be more pessimistic than reality.
         """
-        entry = self.config_entry
-        # A coordinator built outside a real entry (or against one that was
-        # removed mid-poll) has nothing to write to.
-        if entry is None or self.hass.config_entries.async_get_entry(
-            entry.entry_id
-        ) is None:
+        entry = self._async_own_entry()
+        if entry is None:
             return
         # Only the state still on record speaks for this device. Once an unload
         # or the reauth flow dropped it, this object is a stale copy: writing
@@ -1143,6 +1144,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self.hass.config_entries.async_update_entry(entry, data=data)
 
     @callback
+    def _async_own_entry(self) -> ConfigEntry | None:
+        """The config entry, if it still exists AND still describes this device.
+
+        A coordinator built outside a real entry, or against one removed
+        mid-poll, has nothing to write to. Neither has one whose entry was
+        reconfigured for another thermostat: the reload that replaces it comes
+        after the rewrite, and a poll still in flight would otherwise write the
+        OLD device's verdict, preferred proxy or bond list into the NEW
+        device's entry.
+        """
+        entry = self.config_entry
+        if (
+            entry is None
+            or self.hass.config_entries.async_get_entry(entry.entry_id) is None
+            or self.address not in entry_macs(entry)
+        ):
+            return None
+        return entry
+
+    @callback
     def _async_acquit_path(self, source: str) -> None:
         """This path just authenticated: drop every accusation against it.
 
@@ -1167,7 +1188,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         bookkeeping can be right for all of them.
         """
         source = self.controller.connection.connected_source
-        entry = self.config_entry
+        entry = self._async_own_entry()
         if not source or entry is None or CONF_MAC not in entry.data:
             return None
         return entry, source
@@ -1303,7 +1324,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         of pairing timeouts never broken by a success on that same path. Shared
         so the safety rules below cannot hold for one trigger and not the other.
         """
-        entry = self.config_entry
+        entry = self._async_own_entry()
         if entry is None or CONF_MAC not in entry.data:
             return False
         bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
