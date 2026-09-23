@@ -68,6 +68,15 @@
   "exceptions": {
     "command_failed": {
       "message": "Fallo del comando « {action} » en {device}: conexión Bluetooth no disponible"
+    },
+    "status_unavailable": {
+      "message": "Todavía no se puede ajustar la temperatura de {device}: aún no se han leído sus consignas ni su modo de funcionamiento"
+    },
+    "temperature_out_of_range": {
+      "message": "{temperature} °C está fuera del rango que {device} acepta para esta consigna ({min_temp} a {max_temp} °C)"
+    },
+    "setpoint_gap_too_small": {
+      "message": "{device} necesita al menos {differential} °C entre la consigna baja ({low} °C) y la alta ({high} °C)"
     }
   },
   "entity": {
