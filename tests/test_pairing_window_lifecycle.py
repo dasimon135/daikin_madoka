@@ -133,7 +133,7 @@ async def test_the_window_expires_on_its_own(
 
     # No refresh: model the user pressing Reconnect while the device is not
     # even advertising, so no poll ever consumes the window.
-    with _no_sleep(), patch.object(coordinator, "async_request_refresh", AsyncMock()):
+    with _no_sleep(), patch.object(coordinator, "async_refresh", AsyncMock()):
         await coordinator.async_reconnect()
 
     assert state.pairing_window is True
@@ -154,7 +154,7 @@ async def test_shutdown_cancels_the_window_timer(hass: HomeAssistant) -> None:
     controller.start = AsyncMock()
     coordinator = _coordinator(hass, entry, controller)
 
-    with _no_sleep(), patch.object(coordinator, "async_request_refresh", AsyncMock()):
+    with _no_sleep(), patch.object(coordinator, "async_refresh", AsyncMock()):
         await coordinator.async_reconnect()
 
     coordinator.async_shutdown_extras()
