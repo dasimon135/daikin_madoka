@@ -153,6 +153,8 @@ The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_c
 # its trigger never runs. Count 3 for the proxy plus 1 per responder, and
 # RE-COUNT every time you add a thermostat to this proxy: a number that was
 # right for one responder is wrong for two, and the build still succeeds.
+# Slots plus responders cannot exceed 6 (ESP-IDF's GATT app limit), whatever
+# max_connections says: see docs/esphome-proxy.md for more than 3 thermostats.
 esp32_ble:
   io_capability: display_yes_no
   max_connections: 4   # 3 proxy slots + 1 responder
