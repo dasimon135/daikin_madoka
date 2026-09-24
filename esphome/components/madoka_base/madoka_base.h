@@ -1,9 +1,12 @@
 #pragma once
 
+#include <functional>
 #include <vector>
 #include <queue>
 #include <map>
 #include <string>
+
+#include "madoka_frame.h"
 
 #include "esphome/core/component.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
@@ -66,9 +69,17 @@ class MadokaBase : public climate::Climate, public esphome::ble_client::BLEClien
   bool should_update_ = false;
   std::queue<std::vector<uint8_t>> received_chunks_ = {};
   std::map<uint8_t, std::vector<uint8_t>> pending_chunks_ = {};
-  uint16_t notify_handle_;
-  uint16_t wwr_handle_;
+  uint16_t notify_handle_{0};
+  uint16_t wwr_handle_{0};
   SemaphoreHandle_t receive_semaphore_ = nullptr;
+  // Notifications can only be registered once the services are known and the
+  // link is encrypted. The two arrive in either order depending on whether
+  // the thermostat asks for security itself, so each is recorded and the
+  // registration happens on whichever comes last. All three reset on
+  // disconnect.
+  bool services_discovered_ = false;
+  bool authenticated_ = false;
+  bool notify_requested_ = false;
   Status cur_status_;
   binary_sensor::BinarySensor *clean_filter_binary_sensor_{nullptr};
   text_sensor::TextSensor *firmware_version_text_sensor_{nullptr};
@@ -79,6 +90,16 @@ class MadokaBase : public climate::Climate, public esphome::ble_client::BLEClien
   std::vector<uint8_t> prepare_message_(uint16_t cmd, std::vector<uint8_t> args);
   void query_(uint16_t cmd, std::vector<uint8_t> args, int t_d);
   void process_incoming_chunk_(std::vector<uint8_t> chk);
+  /// Hand a reassembled frame to parse_cb_, or drop it if it is too short to
+  /// carry a function id.
+  void dispatch_frame_(const std::vector<uint8_t> &msg);
+  /// Call `fn` for every argument of a frame, in order. Stops at the end of
+  /// the frame or at an argument that runs past it (logged, the arguments
+  /// before it are still delivered). Never reads outside the frame; a
+  /// zero-length argument is delivered with len == 0.
+  void for_each_argument_(const std::vector<uint8_t> &msg, const std::function<void(const FrameArgument &)> &fn);
+  /// Register for notifications if both discovery and authentication are done.
+  void register_notify_if_ready_();
 
   /// Log tag, so a shared code path still logs under the component the user
   /// configured rather than under this base.
@@ -86,7 +107,8 @@ class MadokaBase : public climate::Climate, public esphome::ble_client::BLEClien
   /// Human name used by dump_config and by the "not a Daikin Madoka" warning.
   virtual const char *label_() const = 0;
   /// Decode one reassembled message. Called from the loop, never from an
-  /// interrupt or a BLE callback.
+  /// interrupt or a BLE callback. `msg` holds at least FRAME_HEADER_SIZE
+  /// bytes; read its arguments through for_each_argument_.
   virtual void parse_cb_(std::vector<uint8_t> msg) = 0;
   /// Queries that only this appliance understands, sent in the middle of the
   /// poll cycle so the shared order around them is preserved.
