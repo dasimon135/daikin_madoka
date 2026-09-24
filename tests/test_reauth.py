@@ -415,3 +415,28 @@ async def test_no_reauth_flow_for_an_entry_that_is_not_running(
     assert _reauth_flows(hass) == []
     # The quarantine itself is still recorded: only the prompt is withheld.
     assert async_pairing_state(hass, MAC).suspended is True
+
+
+async def test_reauth_reloads_without_the_deprecated_helper(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """async_update_reload_and_abort warns for an entry with an update listener
+    since HA 2026.9 and is announced to break in 2026.12; the Fix button this
+    flow sits behind is the one recovery path that needs no entities."""
+    entry = _entry(hass)
+    entry.add_update_listener(AsyncMock())
+    result = await entry.start_reauth_flow(hass)
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch(VALIDATE, return_value=(None, SOURCE)),
+        patch.object(hass.config_entries, "async_schedule_reload") as reload,
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reauth_successful"
+    reload.assert_called_once_with(entry.entry_id)
+    assert "should use it for scheduling a reload" not in caplog.text
