@@ -29,8 +29,11 @@ namespace espbt = esphome::esp32_ble_tracker;
 /// exposed as a custom preset rather than an HVAC mode.
 class MadokaVam : public madoka_base::MadokaBase {
  protected:
+  // Log every received frame as hex at INFO (the dump_raw YAML option).
   bool dump_raw_ = false;
 
+  /// One INFO line: `what`, the function id and the whole frame as hex.
+  void log_frame_(const char *what, const std::vector<uint8_t> &msg);
   const char *tag_() const override;
   const char *label_() const override { return "Daikin Madoka VAM Climate Controller"; }
   void parse_cb_(std::vector<uint8_t> msg) override;
@@ -43,8 +46,9 @@ class MadokaVam : public madoka_base::MadokaBase {
   void dump_config() override;
   void set_dump_raw(bool dump_raw) { this->dump_raw_ = dump_raw; }
   // Send a raw command (function id plus arguments): useful for probing the
-  // VAM's undocumented functions from an ESPHome lambda. Responses land in the
-  // logs; enable dump_raw for the hex dump.
+  // VAM's undocumented functions from an ESPHome lambda. A response to a
+  // function this component does not decode is always logged as hex at INFO;
+  // enable dump_raw to see every frame, decoded ones included.
   void send_raw_command(uint16_t cmd, std::vector<uint8_t> args) { this->query_(cmd, std::move(args), 200); }
   climate::ClimateTraits traits() override {
     auto traits = climate::ClimateTraits();

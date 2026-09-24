@@ -21,6 +21,7 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.components.climate.const import (
+    ATTR_HVAC_MODE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
     FAN_AUTO,
@@ -449,18 +450,99 @@ async def test_hvac_action_in_auto_range(hass: HomeAssistant) -> None:
 # --- Temperature limits ----------------------------------------------------
 
 
-async def test_min_max_from_device_limits(hass: HomeAssistant) -> None:
+_LIMITS = {
+    "cooling_lowerlimit": 18,
+    "cooling_upperlimit": 30,
+    "heating_lowerlimit": 10,
+    "heating_upperlimit": 26,
+}
+
+
+@pytest.mark.parametrize(
+    ("mode", "differential", "expected"),
+    [
+        # COOL writes cooling = target and heating = target - differential,
+        # so both registers bound the target.
+        (OperationModeEnum.COOL, 0, (18, 26)),
+        (OperationModeEnum.COOL, 1, (18, 27)),
+        # HEAT writes heating = target and cooling = target + differential.
+        (OperationModeEnum.HEAT, 0, (18, 26)),
+        (OperationModeEnum.HEAT, 1, (17, 26)),
+        # AUTO, DRY and FAN take the COOL arithmetic on a single-setpoint unit.
+        (OperationModeEnum.AUTO, 1, (18, 27)),
+        (OperationModeEnum.DRY, 0, (18, 26)),
+    ],
+)
+async def test_min_max_on_single_setpoint_unit_keep_both_registers_valid(
+    hass: HomeAssistant,
+    mode: OperationModeEnum,
+    differential: int,
+    expected: tuple[int, int],
+) -> None:
+    """Both registers are written, so neither may leave its own range.
+
+    Taking min/max over both registers let HA accept a target under the
+    cooling lower limit in COOL, and at the edges the companion register
+    (target -/+ differential) fell outside its range: the unit then drops
+    the whole pair without a word.
+    """
     controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(operation_mode=mode)
     controller.set_point.status = _set_point_status(
-        cooling_lowerlimit=18,
-        cooling_upperlimit=30,
-        heating_lowerlimit=10,
-        heating_upperlimit=26,
+        min_differential=differential, **_LIMITS
     )
     entity = _entity(hass, controller)
 
-    assert entity.min_temp == 10
-    assert entity.max_temp == 30
+    assert (entity.min_temp, entity.max_temp) == expected
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        (OperationModeEnum.COOL, (18, 30)),
+        (OperationModeEnum.HEAT, (10, 26)),
+        # The range handles each ride their own register, checked on write.
+        (OperationModeEnum.AUTO, (10, 30)),
+        # DRY/FAN write cooling, and may pull heating down by the gap.
+        (OperationModeEnum.DRY, (18, 30)),
+    ],
+)
+async def test_min_max_on_range_capable_unit_follow_the_written_register(
+    hass: HomeAssistant, mode: OperationModeEnum, expected: tuple[int, int]
+) -> None:
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(operation_mode=mode)
+    controller.set_point.status = _set_point_status(
+        range_enabled=True, min_differential=1, **_LIMITS
+    )
+    entity = _entity(hass, controller)
+
+    assert (entity.min_temp, entity.max_temp) == expected
+
+
+async def test_min_max_follow_the_last_mode_while_off(hass: HomeAssistant) -> None:
+    """Off, the limits belong to the mode the next write will use."""
+    controller = _mock_controller()
+    controller.power_state.status = SimpleNamespace(turn_on=False)
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    controller.set_point.status = _set_point_status(range_enabled=True, **_LIMITS)
+    entity = _entity(hass, controller)
+
+    assert (entity.min_temp, entity.max_temp) == (10, 26)
+
+
+async def test_min_max_do_not_shrink_on_unreported_limits(
+    hass: HomeAssistant,
+) -> None:
+    """MIN_TEMP/MAX_TEMP are a fallback, not the device's own range."""
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(min_differential=1)
+    entity = _entity(hass, controller)
+
+    assert entity.min_temp == MIN_TEMP
+    assert entity.max_temp == MAX_TEMP
 
 
 async def test_min_max_defaults_without_device_limits(
@@ -648,16 +730,283 @@ async def test_set_temperature_ignores_the_differential_when_range_capable(
     assert status.heating_set_point == 22
 
 
-async def test_set_temperature_without_status_is_a_noop(
+@pytest.mark.parametrize("missing", ["set_point", "operation_mode"])
+async def test_set_temperature_without_status_raises(
+    hass: HomeAssistant, missing: str
+) -> None:
+    """A write that cannot be built must say so, not return in silence."""
+    controller = _mock_controller()
+    getattr(controller, missing).status = None
+    entity = _entity(hass, controller)
+
+    with pytest.raises(HomeAssistantError) as err:
+        await entity.async_set_temperature(**{ATTR_TEMPERATURE: 24})
+
+    assert err.value.translation_key == "status_unavailable"
+    controller.set_point.update.assert_not_called()
+
+
+# --- hvac_mode passed with the temperature ---------------------------------
+
+
+def _record_writes(controller: MagicMock) -> list[str]:
+    """Log device writes in order; mode writes stored like pymadoka does.
+
+    pymadoka's Feature.update ends with ``self.status = update_status``, so
+    after a mode write operation_mode.status already holds the new mode.
+    """
+    writes: list[str] = []
+
+    async def mode_update(status):
+        writes.append("mode")
+        controller.operation_mode.status = status
+
+    async def power_update(status):
+        writes.append("power")
+        controller.power_state.status = status
+
+    async def set_point_update(status):
+        writes.append("set_point")
+
+    controller.operation_mode.update = AsyncMock(side_effect=mode_update)
+    controller.power_state.update = AsyncMock(side_effect=power_update)
+    controller.set_point.update = AsyncMock(side_effect=set_point_update)
+    return writes
+
+
+async def test_set_temperature_applies_hvac_mode_first(hass: HomeAssistant) -> None:
+    """climate.set_temperature with hvac_mode must switch mode, then write.
+
+    The setpoint pair has to be built for the NEW mode: in HEAT the target is
+    the heating register and cooling carries the gap above it.
+    """
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(
+        cooling=25, heating=24, min_differential=1
+    )
+    writes = _record_writes(controller)
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(
+        **{ATTR_TEMPERATURE: 19, ATTR_HVAC_MODE: HVACMode.HEAT}
+    )
+
+    assert writes == ["mode", "power", "set_point"]
+    assert (
+        controller.operation_mode.update.call_args[0][0].operation_mode
+        is OperationModeEnum.HEAT
+    )
+    assert controller.power_state.update.call_args[0][0].turn_on is True
+    status = controller.set_point.update.call_args[0][0]
+    assert status.heating_set_point == 19
+    assert status.cooling_set_point == 20
+
+
+async def test_set_temperature_with_hvac_mode_off_powers_off_then_writes(
+    hass: HomeAssistant,
+) -> None:
+    """OFF is a power write; the setpoint still follows the unit's own mode."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    controller.set_point.status = _set_point_status(
+        cooling=21, heating=20, min_differential=1
+    )
+    writes = _record_writes(controller)
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(
+        **{ATTR_TEMPERATURE: 18, ATTR_HVAC_MODE: HVACMode.OFF}
+    )
+
+    assert writes == ["power", "set_point"]
+    assert controller.power_state.update.call_args[0][0].turn_on is False
+    status = controller.set_point.update.call_args[0][0]
+    assert status.heating_set_point == 18
+    assert status.cooling_set_point == 19
+
+
+async def test_set_temperature_checks_limits_of_the_new_mode(
+    hass: HomeAssistant,
+) -> None:
+    """HA checked the target against the OLD mode's limits; re-check it.
+
+    Refused before anything is written, so the mode does not switch either.
+    """
+    controller = _mock_controller()
+    controller.set_point.status = _set_point_status(
+        range_enabled=True, **_LIMITS
+    )
+    writes = _record_writes(controller)
+    entity = _entity(hass, controller)
+
+    with pytest.raises(ServiceValidationError) as err:
+        await entity.async_set_temperature(
+            **{ATTR_TEMPERATURE: 28, ATTR_HVAC_MODE: HVACMode.HEAT}
+        )
+
+    assert err.value.translation_key == "temperature_out_of_range"
+    assert writes == []
+
+
+# --- Powered off: display and write agree ----------------------------------
+
+
+async def test_target_temperature_follows_the_last_mode_while_off(
+    hass: HomeAssistant,
+) -> None:
+    """Off after HEAT, a write sets heating = target, so show heating.
+
+    Showing cooling (the OFF view) made every change made while off read
+    back a degree high on a unit with min_differential = 1.
+    """
+    controller = _mock_controller()
+    controller.power_state.status = SimpleNamespace(turn_on=False)
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    controller.set_point.status = _set_point_status(
+        cooling=21, heating=20, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    assert entity.target_temperature == 20
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 19})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.heating_set_point == 19
+    assert status.cooling_set_point == 20
+
+
+async def test_fan_mode_follows_the_last_mode_while_off(hass: HomeAssistant) -> None:
+    controller = _mock_controller()
+    controller.power_state.status = SimpleNamespace(turn_on=False)
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.HEAT
+    )
+    entity = _entity(hass, controller)
+
+    assert entity.fan_mode == FAN_LOW
+
+
+async def test_range_survives_power_off_after_auto(hass: HomeAssistant) -> None:
+    """Off after AUTO on a range unit, a single target would collapse the range."""
+    controller = _mock_controller()
+    controller.power_state.status = SimpleNamespace(turn_on=False)
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.AUTO
+    )
+    controller.set_point.status = _set_point_status(range_enabled=True)
+    entity = _entity(hass, controller)
+
+    assert entity.hvac_mode is HVACMode.OFF
+    assert entity._range_active is True
+    features = entity.supported_features
+    assert features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+    assert not features & ClimateEntityFeature.TARGET_TEMPERATURE
+    assert entity.target_temperature is None
+    assert entity.target_temperature_low == 22
+    assert entity.target_temperature_high == 25
+
+
+# --- min_differential on a range-capable unit ------------------------------
+
+
+async def test_set_temperature_range_rejects_a_gap_below_the_differential(
     hass: HomeAssistant,
 ) -> None:
     controller = _mock_controller()
-    controller.set_point.status = None
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.AUTO
+    )
+    controller.set_point.status = _set_point_status(
+        range_enabled=True, min_differential=2
+    )
     entity = _entity(hass, controller)
 
-    await entity.async_set_temperature(**{ATTR_TEMPERATURE: 24})
+    with pytest.raises(ServiceValidationError) as err:
+        await entity.async_set_temperature(
+            **{ATTR_TARGET_TEMP_LOW: 24, ATTR_TARGET_TEMP_HIGH: 25}
+        )
+
+    assert err.value.translation_key == "setpoint_gap_too_small"
+    controller.set_point.update.assert_not_called()
+
+
+async def test_set_temperature_range_rejects_one_handle_crossing_the_other(
+    hass: HomeAssistant,
+) -> None:
+    """Moving only the low handle is checked against the kept high one."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.AUTO
+    )
+    controller.set_point.status = _set_point_status(
+        cooling=25, heating=22, range_enabled=True, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    with pytest.raises(ServiceValidationError):
+        await entity.async_set_temperature(**{ATTR_TARGET_TEMP_LOW: 25})
 
     controller.set_point.update.assert_not_called()
+
+
+async def test_set_temperature_range_rejects_a_handle_outside_its_register(
+    hass: HomeAssistant,
+) -> None:
+    """Each handle rides its own register and is checked against its limits."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(
+        operation_mode=OperationModeEnum.AUTO
+    )
+    controller.set_point.status = _set_point_status(
+        range_enabled=True, **_LIMITS
+    )
+    entity = _entity(hass, controller)
+
+    with pytest.raises(ServiceValidationError):
+        await entity.async_set_temperature(
+            # 17 is inside min_temp..max_temp (10-30) but under the
+            # cooling register's own lower limit (18).
+            **{ATTR_TARGET_TEMP_LOW: 12, ATTR_TARGET_TEMP_HIGH: 17}
+        )
+
+    controller.set_point.update.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("target", "cooling", "heating"),
+    [
+        # Heating 22 would sit above cooling 22 - 1: pull it down by the gap.
+        (22, 22, 21),
+        # Heating 22 respects the gap below 25: leave it where it is.
+        (25, 25, 22),
+    ],
+)
+@pytest.mark.parametrize("mode", [OperationModeEnum.DRY, OperationModeEnum.FAN])
+async def test_set_temperature_in_dry_or_fan_keeps_the_gap_when_range_capable(
+    hass: HomeAssistant,
+    mode: OperationModeEnum,
+    target: int,
+    cooling: int,
+    heating: int,
+) -> None:
+    """Writing both registers to the target breaks min_differential."""
+    controller = _mock_controller()
+    controller.operation_mode.status = SimpleNamespace(operation_mode=mode)
+    controller.set_point.status = _set_point_status(
+        cooling=25, heating=22, range_enabled=True, min_differential=1
+    )
+    entity = _entity(hass, controller)
+
+    await entity.async_set_temperature(**{ATTR_TEMPERATURE: target})
+
+    status = controller.set_point.update.call_args[0][0]
+    assert status.cooling_set_point == cooling
+    assert status.heating_set_point == heating
 
 
 # --- Power -----------------------------------------------------------------

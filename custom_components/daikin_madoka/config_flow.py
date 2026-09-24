@@ -16,6 +16,8 @@ from homeassistant.components.bluetooth import (
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
@@ -46,7 +48,7 @@ from .const import (
     VALIDATE_TIMEOUT,
 )
 from .coordinator import _async_connect_lock, async_forget_pairing_state
-from .util import normalize_mac
+from .util import device_for_address, normalize_mac
 
 if TYPE_CHECKING:
     from .coordinator import MadokaCoordinator
@@ -239,6 +241,61 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 await asyncio.wait_for(controller.stop(), timeout=10)
             lock.release()
 
+    @callback
+    def _async_update_and_reload(
+        self, entry: ConfigEntry, *, reason: str, **changes: Any
+    ) -> ConfigFlowResult:
+        """Update the entry, schedule its reload, and finish the flow.
+
+        Not async_update_reload_and_abort: for an entry that carries an update
+        listener, which every loaded entry here does, Home Assistant has warned
+        about it since 2026.9 and announced it breaks in 2026.12. Our listener
+        only re-applies options, so it cannot schedule this reload itself.
+        """
+        self.hass.config_entries.async_update_entry(entry, **changes)
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        return self.async_abort(reason=reason)
+
+    @callback
+    def _async_move_registry_to_mac(
+        self, entry: ConfigEntry, old_mac: str, new_mac: str
+    ) -> None:
+        """Carry the device and its entities over to the replacement thermostat.
+
+        Every unique_id and the device identifier are keyed by MAC. Left alone,
+        the reload would create a second set of entities with a _2 suffix, while
+        the old ones stay attached to this live entry, where nothing cleans them
+        up: history, automations and dashboards would all point at dead ones.
+        """
+        ent_reg = er.async_get(self.hass)
+        for entity in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            unique_id = entity.unique_id
+            if unique_id == old_mac:
+                new_unique_id = new_mac
+            elif unique_id.startswith(f"{old_mac}_"):
+                new_unique_id = new_mac + unique_id[len(old_mac):]
+            else:
+                continue
+            try:
+                ent_reg.async_update_entity(
+                    entity.entity_id, new_unique_id=new_unique_id
+                )
+            except ValueError:
+                # A stale registry row already holds the new id (the new MAC was
+                # configured once and deleted). Leave both alone rather than
+                # fail the flow; setup attaches to the existing row.
+                _LOGGER.warning(
+                    "Could not move %s to %s: that unique_id is already taken",
+                    entity.entity_id,
+                    new_unique_id,
+                )
+        dev_reg = dr.async_get(self.hass)
+        device = device_for_address(dev_reg, entry, DOMAIN, old_mac)
+        if device is not None:
+            dev_reg.async_update_device(
+                device.id, new_identifiers={(DOMAIN, new_mac)}
+            )
+
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
@@ -385,7 +442,7 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     if source not in bonded:
                         bonded.append(source)
                     data[CONF_BONDED_SOURCES] = bonded
-                return self.async_update_reload_and_abort(
+                return self._async_update_and_reload(
                     entry, data=data, reason="reauth_successful"
                 )
             # Unlike the fire-and-forget Reconnect button, a failure here is
@@ -467,6 +524,9 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         if source is not None:
                             data[CONF_PREFERRED_SOURCE] = source
                             data[CONF_BONDED_SOURCES] = [source]
+                        self._async_move_registry_to_mac(
+                            entry, current_mac or entry.data[CONF_MAC], mac
+                        )
                     else:
                         # Same thermostat, so the connection state is still
                         # true. Carrying it through is not cosmetic: entry.data
@@ -476,11 +536,12 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         for key in CONNECTION_STATE_KEYS:
                             if key in entry.data:
                                 data[key] = entry.data[key]
-                    return self.async_update_reload_and_abort(
+                    return self._async_update_and_reload(
                         entry,
                         unique_id=mac,
                         title=friendly or f"{BRC1H_NAME_PREFIX} {mac}",
                         data=data,
+                        reason="reconfigure_successful",
                     )
                 errors["base"] = error_key
 
