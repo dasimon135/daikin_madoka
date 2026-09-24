@@ -1034,3 +1034,28 @@ async def test_command_failure_raises_homeassistant_error(
 
     with pytest.raises(HomeAssistantError):
         await entity.async_turn_on()
+
+
+# --- Write feedback ---------------------------------------------------------
+
+
+async def test_write_pushes_the_new_state_before_the_confirming_poll(
+    hass: HomeAssistant,
+) -> None:
+    """The acknowledged value reaches the UI before the full re-poll runs.
+
+    pymadoka stores the written status as soon as the unit acknowledges it,
+    so the entity can show it at once; waiting for the boost refresh (a
+    whole poll over BLE) left the card showing the old state for seconds.
+    """
+    entity = _entity(hass, _mock_controller())
+    coordinator = entity.coordinator
+    order: list[str] = []
+    coordinator.async_update_listeners = MagicMock(
+        side_effect=lambda: order.append("push")
+    )
+    coordinator.async_boost = AsyncMock(side_effect=lambda: order.append("boost"))
+
+    await entity.async_turn_off()
+
+    assert order[:2] == ["push", "boost"]
