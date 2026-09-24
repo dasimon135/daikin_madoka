@@ -1,5 +1,75 @@
 # Changelog
 
+## v3.14.0 - September 2026
+
+A full review of the integration, the card and the ESPHome components. Everything
+below was validated on four BRC1H thermostats, except where it says otherwise.
+
+### The card follows your commands at once
+
+Turning a unit off from the card took three to four seconds to show, although
+the thermostat itself reacted immediately: the card waited for a full Bluetooth
+read of every value before updating. It now shows the new state as soon as the
+thermostat acknowledges the command, and the read that follows confirms it (or
+puts the old value back if the thermostat refused it).
+
+### Card 0.9.5
+
+- The power button turns a unit on in its last mode. It used to switch it to
+  cooling every time.
+- A setpoint press made just before closing the popup is sent instead of lost,
+  and a setpoint the thermostat refused no longer stays on screen.
+- The + and - buttons follow the entity's own temperature step.
+- With a heat/cool range, the high setpoint can no longer be pushed below the
+  low one.
+
+### Setpoints and limits follow the unit's mode
+
+- `climate.set_temperature` with an `hvac_mode` now applies that mode first, as
+  Home Assistant expects. The mode used to be ignored.
+- While a unit is off, the setpoint and limits shown are those of the mode it
+  will restart in, so what you see is what a change writes.
+- `min_temp` and `max_temp` are those of the current mode, and they keep room
+  for the minimum gap the unit enforces between its heating and cooling
+  setpoints. A setpoint the unit would silently reject now raises an error
+  instead.
+- The range (dual setpoint) half of this could not be tested on real hardware:
+  the thermostats it was validated on all run in single-setpoint mode.
+
+### Connection
+
+- Pressing Reconnect while a read is in progress waits for it and then
+  reconnects. The press used to be dropped.
+- Reconnect also clears the library's count of pairing timeouts, so a unit that
+  had timed out before gets a fresh pairing budget.
+- A value the thermostat stops answering goes to unknown after three polls in a
+  row, instead of showing its last reading forever.
+- Unloading or reconfiguring an entry stops its poll in flight, so an old poll
+  can no longer reconnect or write state after the entry is gone.
+
+### Configuration
+
+- Reconfiguring or re-authenticating no longer uses a Home Assistant helper
+  that is deprecated for integrations like this one and stops working in
+  2026.12.
+- Changing a thermostat's MAC address in Reconfigure moves its entities and
+  device to the new address instead of leaving them orphaned.
+
+### ESPHome components
+
+Checked by compiling the three example configurations and by a host test of the
+frame parser; not run on a thermostat.
+
+- A malformed or truncated frame can no longer make the parser read past the
+  end of its buffer.
+- With several thermostats on one ESP32, each `madoka` node only answers the
+  pairing requests of its own thermostat.
+- `dump_raw` now exists on `madoka_vam`, as the documentation said it did. It
+  logs received frames only; the documentation used to say both directions.
+- The outdoor temperature is decoded as sign and magnitude (`0x85` = -5 °C), as
+  the protocol's reverse-engineering reference does. No capture below 0 °C
+  confirms it yet.
+
 ## v3.13.6 - September 2026
 
 ### The last hour marker no longer prints over the newest reading
