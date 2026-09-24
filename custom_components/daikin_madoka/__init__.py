@@ -34,7 +34,7 @@ from .coordinator import (
     MadokaConfigEntry,
     MadokaCoordinator,
     async_forget_pairing_state,
-    async_pairing_state,
+    async_get_pairing_state,
     async_restore_pairing_state,
 )
 from .frontend import async_register_card
@@ -160,7 +160,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
                 return None
             # A user standing at the thermostat is deliberately pairing a new
             # proxy — the only way one ever enters CONF_BONDED_SOURCES.
-            if async_pairing_state(hass, mac).pairing_window:
+            # Looked up without creating: pymadoka can still call this after
+            # an unload dropped the state, and an empty one re-created here
+            # would make the next setup skip restoring the persisted verdict.
+            state = async_get_pairing_state(hass, mac)
+            if state is not None and state.pairing_window:
                 return None
             preferred = entry.data.get(CONF_PREFERRED_SOURCE)
             return entry.data.get(CONF_BONDED_SOURCES) or (
@@ -349,8 +353,12 @@ async def async_unload_entry(
 
     if unload_ok:
         # HA discards runtime_data once the entry is unloaded; only the BLE
-        # side needs an explicit teardown here.
+        # side needs an explicit teardown here. Polling ends FIRST: HA only
+        # cancels the entry's tasks after this function returns, and a poll
+        # still parked on the shared connect lock would otherwise connect
+        # after the stop below and keep the thermostat's only central slot.
         for coordinator in config_entry.runtime_data.values():
+            await coordinator.async_stop_polling()
             coordinator.async_shutdown_extras()
             await _safe_stop(coordinator.controller)
         # Drop the in-memory verdicts. The entry keeps its persisted copy, so

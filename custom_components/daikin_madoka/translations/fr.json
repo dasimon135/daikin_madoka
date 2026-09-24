@@ -68,6 +68,15 @@
   "exceptions": {
     "command_failed": {
       "message": "Échec de la commande « {action} » sur {device} : connexion Bluetooth indisponible"
+    },
+    "status_unavailable": {
+      "message": "Impossible de régler la température de {device} pour l'instant : ses consignes et son mode de fonctionnement n'ont pas encore été lus"
+    },
+    "temperature_out_of_range": {
+      "message": "{temperature} °C est hors de la plage que {device} accepte pour cette consigne ({min_temp} à {max_temp} °C)"
+    },
+    "setpoint_gap_too_small": {
+      "message": "{device} exige au moins {differential} °C d'écart entre la consigne basse ({low} °C) et la consigne haute ({high} °C)"
     }
   },
   "entity": {
