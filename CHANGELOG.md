@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.14.1 - September 2026
+
+### A negative outdoor temperature reads as negative
+
+The outdoor temperature sensor read the thermostat's byte as unsigned, so a
+frost of -5 °C would have shown as 133 °C. The integration now requires
+pymadoka-ng 0.4.2, which decodes it as sign and magnitude, as the protocol's
+reverse-engineering reference does. Positive temperatures are unchanged. No
+reading below 0 °C has confirmed the rule on a real unit yet: if yours shows
+something odd once it freezes, please open an issue.
+
 ## v3.14.0 - September 2026
 
 A full review of the integration, the card and the ESPHome components. Everything
