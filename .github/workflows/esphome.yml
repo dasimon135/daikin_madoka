@@ -58,6 +58,26 @@ jobs:
             echo "::endgroup::"
           done
 
+  host:
+    # The frame argument walker (madoka_base/madoka_frame.h) is plain C++ with
+    # no ESPHome dependency, so it is built and run natively here, under
+    # AddressSanitizer and UBSan: an out-of-bounds read on a malformed frame
+    # is exactly what it must never do, and on an ESP32 that is a reboot loop.
+    name: esphome host test (frame parser)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-sanitize-recover=all \
+            -I esphome/components \
+            esphome/tests/host/madoka_frame_test.cpp -o frame_test
+          ./frame_test
+
   compile:
     # Slow leg: runs the Python codegen (to_code) and builds the generated C++
     # for a real ESP32 target. This is what proves esphome/components actually

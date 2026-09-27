@@ -1,5 +1,6 @@
 #include "madoka_base.h"
 
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include <cinttypes>
 #include <utility>
@@ -33,38 +34,34 @@ void MadokaBase::loop() {
 }
 
 void MadokaBase::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
+  // BLEClient hands every GAP event to every node of every client, so with two
+  // thermostats on one ESP32 each node also sees the other one's pairing.
+  // Only answer, and only act on, events about our own peer: the same filter
+  // BLEClientBase::gap_event_handler applies with check_addr().
   switch (event) {
     case ESP_GAP_BLE_SEC_REQ_EVT:
+      if (!this->parent_->check_addr(param->ble_security.ble_req.bd_addr))
+        return;
       esp_ble_gap_security_rsp(param->ble_security.ble_req.bd_addr, true);
       break;
     case ESP_GAP_BLE_NC_REQ_EVT:
-      esp_ble_confirm_reply(param->ble_security.ble_req.bd_addr, true);
+      if (!this->parent_->check_addr(param->ble_security.key_notif.bd_addr))
+        return;
+      esp_ble_confirm_reply(param->ble_security.key_notif.bd_addr, true);
       // passkey is uint32_t; %d is a -Wformat error waiting to happen on a
       // 32-bit target where uint32_t is `long unsigned int`.
       ESP_LOGI(this->tag_(), "ESP_GAP_BLE_NC_REQ_EVT, the passkey Notify number:%" PRIu32,
                param->ble_security.key_notif.passkey);
       break;
     case ESP_GAP_BLE_AUTH_CMPL_EVT: {
+      if (!this->parent_->check_addr(param->ble_security.auth_cmpl.bd_addr))
+        return;
       if (!param->ble_security.auth_cmpl.success) {
         ESP_LOGE(this->tag_(), "Authentication failed, status: 0x%x", param->ble_security.auth_cmpl.fail_reason);
         break;
       }
-      auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
-      auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
-      if (nfy == nullptr || wwr == nullptr) {
-        ESP_LOGW(this->tag_(), "[%s] No control service found at device, not a %s..?", this->get_name().c_str(),
-                 this->label_());
-        break;
-      }
-      this->notify_handle_ = nfy->handle;
-      this->wwr_handle_ = wwr->handle;
-
-      auto status = esp_ble_gattc_register_for_notify(this->parent_->get_gattc_if(), this->parent_->get_remote_bda(),
-                                                      nfy->handle);
-      if (status) {
-        ESP_LOGW(this->tag_(), "[%s] esp_ble_gattc_register_for_notify failed, status=%d", this->get_name().c_str(),
-                 status);
-      }
+      this->authenticated_ = true;
+      this->register_notify_if_ready_();
       break;
     }
     default:
@@ -72,11 +69,41 @@ void MadokaBase::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_
   }
 }
 
+void MadokaBase::register_notify_if_ready_() {
+  // Once per connection: a second AUTH_CMPL (the set_encryption() after
+  // discovery on a link the thermostat already encrypted) must not register
+  // twice.
+  if (!this->services_discovered_ || !this->authenticated_ || this->notify_requested_) {
+    return;
+  }
+  auto *nfy = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, NOTIFY_CHARACTERISTIC_UUID);
+  auto *wwr = this->parent_->get_characteristic(MADOKA_SERVICE_UUID, WWR_CHARACTERISTIC_UUID);
+  if (nfy == nullptr || wwr == nullptr) {
+    ESP_LOGW(this->tag_(), "[%s] No control service found at device, not a %s..?", this->get_name().c_str(),
+             this->label_());
+    return;
+  }
+  this->notify_handle_ = nfy->handle;
+  this->wwr_handle_ = wwr->handle;
+
+  auto status =
+      esp_ble_gattc_register_for_notify(this->parent_->get_gattc_if(), this->parent_->get_remote_bda(), nfy->handle);
+  if (status) {
+    ESP_LOGW(this->tag_(), "[%s] esp_ble_gattc_register_for_notify failed, status=%d", this->get_name().c_str(),
+             status);
+    return;
+  }
+  this->notify_requested_ = true;
+}
+
 void MadokaBase::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                      esp_ble_gattc_cb_param_t *param) {
   switch (event) {
     case ESP_GATTC_DISCONNECT_EVT: {
       this->node_state = espbt::ClientState::IDLE;  // ??
+      this->services_discovered_ = false;
+      this->authenticated_ = false;
+      this->notify_requested_ = false;
       this->current_temperature = NAN;
       this->on_disconnect_();
       this->publish_state();
@@ -92,11 +119,26 @@ void MadokaBase::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       }
       break;
     case ESP_GATTC_SEARCH_CMPL_EVT: {
+      this->services_discovered_ = true;
+      // Unchanged from before: always ask for an encrypted, MITM-protected
+      // link here. On a hardware-proven path its AUTH_CMPL is what triggers
+      // the registration.
       esp_ble_set_encryption(this->parent_->get_remote_bda(), ESP_BLE_SEC_ENCRYPT_MITM);
+      // If the thermostat asked for security itself and the link was already
+      // encrypted before discovery finished, nothing is left to wait for.
+      this->register_notify_if_ready_();
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
-      this->node_state = espbt::ClientState::ESTABLISHED;  // ??
+      if (param->reg_for_notify.handle != this->notify_handle_) {
+        break;
+      }
+      if (param->reg_for_notify.status != ESP_GATT_OK) {
+        ESP_LOGW(this->tag_(), "[%s] Registering for notifications failed, status=%d", this->get_name().c_str(),
+                 param->reg_for_notify.status);
+        break;
+      }
+      this->node_state = espbt::ClientState::ESTABLISHED;
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
@@ -156,6 +198,33 @@ void MadokaBase::reset_filter() {
 
 bool validate_buffer(const std::vector<uint8_t> &buffer) { return buffer[0] == buffer.size(); }
 
+void MadokaBase::dispatch_frame_(const std::vector<uint8_t> &msg) {
+  if (msg.size() < FRAME_HEADER_SIZE) {
+    char hex[format_hex_pretty_size(FRAME_HEADER_SIZE)];
+    ESP_LOGW(this->tag_(), "Discarding a frame too short to carry a function id: %s",
+             format_hex_pretty_to(hex, msg.data(), msg.size()));
+    return;
+  }
+  this->parse_cb_(msg);
+}
+
+void MadokaBase::for_each_argument_(const std::vector<uint8_t> &msg,
+                                    const std::function<void(const FrameArgument &)> &fn) {
+  if (msg.size() < FRAME_HEADER_SIZE) {
+    return;
+  }
+  size_t pos = FRAME_HEADER_SIZE;
+  FrameArgument arg;
+  FrameArgumentResult result;
+  while ((result = next_frame_argument(msg, pos, arg)) == FrameArgumentResult::OK) {
+    fn(arg);
+  }
+  if (result == FrameArgumentResult::TRUNCATED) {
+    ESP_LOGW(this->tag_(), "Function 0x%04X: argument at offset %u runs past the end of the %u-byte frame, ignored",
+             frame_function_id(msg), (unsigned) pos, (unsigned) msg.size());
+  }
+}
+
 void MadokaBase::process_incoming_chunk_(std::vector<uint8_t> chk) {
   if (chk.size() < 2) {
     ESP_LOGI(this->tag_(), "Chunk discarded: invalid length.");
@@ -164,7 +233,7 @@ void MadokaBase::process_incoming_chunk_(std::vector<uint8_t> chk) {
   uint8_t chunk_id = chk[0];
   std::vector<uint8_t> stripped{chk.begin() + 1, chk.end()};
   if (chunk_id == 0 && validate_buffer(stripped)) {
-    this->parse_cb_(stripped);
+    this->dispatch_frame_(stripped);
     return;
   }
   if (this->pending_chunks_.count(chunk_id)) {
@@ -191,7 +260,7 @@ void MadokaBase::process_incoming_chunk_(std::vector<uint8_t> chk) {
   }
   if (validate_buffer(msg)) {
     this->pending_chunks_.clear();
-    this->parse_cb_(msg);
+    this->dispatch_frame_(msg);
   }
 }
 

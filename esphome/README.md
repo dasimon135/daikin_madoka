@@ -290,11 +290,12 @@ climate:
     update_interval: 15s
     firmware_version:
       name: "VAM firmware"
-    dump_raw: false  # set true to hex-log BLE frames (reverse engineering)
+    dump_raw: false  # set true to hex-log received BLE frames (reverse engineering)
 ```
 
-`dump_raw: true` hex-logs every BLE frame and any unknown function received —
-useful for mapping VAM-specific functions. See
+`dump_raw: true` hex-logs every frame received from the controller, at INFO
+level. A frame for a function the component does not decode is logged even
+without it. Useful for mapping VAM-specific functions. See
 [../docs/reverse-engineering-vam.md](../docs/reverse-engineering-vam.md).
 
 ## File layout

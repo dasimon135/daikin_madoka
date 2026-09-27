@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.4";
+const MADOKA_CARD_VERSION = "0.9.5";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -59,6 +59,13 @@ const MIN_FALLBACK = 16, MAX_FALLBACK = 32;
 // the card is pointed at, and they end up in innerHTML.
 const esc = (v) => String(v).replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// ClimateEntityFeature bits, from supported_features.
+const FEATURE_TURN_ON = 128, FEATURE_TURN_OFF = 256;
+// The entity's own setpoint step. Absent means 1: whole degrees, what this card
+// always did and what the BRC1H itself offers. An Aidoo reports 0.5.
+const stepOf = (a) => (Number(a.target_temp_step) > 0 ? Number(a.target_temp_step) : 1);
+// Snap to the step; toFixed drops the float noise of 0.1 * 3.
+const snap = (v, step) => Number((Math.round(v / step) * step).toFixed(2));
 // Presses are gathered for this long and sent as ONE write: a BLE write takes
 // seconds to read back, so computing each press from the state HA still shows
 // turned + + + into three writes of the same value.
@@ -95,6 +102,7 @@ class MadokaCard extends HTMLElement {
     this._seen = null;
     this._pending = null;
     this._bumpTimer = null;
+    this._expiryTimer = null;
   }
 
   static getStubConfig(hass) {
@@ -325,6 +333,7 @@ class MadokaCard extends HTMLElement {
     const max = a.max_temp != null ? a.max_temp : MAX_FALLBACK;
     const isRange = a.target_temp_low != null && a.target_temp_high != null;
     const goal = this._goal(a, isRange);
+    const step = stepOf(a);
 
     // state color
     root.host.style.setProperty("--state", M.color);
@@ -335,9 +344,10 @@ class MadokaCard extends HTMLElement {
     root.getElementById("title").textContent = this._config.name || a.friendly_name || "Madoka";
 
     // center: mode + ambient + target
+    // An hvac state this card does not know falls through to its raw string.
     root.getElementById("modeRow").innerHTML = on
-      ? mdi(M.mdi) + `<span>${this._modeLabel(hvac)}</span>`
-      : `<span>${unavailable ? this._unavailLabel(st) : this._modeLabel("off")}</span>`;
+      ? mdi(M.mdi) + `<span>${esc(this._modeLabel(hvac))}</span>`
+      : `<span>${esc(unavailable ? this._unavailLabel(st) : this._modeLabel("off"))}</span>`;
     const cur = a.current_temperature;
     root.getElementById("ambient").textContent = cur != null ? this._ambientText(cur) : "--";
 
@@ -353,13 +363,13 @@ class MadokaCard extends HTMLElement {
       this._setArc(null, min, max);
     } else if (isRange) {
       tb.className = "target range";
-      tb.innerHTML = `<span class="goal low">${Math.round(a.target_temp_low)}°</span><span>–</span>` +
-        `<span class="goal high">${Math.round(goal)}°</span>`;
+      tb.innerHTML = `<span class="goal low">${snap(a.target_temp_low, step)}°</span><span>–</span>` +
+        `<span class="goal high">${snap(goal, step)}°</span>`;
       this._setArc(goal, min, max);
     } else {
       tb.className = "target";
       const t = goal;
-      tb.innerHTML = `<span>${this._t("to")}</span><span class="goal">${t != null ? Math.round(t) : "--"}°</span>`;
+      tb.innerHTML = `<span>${this._t("to")}</span><span class="goal">${t != null ? snap(t, step) : "--"}°</span>`;
       this._setArc(t, min, max);
     }
 
@@ -371,7 +381,7 @@ class MadokaCard extends HTMLElement {
     const order = MODE_ORDER.filter((m) => supported.includes(m));
     root.getElementById("modes").innerHTML = order.map((m) =>
       `<button class="mode-btn" role="tab" data-mode="${m}" aria-selected="${m === hvac}">` +
-      mdi(MODES[m].mdi) + `<span>${this._modeLabel(m)}</span></button>`).join("");
+      mdi(MODES[m].mdi) + `<span>${esc(this._modeLabel(m))}</span></button>`).join("");
 
     // localized static labels
     root.getElementById("fanLbl").textContent = this._t("fan");
@@ -406,7 +416,7 @@ class MadokaCard extends HTMLElement {
     const own = isRange ? a.target_temp_high : a.temperature;
     const pending = this._pendingTarget();
     if (pending == null) return own;
-    if (own != null && Math.round(own) === pending) { this._pending = null; return own; }
+    if (own != null && snap(own, stepOf(a)) === pending) { this._pending = null; return own; }
     return pending;
   }
 
@@ -622,8 +632,11 @@ class MadokaCard extends HTMLElement {
   }
 
   /* ---------------------------- services ---------------------------- */
-  _call(domain, service, data) {
-    this._hass.callService(domain, service, Object.assign({ entity_id: this._config.entity }, data));
+  // HA already reports a failed call to the user; the promise is caught so it
+  // is not also an unhandled rejection, and so a caller can undo its own state.
+  _call(domain, service, data, onFail) {
+    return Promise.resolve(this._hass.callService(domain, service,
+      Object.assign({ entity_id: this._config.entity }, data))).catch(() => { if (onFail) onFail(); });
   }
   // The target the user is heading for, while HA has not caught up with it.
   _pendingTarget() {
@@ -637,30 +650,50 @@ class MadokaCard extends HTMLElement {
     // without this guard a press there wrote min_temp.
     if (!this._on || !entity || !SETPOINT_MODES.includes(entity.state)) return;
     const st = entity.attributes;
+    const step = stepOf(st);
     const shown = this._isRange ? st.target_temp_high : st.temperature;
     const base = this._pendingTarget() != null ? this._pendingTarget() : shown;
     if (base == null || isNaN(Number(base))) return;
-    const value = Math.min(this._max, Math.max(this._min, Math.round(base) + delta));
-    this._pending = { value, at: Date.now() };
+    let value = Math.min(this._max, Math.max(this._min, snap(snap(base, step) + delta * step, step)));
+    // The bump moves only the high end of a range; it must not cross the low one.
+    if (this._isRange && st.target_temp_low != null) value = Math.max(value, st.target_temp_low);
+    const pending = this._pending = { value, at: Date.now() };
+    // Nothing else redraws a card whose entity never changes, so the expiry
+    // has to: otherwise a write HA never confirmed stays on screen for good.
+    if (this._expiryTimer) clearTimeout(this._expiryTimer);
+    this._expiryTimer = setTimeout(() => {
+      this._expiryTimer = null;
+      if (this._pending === pending) { this._pending = null; this._update(); }
+    }, BUMP_PENDING_MS);
     if (this._bumpTimer) clearTimeout(this._bumpTimer);
-    this._bumpTimer = setTimeout(() => {
-      this._bumpTimer = null;
-      const now = this._hass.states[this._config.entity];
-      if (!now || this._pending == null) return;
-      this._call("climate", "set_temperature", this._isRange
-        ? { target_temp_low: now.attributes.target_temp_low, target_temp_high: this._pending.value }
-        : { temperature: this._pending.value });
-    }, BUMP_SEND_MS);
+    this._bumpTimer = setTimeout(() => { this._bumpTimer = null; this._sendPending(); }, BUMP_SEND_MS);
     this._update();
+  }
+  _sendPending() {
+    const now = this._hass.states[this._config.entity];
+    const sent = this._pending;
+    if (!now || sent == null) return;
+    // A rejected write is not the target: show the entity's own again. Only if
+    // no newer press replaced it meanwhile, or that one would be lost too.
+    this._call("climate", "set_temperature", this._isRange
+      ? { target_temp_low: now.attributes.target_temp_low, target_temp_high: sent.value }
+      : { temperature: sent.value },
+    () => { if (this._pending === sent) { this._pending = null; this._update(); } });
   }
   _setMode(m) { this._call("climate", "set_hvac_mode", { hvac_mode: m }); }
   _setFan(m) { this._call("climate", "set_fan_mode", { fan_mode: m }); }
   _power() {
-    const cur = this._hass.states[this._config.entity].state;
-    if (cur === "off") {
-      const modes = this._hass.states[this._config.entity].attributes.hvac_modes || ["cool"];
+    const st = this._hass.states[this._config.entity];
+    const features = st.attributes.supported_features || 0;
+    if (st.state === "off") {
+      // The device knows the mode it was in; guessing "cool" first gave a
+      // heating user switched off in winter the air conditioning back.
+      if (features & FEATURE_TURN_ON) { this._call("climate", "turn_on"); return; }
+      const modes = st.attributes.hvac_modes || ["cool"];
       const restore = ["cool", "heat", "auto"].find((m) => modes.includes(m)) || modes.find((m) => m !== "off");
       this._setMode(restore || "cool");
+    } else if (features & FEATURE_TURN_OFF) {
+      this._call("climate", "turn_off");
     } else {
       this._setMode("off");
     }
@@ -754,7 +787,9 @@ class MadokaCard extends HTMLElement {
 
   disconnectedCallback() {
     if (this._reconTimer) { clearTimeout(this._reconTimer); this._reconTimer = null; }
-    if (this._bumpTimer) { clearTimeout(this._bumpTimer); this._bumpTimer = null; }
+    // A press still waiting for its send (the popup closed with Escape right
+    // after it) is sent now rather than dropped.
+    if (this._bumpTimer) { clearTimeout(this._bumpTimer); this._bumpTimer = null; this._sendPending(); }
     this._closeCardDialog();
   }
 
@@ -885,9 +920,9 @@ class MadokaCard extends HTMLElement {
         ? `${cur}° · ${this._modeLabel("off")}`
         : this._modeLabel("off");
     } else if (a.target_temp_low != null && a.target_temp_high != null) {
-      sub = `${cur}° → ${Math.round(a.target_temp_low)}–${Math.round(this._goal(a, true))}° · ${this._modeLabel(hvac)}`;
+      sub = `${cur}° → ${snap(a.target_temp_low, stepOf(a))}–${snap(this._goal(a, true), stepOf(a))}° · ${this._modeLabel(hvac)}`;
     } else if (meaningful && a.temperature != null) {
-      sub = `${cur}° → ${Math.round(this._goal(a, false))}° · ${this._modeLabel(hvac)}`;
+      sub = `${cur}° → ${snap(this._goal(a, false), stepOf(a))}° · ${this._modeLabel(hvac)}`;
     } else {
       sub = `${cur}° · ${this._modeLabel(hvac)}`;
     }

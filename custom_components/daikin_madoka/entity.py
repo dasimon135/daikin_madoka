@@ -54,6 +54,10 @@ class MadokaEntity(CoordinatorEntity[MadokaCoordinator]):
                     "device": self.coordinator.device_name,
                 },
             ) from err
+        # pymadoka stores the written status once the unit acknowledges it, so
+        # show it now: the boost's re-poll is a full BLE round of every
+        # feature and used to hold the card on the old state for seconds.
+        self.coordinator.async_update_listeners()
         # Refresh now and again shortly after, so the UI reflects the device
         # applying the command without waiting a full poll interval.
         await self.coordinator.async_boost()

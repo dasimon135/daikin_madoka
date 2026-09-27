@@ -153,6 +153,8 @@ The **stock bluetooth-proxy firmware cannot pair with the BRC1H** (it runs `io_c
 # its trigger never runs. Count 3 for the proxy plus 1 per responder, and
 # RE-COUNT every time you add a thermostat to this proxy: a number that was
 # right for one responder is wrong for two, and the build still succeeds.
+# Slots plus responders cannot exceed 6 (ESP-IDF's GATT app limit), whatever
+# max_connections says: see docs/esphome-proxy.md for more than 3 thermostats.
 esp32_ble:
   io_capability: display_yes_no
   max_connections: 4   # 3 proxy slots + 1 responder
@@ -409,11 +411,12 @@ climate:
     update_interval: 15s
     firmware_version:
       name: "Firmware"
-    dump_raw: false        # set true to hex-log BLE frames (reverse engineering)
+    dump_raw: false        # set true to hex-log received BLE frames (reverse engineering)
 ```
 
-Set `dump_raw: true` to hex-log every BLE frame and any unhandled function ID —
-useful for mapping VAM-specific features. See [docs/reverse-engineering-vam.md](docs/reverse-engineering-vam.md).
+Set `dump_raw: true` to hex-log every frame received from the controller, at
+INFO level. A frame for a function the component does not decode is logged
+even without it. Useful for mapping VAM-specific features. See [docs/reverse-engineering-vam.md](docs/reverse-engineering-vam.md).
 
 ### Pinning versions
 

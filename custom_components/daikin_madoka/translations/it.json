@@ -68,6 +68,15 @@
   "exceptions": {
     "command_failed": {
       "message": "Impossibile eseguire «{action}» su {device}: connessione Bluetooth non disponibile"
+    },
+    "status_unavailable": {
+      "message": "Impossibile impostare ora la temperatura di {device}: i suoi setpoint e la modalità di funzionamento non sono ancora stati letti"
+    },
+    "temperature_out_of_range": {
+      "message": "{temperature} °C è fuori dall'intervallo che {device} accetta per questo setpoint (da {min_temp} a {max_temp} °C)"
+    },
+    "setpoint_gap_too_small": {
+      "message": "{device} richiede almeno {differential} °C tra il setpoint basso ({low} °C) e quello alto ({high} °C)"
     }
   },
   "entity": {

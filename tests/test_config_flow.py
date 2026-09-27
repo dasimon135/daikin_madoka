@@ -668,3 +668,83 @@ async def test_validation_gives_up_when_the_lock_stays_busy() -> None:
 
     assert result == ("cannot_connect", None)
     controller.start.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------
+# Reload without the API Home Assistant deprecates for entries that carry an
+# update listener (every loaded entry here does): async_update_reload_and_abort
+# logs a warning since 2026.9 and is announced to break in 2026.12.
+# --------------------------------------------------------------------------
+
+
+async def test_reconfigure_reloads_without_the_deprecated_helper(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    entry = _add_configured_entry(hass)
+    # A loaded entry always carries the integration's update listener.
+    entry.add_update_listener(AsyncMock())
+    result = await entry.start_reconfigure_flow(hass)
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch.object(hass.config_entries, "async_schedule_reload") as reload,
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_MAC: MAC, CONF_FRIENDLY_NAME: "Buanderie"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    reload.assert_called_once_with(entry.entry_id)
+    assert "should use it for scheduling a reload" not in caplog.text
+
+
+async def test_reconfigure_mac_change_moves_the_entities_to_the_new_device(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """Same room, new thermostat: history, automations and dashboards follow.
+
+    Every unique_id and the device identifier are keyed by MAC. Left alone,
+    the reload creates a second set of entities with a _2 suffix, and the old
+    ones stay attached to the live entry, so nothing ever cleans them up.
+    """
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _add_configured_entry(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, MAC)}
+    )
+    climate = ent_reg.async_get_or_create(
+        "climate", DOMAIN, MAC, config_entry=entry, device_id=device.id
+    )
+    indoor = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}_indoor_temperature",
+        config_entry=entry,
+        device_id=device.id,
+    )
+    result = await entry.start_reconfigure_flow(hass)
+
+    with (
+        patch(SETUP_ENTRY, return_value=True),
+        patch(VALIDATE, return_value=(None, OTHER_SOURCE)),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_MAC: OTHER_MAC, CONF_FRIENDLY_NAME: "Salon"}
+        )
+        await hass.async_block_till_done()
+
+    assert result["reason"] == "reconfigure_successful"
+    assert ent_reg.async_get(climate.entity_id).unique_id == OTHER_MAC
+    assert (
+        ent_reg.async_get(indoor.entity_id).unique_id
+        == f"{OTHER_MAC}_indoor_temperature"
+    )
+    assert dev_reg.async_get(device.id).identifiers == {(DOMAIN, OTHER_MAC)}

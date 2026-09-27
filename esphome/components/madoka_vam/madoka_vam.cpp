@@ -1,5 +1,6 @@
 #include "madoka_vam.h"
 
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include <cinttypes>
 #include <utility>
@@ -137,35 +138,35 @@ void MadokaVam::control(const ClimateCall &call) {
 }
 
 
+void MadokaVam::log_frame_(const char *what, const std::vector<uint8_t> &msg) {
+  // A frame is at most 255 bytes: its first byte is its own size.
+  char hex[format_hex_pretty_size(255)];
+  ESP_LOGI(TAG, "%s 0x%04X: %s", what, frame_function_id(msg), format_hex_pretty_to(hex, msg.data(), msg.size()));
+}
+
 void MadokaVam::parse_cb_(std::vector<uint8_t> msg) {
-  if (msg.size() < 4) {
-    ESP_LOGW(TAG, "Discarding a frame that is too short to carry a function id");
-    return;
+  // Every argument goes through for_each_argument_, which never reads past
+  // the frame; each case below still checks arg.len before reading, because
+  // real units send zero-length values.
+  const uint16_t function_id = frame_function_id(msg);
+  if (this->dump_raw_) {
+    this->log_frame_("Received function", msg);
   }
-  uint16_t function_id = msg[2] << 8 | msg[3];
-  uint8_t i = 4;
-  uint8_t message_size = msg.size();
 
   switch (function_id) {
     case CMD_GET_SETTING_STATUS:
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == 0x20 && len >= 1) {
-          this->cur_status_.status = msg[i];
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
+        if (arg.id == 0x20 && arg.len >= 1) {
+          this->cur_status_.status = arg.value[0];
         }
-        i += len;
-      }
+      });
       break;
     case CMD_GET_OPERATION_MODE:
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == 0x20 && len >= 1) {
-          this->cur_status_.mode = msg[i];
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
+        if (arg.id == 0x20 && arg.len >= 1) {
+          this->cur_status_.mode = arg.value[0];
         }
-        i += len;
-      }
+      });
       break;
     default:
       break;
@@ -184,12 +185,10 @@ void MadokaVam::parse_cb_(std::vector<uint8_t> msg) {
         this->mode = climate::CLIMATE_MODE_OFF;
       }
       break;
-    case CMD_GET_VENTILATION: {
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == ARG_VENTILATION_FAN_SPEED && len >= 1) {
-          switch (msg[i]) {
+    case CMD_GET_VENTILATION:
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
+        if (arg.id == ARG_VENTILATION_FAN_SPEED && arg.len >= 1) {
+          switch (arg.value[0]) {
             case FAN_SPEED_LOW:
               this->fan_mode = climate::CLIMATE_FAN_LOW;
               break;
@@ -197,11 +196,11 @@ void MadokaVam::parse_cb_(std::vector<uint8_t> msg) {
               this->fan_mode = climate::CLIMATE_FAN_HIGH;
               break;
             default:
-              ESP_LOGW(TAG, "Unknown ventilation fan speed: 0x%02X", msg[i]);
+              ESP_LOGW(TAG, "Unknown ventilation fan speed: 0x%02X", arg.value[0]);
               break;
           }
-        } else if (argument_id == ARG_VENTILATION_MODE && len >= 1) {
-          switch (msg[i]) {
+        } else if (arg.id == ARG_VENTILATION_MODE && arg.len >= 1) {
+          switch (arg.value[0]) {
             case VENTILATION_MODE_AUTO:
               this->set_custom_preset_(PRESET_VENTILATION_AUTO);
               break;
@@ -212,49 +211,39 @@ void MadokaVam::parse_cb_(std::vector<uint8_t> msg) {
               this->set_custom_preset_(PRESET_BYPASS);
               break;
             default:
-              ESP_LOGW(TAG, "Unknown ventilation mode: 0x%02X", msg[i]);
+              ESP_LOGW(TAG, "Unknown ventilation mode: 0x%02X", arg.value[0]);
               break;
           }
         }
-        i += len;
-      }
+      });
       break;
-    }
     case CMD_GET_SENSOR_INFORMATION:
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
         // Only argument 0x40 (indoor temperature) is read: a VAM is an
         // indoor-only unit, it has no outdoor probe behind argument 0x41.
-        if (argument_id == 0x40 && len >= 1) {
-          this->current_temperature = msg[i];
+        if (arg.id == 0x40 && arg.len >= 1) {
+          this->current_temperature = arg.value[0];
         }
-        i += len;
-      }
+      });
       break;
     case CMD_GET_CLEAN_FILTER:
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == 0x62 && this->clean_filter_binary_sensor_ != nullptr && len >= 1) {
-          this->clean_filter_binary_sensor_->publish_state((msg[i] & 0x01) == 0x01);
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
+        if (arg.id == 0x62 && this->clean_filter_binary_sensor_ != nullptr && arg.len >= 1) {
+          this->clean_filter_binary_sensor_->publish_state((arg.value[0] & 0x01) == 0x01);
         }
-        i += len;
-      }
+      });
       break;
     case CMD_GET_VERSION: {
       std::string rc_version;
       std::string ble_version;
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == 0x45 && len >= 3) {
-          rc_version = std::to_string(msg[i]) + "." + std::to_string(msg[i + 1]) + "." + std::to_string(msg[i + 2]);
-        } else if (argument_id == 0x46 && len >= 2) {
-          ble_version = std::to_string(msg[i]) + "." + std::to_string(msg[i + 1]);
+      this->for_each_argument_(msg, [&rc_version, &ble_version](const FrameArgument &arg) {
+        if (arg.id == 0x45 && arg.len >= 3) {
+          rc_version = std::to_string(arg.value[0]) + "." + std::to_string(arg.value[1]) + "." +
+                       std::to_string(arg.value[2]);
+        } else if (arg.id == 0x46 && arg.len >= 2) {
+          ble_version = std::to_string(arg.value[0]) + "." + std::to_string(arg.value[1]);
         }
-        i += len;
-      }
+      });
       if (this->firmware_version_text_sensor_ != nullptr) {
         if (!rc_version.empty() && !ble_version.empty()) {
           this->firmware_version_text_sensor_->publish_state("RC " + rc_version + " / BLE " + ble_version);
@@ -267,16 +256,27 @@ void MadokaVam::parse_cb_(std::vector<uint8_t> msg) {
       break;
     }
     case CMD_GET_EYE_BRIGHTNESS:
-      while (i < message_size) {
-        uint8_t argument_id = msg[i++];
-        uint8_t len = msg[i++];
-        if (argument_id == 0x33 && this->eye_brightness_number_ != nullptr && len >= 1) {
-          this->eye_brightness_number_->publish_state(msg[i]);
+      this->for_each_argument_(msg, [this](const FrameArgument &arg) {
+        if (arg.id == 0x33 && this->eye_brightness_number_ != nullptr && arg.len >= 1) {
+          this->eye_brightness_number_->publish_state(arg.value[0]);
         }
-        i += len;
-      }
+      });
+      break;
+    // Acknowledgements of the writes this component sends itself: nothing to
+    // decode, the next poll reads the result back.
+    case CMD_SET_SETTING_STATUS:
+    case CMD_SET_OPERATION_MODE:
+    case CMD_SET_VENTILATION:
+    case CMD_SET_EYE_BRIGHTNESS:
+    case CMD_RESET_FILTER:
       break;
     default:
+      // Nothing here decodes it: most likely the answer to a
+      // send_raw_command() probe, so it is logged whole whatever dump_raw
+      // says (and only once when dump_raw already printed it above).
+      if (!this->dump_raw_) {
+        this->log_frame_("Unhandled function", msg);
+      }
       break;
   }
 

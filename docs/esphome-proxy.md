@@ -63,7 +63,16 @@ packages:
 # responders below would find no slot. ESPHome only WARNS about it at compile
 # time ("BLE components require 5 connection slot(s) but only 3 configured"):
 # the build succeeds, each ble_client fails at boot, and its trigger never
-# runs. Count 3 for the proxy plus 1 per responder, 9 at most.
+# runs. Count 3 for the proxy plus 1 per responder.
+#
+# The ceiling is 6, not the 9 esp32_ble accepts. Every proxy slot and every
+# ble_client registers one GATT client app, and ESP-IDF's Bluedroid allows 8
+# apps of which it uses 2 itself (GATT_MAX_APPS in bt_target.h). Past 6, the
+# last ones to register fail at boot ("ble_client is marked FAILED"), a
+# different pair after each reboot, and max_connections cannot lift it. With
+# more than 3 thermostats, lower bluetooth_proxy connection_slots (2 slots + 4
+# responders = 6) and split the thermostats over two proxies: one ESP32
+# carrying four permanent thermostat links also drops them under load.
 #
 # RE-COUNT whenever you add a thermostat to this proxy. Both reports of this
 # failure so far were a number that had been right for the responders of the
@@ -156,6 +165,7 @@ the guesswork:
 |---|---|---|
 | Entities unavailable; logs show `Insufficient authentication` | An **unpaired ACTIVE proxy** is winning the connection (it has the strongest signal but no bond) | Pair that proxy: flash the config above, trigger a reconnect, and watch for the prompt + notification — or set it to `bluetooth_proxy: active: false` |
 | The thermostat shows a code, the proxy log shows `BT_SMP: Value for numeric comparison`, but no notification arrives and `on_numeric_comparison_request` never runs | The responder has no connection slot: `max_connections` does not cover the proxy's 3 slots plus one per `ble_client` (look for the "connection slot(s)" warning in the compile log) — or the thermostat being paired has no responder of its own. A proxy that paired fine until you added a second thermostat is this, every time | Set `esp32_ble: max_connections` to 3 + the number of responders, and declare one `ble_client` per thermostat |
+| At boot the proxy logs `ble_client is marked FAILED` for some responders, a different set after each reboot, although `max_connections` covers them all | More than 6 proxy slots plus responders: ESP-IDF allows 6 GATT client apps, and `max_connections` does not raise that | Lower `bluetooth_proxy: connection_slots` so slots + responders ≤ 6, and split more than 3 thermostats over two proxies |
 | Pairing times out; prompt appears on the thermostat screen and then disappears | The numeric-comparison prompt was not answered on the thermostat | Retry and **confirm the prompt on the thermostat screen within a few seconds** (the proxy side is auto-confirmed by the responder) |
 | A discovery card appears for a Madoka you don't recognize | Likely a neighbour's out-of-home BRC1H at the edge of range | Since v3.2.0 the integration ignores discoveries below −90 dBm; on older versions, just ignore/dismiss the card |
 | A `pairing_required` repair shows up in Home Assistant | Every connection path refused the link for lack of a bond | Open the repair — it **names the proxies that refused**; pair each of them (or make them passive) following the steps above |

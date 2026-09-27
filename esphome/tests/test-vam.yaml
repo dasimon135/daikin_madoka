@@ -34,6 +34,8 @@ climate:
     name: "Madoka VAM"
     ble_client_id: madoka_vam_test
     update_interval: 15s
+    # Exercises the dump_raw codegen path (set_dump_raw).
+    dump_raw: true
     clean_filter:
       name: "VAM Clean Filter"
     firmware_version:

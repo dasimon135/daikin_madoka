@@ -20,6 +20,7 @@ from homeassistant.components.climate import (
     HVACMode,
 )
 from homeassistant.components.climate.const import (
+    ATTR_HVAC_MODE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
     FAN_AUTO,
@@ -29,13 +30,14 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     CONF_DEVICE_TYPE,
     DEFAULT_DEVICE_TYPE,
     DEVICE_TYPE_VENTILATION,
+    DOMAIN,
     MAX_TEMP,
     MIN_TEMP,
 )
@@ -168,10 +170,21 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
         return self.controller.set_point.status
 
     @property
+    def _device_mode(self) -> OperationModeEnum | None:
+        """The unit's operation mode, which it keeps while powered off.
+
+        Setpoint display, limits and fan speed follow this rather than
+        hvac_mode: a setpoint write made while off is built from it, so the
+        UI has to show the register that write will move.
+        """
+        status = self.controller.operation_mode.status
+        return None if status is None else status.operation_mode
+
+    @property
     def _range_active(self) -> bool:
         """Dual setpoint UI applies in AUTO mode when the device has it enabled."""
         return (
-            self.hvac_mode == HVACMode.AUTO
+            self._device_mode == OperationModeEnum.AUTO
             and self._set_point is not None
             and bool(self._set_point.range_enabled)
         )
@@ -208,7 +221,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             return None
         if self._set_point is None or self._range_active:
             return None
-        if self.hvac_mode == HVACMode.HEAT:
+        if self._device_mode == OperationModeEnum.HEAT:
             return self._set_point.heating_set_point
         return self._set_point.cooling_set_point
 
@@ -226,48 +239,128 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             return None
         return set_point.cooling_set_point
 
+    def _register_limits(
+        self,
+    ) -> tuple[int | None, int | None, int | None, int | None]:
+        """Cooling low/high, heating low/high; None where not reported (0)."""
+        set_point = self._set_point
+        if set_point is None:
+            return None, None, None, None
+        return (
+            set_point.cooling_lowerlimit or None,
+            set_point.cooling_upperlimit or None,
+            set_point.heating_lowerlimit or None,
+            set_point.heating_upperlimit or None,
+        )
+
+    def _mode_limits(self, mode: OperationModeEnum | None) -> tuple[float, float]:
+        """Range a single target may take in mode without losing the write.
+
+        It mirrors the pair async_set_temperature builds: every register that
+        write moves has to stay inside its own limits, the companion one
+        (target -/+ min_differential) included, or the unit drops the pair.
+        A limit the device does not report bounds nothing, so the fallback
+        MIN_TEMP/MAX_TEMP is never shrunk by the differential.
+        """
+        set_point = self._set_point
+        if set_point is None:
+            return MIN_TEMP, MAX_TEMP
+        cool_low, cool_high, heat_low, heat_high = self._register_limits()
+        gap = set_point.min_differential or 0
+
+        def shifted(limit: int | None, delta: int) -> int | None:
+            return None if limit is None else limit + delta
+
+        lows: list[int | None]
+        highs: list[int | None]
+        if set_point.range_enabled:
+            if mode == OperationModeEnum.HEAT:
+                lows, highs = [heat_low], [heat_high]
+            elif mode == OperationModeEnum.COOL:
+                lows, highs = [cool_low], [cool_high]
+            elif mode == OperationModeEnum.AUTO:
+                # The two range handles ride different registers; each one is
+                # checked against its own limits in async_set_temperature.
+                lows, highs = [cool_low, heat_low], [cool_high, heat_high]
+                return (
+                    min((v for v in lows if v is not None), default=MIN_TEMP),
+                    max((v for v in highs if v is not None), default=MAX_TEMP),
+                )
+            else:
+                # DRY/FAN: cooling = target, heating may drop to target - gap.
+                lows, highs = [cool_low, shifted(heat_low, gap)], [cool_high]
+        elif mode == OperationModeEnum.HEAT:
+            # heating = target, cooling = target + gap.
+            lows = [heat_low, shifted(cool_low, -gap)]
+            highs = [heat_high, shifted(cool_high, -gap)]
+        else:
+            # cooling = target, heating = target - gap.
+            lows = [cool_low, shifted(heat_low, gap)]
+            highs = [cool_high, shifted(heat_high, gap)]
+        return (
+            max((v for v in lows if v is not None), default=MIN_TEMP),
+            min((v for v in highs if v is not None), default=MAX_TEMP),
+        )
+
     @property
     def min_temp(self) -> float:
-        """Return the minimum temperature, read from the device when reported."""
-        if self._set_point is not None:
-            limits = [
-                limit
-                for limit in (
-                    self._set_point.cooling_lowerlimit,
-                    self._set_point.heating_lowerlimit,
-                )
-                if limit
-            ]
-            if limits:
-                return min(limits)
-        return MIN_TEMP
+        """Return the minimum temperature for the unit's operation mode."""
+        return self._mode_limits(self._device_mode)[0]
 
     @property
     def max_temp(self) -> float:
-        """Return the maximum temperature, read from the device when reported."""
-        if self._set_point is not None:
-            limits = [
-                limit
-                for limit in (
-                    self._set_point.cooling_upperlimit,
-                    self._set_point.heating_upperlimit,
-                )
-                if limit
-            ]
-            if limits:
-                return max(limits)
-        return MAX_TEMP
+        """Return the maximum temperature for the unit's operation mode."""
+        return self._mode_limits(self._device_mode)[1]
+
+    def _check_in_range(self, temperature: float, low: float, high: float) -> None:
+        """Refuse a setpoint the unit would drop without a word."""
+        if low <= temperature <= high:
+            return
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="temperature_out_of_range",
+            translation_placeholders={
+                "temperature": str(temperature),
+                "min_temp": str(low),
+                "max_temp": str(high),
+                "device": self.coordinator.device_name,
+            },
+        )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature (single setpoint or AUTO range)."""
+        """Set new target temperature (single setpoint or AUTO range).
+
+        With hvac_mode (climate.set_temperature accepts it), the mode is
+        written first and the setpoint pair is built for that new mode.
+        Everything is validated before the first write, so a refused
+        temperature does not leave the mode switched behind it.
+        """
         if self._is_ventilation:
             return
-        if self._set_point is None or self.controller.operation_mode.status is None:
-            return
+        set_point = self._set_point
+        device_mode = self._device_mode
+        if set_point is None or device_mode is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="status_unavailable",
+                translation_placeholders={"device": self.coordinator.device_name},
+            )
+
+        hvac_mode = kwargs.get(ATTR_HVAC_MODE)
+        # OFF is a power write only: the unit keeps its operation mode, and
+        # the setpoint arithmetic keeps following it. An unsupported mode
+        # falls through here and is refused by async_set_hvac_mode before it
+        # writes anything.
+        operation_mode = (
+            device_mode
+            if hvac_mode is None
+            else self._mode_to_daikin.get(hvac_mode, device_mode)
+        )
+        differential = set_point.min_differential or 0
 
         # Copy the parsed status so the write echoes the device's own range
         # mode and limits instead of resetting them.
-        new_status: SetPointStatus = copy.copy(self._set_point)
+        new_status: SetPointStatus = copy.copy(set_point)
 
         target_low = kwargs.get(ATTR_TARGET_TEMP_LOW)
         target_high = kwargs.get(ATTR_TARGET_TEMP_HIGH)
@@ -277,10 +370,38 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             new_status.heating_set_point = round(target_low)
         if target_high is not None:
             new_status.cooling_set_point = round(target_high)
+        if target_low is not None or target_high is not None:
+            # Each range handle rides its own register, so HA's one
+            # min_temp/max_temp cannot bound both: check them here.
+            cool_low, cool_high, heat_low, heat_high = self._register_limits()
+            if target_low is not None:
+                self._check_in_range(
+                    new_status.heating_set_point,
+                    heat_low or MIN_TEMP,
+                    heat_high or MAX_TEMP,
+                )
+            if target_high is not None:
+                self._check_in_range(
+                    new_status.cooling_set_point,
+                    cool_low or MIN_TEMP,
+                    cool_high or MAX_TEMP,
+                )
+            gap = new_status.cooling_set_point - new_status.heating_set_point
+            if gap < differential:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="setpoint_gap_too_small",
+                    translation_placeholders={
+                        "low": str(new_status.heating_set_point),
+                        "high": str(new_status.cooling_set_point),
+                        "differential": str(differential),
+                        "device": self.coordinator.device_name,
+                    },
+                )
 
         if target is not None:
-            operation_mode = self.controller.operation_mode.status.operation_mode
-            if not self._set_point.range_enabled:
+            self._check_in_range(round(target), *self._mode_limits(operation_mode))
+            if not set_point.range_enabled:
                 # A unit configured for single-setpoint logic (range_enabled = 0)
                 # applies the whole pair, so both registers have to carry a
                 # value it can accept. Writing only the mode's own setpoint
@@ -296,21 +417,30 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
                 # restores it by pushing cooling up -- which reads back a degree
                 # high on every change, and makes a one-degree decrease a no-op.
                 # Writing the gap explicitly leaves it nothing to correct.
-                differential = self._set_point.min_differential or 0
                 if operation_mode == OperationModeEnum.HEAT:
                     new_status.heating_set_point = round(target)
                     new_status.cooling_set_point = round(target) + differential
                 else:
                     new_status.cooling_set_point = round(target)
                     new_status.heating_set_point = round(target) - differential
-            else:
+            elif operation_mode == OperationModeEnum.HEAT:
                 # Range-capable unit outside AUTO: touch only the setpoint the
                 # current mode uses, so the other one survives for AUTO.
-                if operation_mode != OperationModeEnum.HEAT:
-                    new_status.cooling_set_point = round(target)
-                if operation_mode != OperationModeEnum.COOL:
-                    new_status.heating_set_point = round(target)
+                new_status.heating_set_point = round(target)
+            elif operation_mode == OperationModeEnum.COOL:
+                new_status.cooling_set_point = round(target)
+            else:
+                # DRY/FAN show and write the cooling register. Setting heating
+                # to the same value would break min_differential, so keep it
+                # where it is while it respects the gap, else hold it the gap
+                # below.
+                new_status.cooling_set_point = round(target)
+                new_status.heating_set_point = min(
+                    new_status.heating_set_point, round(target) - differential
+                )
 
+        if hvac_mode is not None:
+            await self.async_set_hvac_mode(hvac_mode)
         await self._async_execute(
             "set target temperature",
             lambda: self.controller.set_point.update(new_status),
@@ -410,7 +540,7 @@ class DaikinMadokaClimate(MadokaEntity, ClimateEntity):
             return mode
         if self.controller.fan_speed.status is None:
             return None
-        if self.hvac_mode == HVACMode.HEAT:
+        if self._device_mode == OperationModeEnum.HEAT:
             return DAIKIN_TO_HA_FAN_MODE.get(
                 self.controller.fan_speed.status.heating_fan_speed
             )

@@ -221,5 +221,5 @@ script:
 #     update_interval: 15s
 #     firmware_version:
 #       name: "VAM firmware"
-#     dump_raw: false  # true = hex-log BLE frames (VAM reverse engineering)
+#     dump_raw: false  # true = hex-log received BLE frames (VAM reverse engineering)
 # ---------------------------------------------------------------------------

@@ -124,9 +124,11 @@ layout above:
 
 The ESPHome `madoka_vam` component includes reverse-engineering aids:
 
-- **`dump_raw: true`** — hex-logs every BLE frame (TX and RX), and logs any
-  unhandled function ID it receives. Enable it and watch the ESPHome logs while
-  the unit runs to see what the controller reports unprompted.
+- **`dump_raw: true`** logs every frame received from the controller, once
+  reassembled, as hex at INFO level. Enable it and watch the ESPHome logs while
+  the unit runs to see what the controller reports unprompted. Frames sent to
+  the controller are not logged. A frame for a function the component does not
+  decode is logged as hex at INFO even with `dump_raw: false`.
 - **`send_raw_command(cmd, args)`** — a public method callable from a lambda to
   send an arbitrary function ID + TLV arguments and observe the reply in the log.
 

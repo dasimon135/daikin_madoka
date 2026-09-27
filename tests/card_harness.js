@@ -69,10 +69,26 @@ global.document = {
 };
 global.CustomEvent = class { constructor(t, i) { this.type = t; Object.assign(this, i); } };
 const realSetTimeout = setTimeout;
-const timers = [];
-global.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
-global.clearTimeout = (id) => { if (id && timers[id - 1]) timers[id - 1].fn = null; };
-const flushTimers = () => { for (const t of timers.splice(0)) if (t.fn) t.fn(); };
+// Keyed by id, so a cleared id never cancels a later timer.
+const timers = new Map();
+let timerId = 0;
+global.setTimeout = (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; };
+global.clearTimeout = (id) => { timers.delete(id); };
+// Runs the queued timers whose delay is at most `upTo` ms; longer ones stay
+// queued, so the 600 ms send can fire without the 15 s expiry. Shortest first,
+// as a clock would.
+const flushTimers = (upTo = Infinity) => {
+  for (const [id, t] of [...timers].sort((x, y) => x[1].ms - y[1].ms)) {
+    if (t.ms > upTo) continue;
+    timers.delete(id);
+    t.fn();
+  }
+};
+// Lets settled promises (a rejected service call) run their handlers.
+const settle = () => new Promise((r) => realSetTimeout(r, 0));
+// A service call the card never catches would kill the whole run; count it.
+const unhandled = [];
+process.on("unhandledRejection", (e) => unhandled.push(String(e)));
 console.info = () => {};
 
 // eslint-disable-next-line no-eval
@@ -174,7 +190,7 @@ const scenarios = {
     const hass = makeHass();
     const card = makeCard({}, hass);
     card._bump(1);
-    flushTimers();
+    flushTimers(1000);
     const st = hass.states[ENTITY];
     const next = Object.assign({}, hass, { states: Object.assign({}, hass.states, {
       [ENTITY]: { state: st.state, attributes: Object.assign({}, st.attributes, { temperature: 26 }) } }) });
@@ -270,12 +286,90 @@ const scenarios = {
     const card = makeCard({}, hass);
     return card.shadowRoot.getElementById("fanSel").innerHTML.includes("<img");
   },
+  // An hvac state the card does not know is printed as-is: it must be escaped too.
+  mode_label_markup_is_escaped() {
+    const hass = makeHass({ state: "<img src=x onerror=1>" });
+    const card = makeCard({}, hass);
+    return card.shadowRoot.getElementById("modeRow").innerHTML.includes("<img");
+  },
+  // Power on from off: a device that can turn itself on resumes its OWN last
+  // mode; guessing "cool" first gave a heating user the air conditioning.
+  power_on_resumes_the_device_mode() {
+    const services = (features) => {
+      const hass = makeHass({ state: "off", attrs: { supported_features: features } });
+      makeCard({}, hass)._power();
+      return hass.calls.map((c) => `${c.service}${c.data.hvac_mode ? ":" + c.data.hvac_mode : ""}`);
+    };
+    // 128 = TURN_ON, 256 = TURN_OFF, 1 = TARGET_TEMPERATURE.
+    return { turnOn: services(1 | 128 | 256), noTurnOn: services(1) };
+  },
+  power_off_uses_turn_off_when_supported() {
+    const services = (features) => {
+      const hass = makeHass({ state: "heat", attrs: { supported_features: features } });
+      makeCard({}, hass)._power();
+      return hass.calls.map((c) => `${c.service}${c.data.hvac_mode ? ":" + c.data.hvac_mode : ""}`);
+    };
+    return { turnOff: services(1 | 128 | 256), noTurnOff: services(1) };
+  },
+  // Closing the popup (Escape) within the send delay must not lose the press.
+  press_then_close_still_sends() {
+    const hass = makeHass();
+    const card = makeCard({}, hass);
+    card._bump(1);
+    card.disconnectedCallback();
+    return setTemps(hass);
+  },
+  // A rejected write must not leave its value on screen as if it were the target.
+  async rejected_write_drops_the_pending_target() {
+    const hass = makeHass();
+    hass.callService = (domain, service, data) => {
+      hass.calls.push({ domain, service, data });
+      return Promise.reject(new Error("rejected"));
+    };
+    const card = makeCard({}, hass);
+    card._bump(1);
+    flushTimers(1000);
+    await settle();
+    return { unhandled: unhandled.length, pending: card._pending, shows25:card.shadowRoot.getElementById("targetBox").innerHTML.includes(">25°") };
+  },
+  // A write HA never confirms stops standing in after 15 s, and the screen says so
+  // without waiting for some unrelated state change.
+  pending_expiry_redraws() {
+    const hass = makeHass();
+    const card = makeCard({}, hass);
+    card._bump(1);
+    flushTimers(1000);
+    flushTimers();
+    return card.shadowRoot.getElementById("targetBox").innerHTML.includes(">25°");
+  },
+  // An entity with a half-degree step (an Airzone Aidoo) must reach half degrees.
+  half_degree_step() {
+    const hass = makeHass({ state: "heat", attrs: { temperature: 21, target_temp_step: 0.5 } });
+    const card = makeCard({}, hass);
+    card._bump(1);
+    const dial = card.shadowRoot.getElementById("targetBox").innerHTML;
+    flushTimers(1000);
+    const tile = makeCard({ layout: "tile" }, makeHass({ state: "heat", attrs: { temperature: 21.5, target_temp_step: 0.5 } }));
+    return { sent: setTemps(hass), dial: dial.includes(">21.5°"), tile: tile.shadowRoot.getElementById("tsub").textContent.includes("21.5°") };
+  },
+  // In range mode the bump moves the high end: it must never cross the low one.
+  range_high_never_below_low() {
+    const hass = makeHass({ state: "heat_cool", attrs: {
+      temperature: null, target_temp_low: 22, target_temp_high: 23, hvac_modes: ["off", "heat_cool"] } });
+    const card = makeCard({}, hass);
+    card._bump(-1); card._bump(-1);
+    flushTimers(1000);
+    return hass.calls.filter((c) => c.service === "set_temperature").map((c) => c.data);
+  },
 };
 
 const only = process.argv[2];
 const out = {};
-for (const [name, fn] of Object.entries(scenarios)) {
-  if (only && only !== name) continue;
-  try { out[name] = fn(); } catch (e) { out[name] = { error: String(e && e.stack ? e.stack.split("\n")[0] : e) }; }
-}
-realSetTimeout(() => { process.stdout.write(JSON.stringify(out)); }, 0);
+(async () => {
+  for (const [name, fn] of Object.entries(scenarios)) {
+    if (only && only !== name) continue;
+    timers.clear();
+    try { out[name] = await fn(); } catch (e) { out[name] = { error: String(e && e.stack ? e.stack.split("\n")[0] : e) }; }
+  }
+  process.stdout.write(JSON.stringify(out));
+})();

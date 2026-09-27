@@ -12,6 +12,7 @@ from typing import Any
 from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.features.clean_filter import ResetCleanFilterTimer
 
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -53,7 +54,7 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
-from .util import device_for_address
+from .util import device_for_address, entry_macs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,9 +81,18 @@ BACKOFF_UNBONDED_PATH = "unbonded_path"
 # reconnecting through the same proxies) would flip healthy entities
 # unavailable for no reason.
 MAX_CONSECUTIVE_SKIPS = 3
+# Consecutive answered polls in which one feature stayed silent before its
+# last value stops being presented as current. pymadoka's Controller.update
+# skips a failing feature and still counts the poll as good if any other
+# feature answered, so without this a feature that keeps failing froze its
+# entities at their last value forever, "available". Three: one garbled
+# notification, or two, must not blank a sensor.
+FEATURE_MISS_LIMIT = 3
 # Follow-up refresh delay after a command, to catch the device applying it
 # without waiting a whole poll interval.
 BOOST_DELAY = 4
+# How long an unload waits for a cancelled poll to wind down.
+POLL_CANCEL_TIMEOUT = 10
 DOCS_URL = "https://github.com/dasimon135/daikin_madoka#requirements"
 
 # One BLE connect at a time across every Madoka device. Several thermostats
@@ -262,13 +272,21 @@ class _PollSkipped(Exception):
     """
 
 
-class _NotAdvertising(UpdateFailed):
-    """The poll failed fast because HA's tracker does not see the device.
+class _NoRadioFailure(UpdateFailed):
+    """A poll that failed fast, without touching any radio.
 
-    A real failure (it counts, and it earns the unreachable repair), but one
-    that touched no radio: no proxy slot taken, no SMP initiated. It must not
-    engage the cadence brake, whose whole justification is that cost.
+    A real failure (it counts, and it earns the unreachable repair), but no
+    proxy slot was taken and no SMP initiated. It must not engage the cadence
+    brake, whose whole justification is that cost.
     """
+
+
+class _NotAdvertising(_NoRadioFailure):
+    """The poll failed fast because HA's tracker does not see the device."""
+
+
+class _SuspendedPoll(_NoRadioFailure):
+    """The poll failed fast because automatic reconnects are suspended."""
 
 
 def _describe(err: BaseException) -> str:
@@ -523,6 +541,20 @@ def async_pairing_state(hass: HomeAssistant, address: str) -> MadokaPairingState
     return store.setdefault(address, MadokaPairingState())
 
 
+def async_get_pairing_state(
+    hass: HomeAssistant, address: str
+) -> MadokaPairingState | None:
+    """Return the shared pairing state for a device, WITHOUT creating it.
+
+    For readers that can run after an unload dropped the state (the pairing
+    callbacks pymadoka may still be calling). Creating an empty one there would
+    make the next setup skip async_restore_pairing_state, which never
+    overwrites a live state, and silently lose the persisted verdict.
+    """
+    store: dict[str, MadokaPairingState] = hass.data.get(PAIRING_STATE_KEY) or {}
+    return store.get(address)
+
+
 @callback
 def async_restore_pairing_state(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Rehydrate the verdicts this entry persisted, once per MAC.
@@ -538,8 +570,13 @@ def async_restore_pairing_state(hass: HomeAssistant, entry: ConfigEntry) -> None
     if not isinstance(stored, Mapping):
         return
     store: dict[str, MadokaPairingState] = hass.data.setdefault(PAIRING_STATE_KEY, {})
+    # Only the devices this entry covers NOW. A verdict left under another MAC
+    # (the entry was reconfigured for a new thermostat) describes a device no
+    # coordinator of this entry will ever poll, and rehydrating it would hand
+    # it to whichever entry gets that MAC next.
+    own = set(entry_macs(entry))
     for address, raw in stored.items():
-        if address in store or not isinstance(raw, Mapping):
+        if address not in own or address in store or not isinstance(raw, Mapping):
             continue
         store[address] = MadokaPairingState.from_stored(address, raw)
 
@@ -604,6 +641,19 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # poll interval to go back to once a timeout backoff ends.
         self._pairing_window_unsub: CALLBACK_TYPE | None = None
         self._normal_interval: timedelta | None = None
+        # What may keep an open window alive past its TTL, and whether the TTL
+        # already fired while one of them held it (see
+        # _async_arm_pairing_window_timer): a Reconnect press that has not got
+        # its attempt yet, and an attempt that started under the window.
+        self._window_pinned = False
+        self._window_attempt_running = False
+        self._window_expired = False
+        # Consecutive answered polls each feature sat out, by attribute name;
+        # see _async_drop_silent_features. Per instance on purpose: a rebuilt
+        # coordinator comes with a rebuilt Controller whose statuses are empty.
+        self._feature_misses: dict[str, int] = {}
+        # The task running a poll right now, if any.
+        self._poll_task: asyncio.Task[Any] | None = None
         # Pairing suspension and window live in hass.data keyed by MAC, so
         # they survive the Controller/coordinator being rebuilt on a config
         # entry retry. last_error is chained onto the skipped polls'
@@ -630,10 +680,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # the state is per-MAC precisely so it outlives this object.
             self._normal_interval = timedelta(seconds=scan_interval)
             self.update_interval = timedelta(seconds=TIMEOUT_BACKOFF_INTERVAL_S)
-        if self._pairing.pairing_window:
-            # Same reason: a window whose TTL timer died with the previous
-            # coordinator would otherwise stay open forever.
-            self._async_arm_pairing_window_timer()
+        # No window re-arm here: a window is only ever opened by a live
+        # coordinator, and it stays armed with that coordinator's own TTL
+        # timer until it closes, even if the coordinator is discarded; an
+        # unload closes it outright (async_shutdown_extras), and as_stored()
+        # never persists one. A new coordinator never inherits an open window
+        # without a timer on it.
 
     async def _async_update_data(self) -> dict:
         """Poll the device, persisting whatever the attempt established."""
@@ -645,9 +697,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # _async_enter_timeout_backoff could re-apply was silently dropped
             # by the first failure that carried no pairing verdict.
             self._async_slow_to_backoff_cadence()
+        # Remembered so an unload can cancel it: see async_stop_polling.
+        self._poll_task = asyncio.current_task()
         try:
             return await self._async_update_data_inner()
         finally:
+            self._poll_task = None
             # Every branch below mutates the shared verdict (failure counter,
             # suspension, backoff), and every mutation must reach the durable
             # copy — including the clearing a success performs. A persisted
@@ -692,7 +747,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # being starved by the connect lock.
             self._pairing.skipped_polls = 0
             self._pairing.fail_count += 1
-            touched_radio = not isinstance(err, _NotAdvertising)
+            touched_radio = not isinstance(err, _NoRadioFailure)
             if touched_radio:
                 self._pairing.radio_fail_count += 1
             if self._pairing.fail_count >= UNREACHABLE_THRESHOLD:
@@ -789,7 +844,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 # redundant device_unreachable repair suppressed.
                 if not self._pairing_issue_active and self._pairing.last_error:
                     self._raise_pairing_issue(self._pairing.last_error)
-                raise UpdateFailed(
+                raise _SuspendedPoll(
                     f"{self.address} needs pairing; automatic reconnects are "
                     "suspended until the reconnect button is pressed"
                 ) from self._pairing.last_error
@@ -797,6 +852,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # before connecting: Reconnect acts outside the refresh lock, so the
             # press can land while an automatic attempt is still failing.
             spends_window = self._pairing.pairing_window
+            # The TTL must not expire under this attempt: it would hand the
+            # automatic pairing budget back mid-handshake. Expiry is deferred
+            # to the end of the attempt instead.
+            self._window_attempt_running = spends_window
             try:
                 await self._async_connect()
             except UpdateFailed:
@@ -815,8 +874,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
                 if spends_window:
                     self._async_close_pairing_window()
                 raise
+            finally:
+                self._window_attempt_running = False
+                if spends_window:
+                    # The TTL ran out while this attempt held the window; now
+                    # that the attempt is over, honour it.
+                    self._async_close_expired_pairing_window()
 
-        energy = self.controller.energy_consumption
+        energy =self.controller.energy_consumption
         use_cached_energy = energy is not None and energy.cache_is_fresh
         if use_cached_energy:
             # Controller.update() counts every Feature.query() return as a device
@@ -824,6 +889,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # unresponsive device look healthy. Restore it before refresh_status
             # so the cached counters remain in the coordinator snapshot.
             self.controller.energy_consumption = None
+        # Taken after the cached energy feature was set aside: a feature that
+        # is deliberately not queried this cycle cannot miss it.
+        before = self._feature_statuses()
         try:
             async with asyncio.timeout(POLL_TIMEOUT):
                 await self.controller.update()
@@ -838,6 +906,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         finally:
             if use_cached_energy:
                 self.controller.energy_consumption = energy
+        self._async_drop_silent_features(before)
 
         # Snapshot (per-feature dict copies) so coordinator.data is not a live
         # view of controller state.
@@ -859,6 +928,66 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         await self._async_backfill_device_info()
 
         return status
+
+    def _feature_statuses(self) -> dict[str, Any]:
+        """The current status object of every queryable feature that has one.
+
+        ResetCleanFilterTimer is write-only (its query raises, and
+        Controller.update skips it by class exactly like this): a reset press
+        leaves a status on it that no poll will ever refresh, which is not a
+        device failing to answer.
+        """
+        return {
+            name: feature.status
+            for name, feature in vars(self.controller).items()
+            if isinstance(feature, Feature)
+            and not isinstance(feature, ResetCleanFilterTimer)
+            and feature.status is not None
+        }
+
+    @callback
+    def _async_drop_silent_features(self, before: dict[str, Any]) -> None:
+        """Stop presenting a feature's last value once it keeps not answering.
+
+        Feature.query() replaces the status object on every answer and leaves
+        it alone when it fails, and Controller.update() reports nothing per
+        feature, so object identity is the signal: the same object after the
+        poll means no answer this cycle.
+
+        Past FEATURE_MISS_LIMIT consecutive misses the status goes to None
+        (every entity reads it directly and already treats None as unknown)
+        and the entry leaves the library's accumulated status dict, which
+        refresh_status() never prunes on its own. The next answer brings it
+        back.
+        """
+        silent = [
+            name
+            for name, status in before.items()
+            if getattr(self.controller, name, None) is not None
+            and getattr(self.controller, name).status is status
+        ]
+        if len(silent) == len(before):
+            # update() returning proves at least one answer, so a poll where
+            # none is visible says nothing usable. Count nothing.
+            return
+        for name in before:
+            if name not in silent:
+                self._feature_misses.pop(name, None)
+        for name in silent:
+            misses = self._feature_misses.get(name, 0) + 1
+            self._feature_misses[name] = misses
+            if misses != FEATURE_MISS_LIMIT:
+                continue
+            _LOGGER.warning(
+                "%s: %s has not answered %d polls in a row; its entities show "
+                "unknown until it answers again",
+                self.address,
+                name,
+                misses,
+            )
+            getattr(self.controller, name).status = None
+            self.controller.status.pop(name, None)
+            self._feature_misses.pop(name, None)
 
     async def _async_connect(self) -> None:
         """Establish the BLE link under the profile this attempt earned.
@@ -924,6 +1053,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             is not ConnectionStatus.CONNECTED
         ):
             raise UpdateFailed(f"Device {self.address} is not reachable")
+        # The library zeroed its own timeout streak on this connect; ours goes
+        # with it, or a GATT poll failing next would leave it standing and
+        # _note_timeout_rounds (max of the two) would feed it back later.
+        self._pairing.timeout_rounds = 0
         # The link is up AND authenticated, which is the whole proof a bond
         # exists on this path — record it here rather than after a full poll.
         # A connect that authenticates but whose controller.update() then fails
@@ -971,15 +1104,31 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # configured cadence and — crucially — the NEXT one does too if this
         # attempt fails. Without it the poll triggered here re-armed the brake
         # on its way in and a failed reconnect was followed by 900s of
-        # silence, which is what made the button look inert.
+        # silence, which is what made the button look inert. It also forgets
+        # the library's timeout streak, which cleanup() does not.
         self.async_clear_backoff()
         self._async_persist_pairing_state()
         self._async_open_pairing_window()
-        # The BRC1H stops advertising while connected and takes a moment to
-        # resume after a disconnect; refreshing instantly would fail fast with
-        # "not advertising" and defer the reconnect to the next poll.
-        await asyncio.sleep(3)
-        await self.async_request_refresh()
+        # Pinned until this press has had its attempt: a poll already in
+        # flight can hold the refresh lock for a whole connect budget (or two,
+        # parked on the shared connect lock first), and the TTL must not run
+        # out before the attempt the window was opened for even starts.
+        self._window_pinned = True
+        try:
+            # The BRC1H stops advertising while connected and takes a moment
+            # to resume after a disconnect; refreshing instantly would fail
+            # fast with "not advertising" and defer the reconnect to the next
+            # poll.
+            await asyncio.sleep(3)
+            # NOT async_request_refresh: that goes through HA's Debouncer,
+            # which defers the call while a poll holds the refresh lock and
+            # then drops it if the lock is still held ("any call is good").
+            # A connect lasts 30-90s, so the user's attempt used to be lost
+            # to the next scheduled poll. async_refresh waits for the lock.
+            await self.async_refresh()
+        finally:
+            self._window_pinned = False
+            self._async_close_expired_pairing_window()
 
     @callback
     def _async_persist_pairing_state(self) -> None:
@@ -989,12 +1138,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         entry keeps it across an HA restart. Written on every change, so the
         stored copy can never be more pessimistic than reality.
         """
-        entry = self.config_entry
-        # A coordinator built outside a real entry (or against one that was
-        # removed mid-poll) has nothing to write to.
-        if entry is None or self.hass.config_entries.async_get_entry(
-            entry.entry_id
-        ) is None:
+        entry = self._async_own_entry()
+        if entry is None:
+            return
+        # Only the state still on record speaks for this device. Once an unload
+        # or the reauth flow dropped it, this object is a stale copy: writing
+        # it back would resurrect the very verdict the reauth just cleared.
+        store: dict[str, MadokaPairingState] = (
+            self.hass.data.get(PAIRING_STATE_KEY) or {}
+        )
+        if store.get(self.address) is not self._pairing:
             return
         saved = entry.data.get(CONF_PAIRING_STATE)
         saved = dict(saved) if isinstance(saved, Mapping) else {}
@@ -1012,6 +1165,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         else:
             data.pop(CONF_PAIRING_STATE, None)
         self.hass.config_entries.async_update_entry(entry, data=data)
+
+    @callback
+    def _async_own_entry(self) -> ConfigEntry | None:
+        """The config entry, if it still exists AND still describes this device.
+
+        A coordinator built outside a real entry, or against one removed
+        mid-poll, has nothing to write to. Neither has one whose entry was
+        reconfigured for another thermostat: the reload that replaces it comes
+        after the rewrite, and a poll still in flight would otherwise write the
+        OLD device's verdict, preferred proxy or bond list into the NEW
+        device's entry.
+        """
+        entry = self.config_entry
+        if (
+            entry is None
+            or self.hass.config_entries.async_get_entry(entry.entry_id) is None
+            or self.address not in entry_macs(entry)
+        ):
+            return None
+        return entry
 
     @callback
     def _async_acquit_path(self, source: str) -> None:
@@ -1038,7 +1211,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         bookkeeping can be right for all of them.
         """
         source = self.controller.connection.connected_source
-        entry = self.config_entry
+        entry = self._async_own_entry()
         if not source or entry is None or CONF_MAC not in entry.data:
             return None
         return entry, source
@@ -1174,7 +1347,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         of pairing timeouts never broken by a success on that same path. Shared
         so the safety rules below cannot hold for one trigger and not the other.
         """
-        entry = self.config_entry
+        entry = self._async_own_entry()
         if entry is None or CONF_MAC not in entry.data:
             return False
         bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
@@ -1302,10 +1475,17 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _async_arm_pairing_window_timer(self) -> None:
         """(Re)start the window's time-to-live."""
         self._async_cancel_pairing_window_timer()
+        self._window_expired = False
 
         @callback
         def _expire(_now) -> None:
             self._pairing_window_unsub = None
+            if self._window_pinned or self._window_attempt_running:
+                # The deliberate attempt is still pending or running. Closing
+                # now would drop it to the automatic profile halfway through;
+                # whoever holds the window closes it when they let go.
+                self._window_expired = True
+                return
             if self._pairing.pairing_window:
                 _LOGGER.debug(
                     "Pairing window for %s expired after %ss",
@@ -1333,10 +1513,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         restriction and disarms the quarantine, so it must always end.
         """
         self._async_cancel_pairing_window_timer()
+        self._window_expired = False
         if not self._pairing.pairing_window:
             return
         self._pairing.pairing_window = False
         self._async_apply_pair_budget()
+
+    @callback
+    def _async_close_expired_pairing_window(self) -> None:
+        """Honour a TTL that fired while the window was held open.
+
+        Only once nothing holds it any more: a Reconnect press waiting for its
+        attempt and the attempt itself each defer the expiry, and each calls
+        this on the way out.
+        """
+        if (
+            self._window_expired
+            and not self._window_pinned
+            and not self._window_attempt_running
+        ):
+            self._async_close_pairing_window()
 
     @callback
     def _note_timeout_rounds(self) -> None:
@@ -1473,7 +1669,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         one of which survives having no dashboard and no entities.
         """
         entry = self.config_entry
-        if entry is None:
+        # A legacy multi-MAC entry has no single device to re-pair: its reauth
+        # flow can only abort, so starting one would just flash a notification.
+        if entry is None or CONF_MAC not in entry.data:
             return
         if entry.state not in (
             ConfigEntryState.LOADED,
@@ -1492,7 +1690,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         """Suspend automatic reconnects: each retry would re-prompt the screen."""
         self._pairing.last_error = err
         self._pairing.suspended = True
-        self._pairing.backoff = False
+        # The brake goes as a whole: flag, reason AND cadence. Clearing only
+        # the flag left the 900s interval and a stale reason behind, with
+        # nothing left to lift them. A suspended device is not contacted, so
+        # the configured cadence costs nothing.
+        self._async_restore_normal_interval()
+        # The refusal is proven, so "pairing keeps timing out" is no longer
+        # the story. Leaving that WARNING next to the pairing_required ERROR
+        # told the user two opposite things at once.
+        self._pairing_slow_issue_active = False
+        ir.async_delete_issue(self.hass, DOMAIN, f"pairing_slow_{self.address}")
         # The accusation has been delivered; the streak starts over after the
         # user re-pairs.
         self._pairing.timeout_rounds = 0
@@ -1686,11 +1893,16 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         are removed by _clear_issues when an attempt actually succeeds, which
         is the only thing that proves the situation is over.
 
+        The all-paths-timed-out streak goes too, on both sides: ours and the
+        library's, which cleanup() does not reset. Rounds gathered before the
+        human intervened would otherwise let the brake and the pairing_slow
+        verdict come straight back during the attempt they asked for.
+
         Callers must trigger the attempt themselves: this is a @callback and
         the poll it enables is theirs to schedule.
         """
-        if not self._pairing.backoff and not self._pairing.fail_count:
-            return
+        self.controller.connection.reset_pairing_timeout_rounds()
+        self._pairing.timeout_rounds = 0
         self._pairing.fail_count = 0
         self._pairing.radio_fail_count = 0
         self._async_restore_normal_interval()
@@ -1820,6 +2032,26 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_required_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"unbonded_path_{self.address}")
         ir.async_delete_issue(self.hass, DOMAIN, f"pairing_slow_{self.address}")
+
+    async def async_stop_polling(self) -> None:
+        """Stop scheduling polls and end the one in flight. For unload.
+
+        HA cancels an entry's background tasks only after async_unload_entry
+        returns, and a refresh started by a button press or the debouncer is
+        not one of them at all. A poll parked on the shared connect lock could
+        therefore resume after the controller was stopped and open a link
+        nobody owns: the BRC1H accepts a single central, so the reloaded entry
+        was locked out of its own thermostat. Cancelled rather than awaited:
+        waiting could take two connect budgets for an attempt nobody wants.
+        """
+        await self.async_shutdown()
+        task = self._poll_task
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        # Bounded: the library tears its half-open link down on cancellation,
+        # but an unload must never hang on a radio.
+        await asyncio.wait({task}, timeout=POLL_CANCEL_TIMEOUT)
 
     @callback
     def async_shutdown_extras(self) -> None:
