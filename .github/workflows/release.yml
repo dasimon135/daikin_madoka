@@ -1,0 +1,37 @@
+name: Release
+
+# Attaches daikin_madoka.zip to every published release. hacs.json sets zip_release,
+# so this archive is what HACS downloads, and GitHub counts each download:
+# that count is the only install signal a custom integration gets.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the archive to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    name: Attach daikin_madoka.zip
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+      - name: Build the archive
+        # HACS extracts it straight into custom_components/daikin_madoka/, so the
+        # files sit at the root of the zip, not under the folder.
+        working-directory: custom_components/daikin_madoka
+        run: zip -r -X "$GITHUB_WORKSPACE/daikin_madoka.zip" . -x '*__pycache__*' '*.pyc'
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" daikin_madoka.zip --clobber
