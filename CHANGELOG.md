@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### The "Re-pair" notification goes away when the thermostat comes back
+
+When the integration concluded that a thermostat needed re-pairing, it opened
+a "Re-pair" flow, and Home Assistant listed it under notifications and repairs.
+If the thermostat then reconnected on its own, or after a press on Reconnect,
+the integration's own repairs disappeared, but the flow stayed open and kept
+asking you to re-pair a thermostat that was working. It is now closed as soon
+as a poll succeeds. A flow that is pairing at that moment, with you standing at
+the thermostat, is left alone: the next successful poll closes it.
+
 ## v3.14.1 - September 2026
 
 ### A negative outdoor temperature reads as negative

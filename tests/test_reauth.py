@@ -40,6 +40,7 @@ from custom_components.daikin_madoka.const import (
 from custom_components.daikin_madoka.coordinator import (
     UNREACHABLE_THRESHOLD,
     MadokaCoordinator,
+    _async_connect_lock,
     async_pairing_state,
 )
 
@@ -440,3 +441,74 @@ async def test_reauth_reloads_without_the_deprecated_helper(
     assert result["reason"] == "reauth_successful"
     reload.assert_called_once_with(entry.entry_id)
     assert "should use it for scheduling a reload" not in caplog.text
+
+
+# --------------------------------------------------------------------------
+# 3. The flow ends when the device does not need it any more
+# --------------------------------------------------------------------------
+
+
+def _connects(controller: MagicMock) -> None:
+    async def _start() -> None:
+        controller.connection.connection_status = ConnectionStatus.CONNECTED
+
+    controller.start = AsyncMock(side_effect=_start)
+
+
+async def test_a_recovery_closes_the_reauth_flow(
+    hass: HomeAssistant, enable_bluetooth: None
+) -> None:
+    """The device answered, so "re-pair it" is no longer true.
+
+    Our repairs were already deleted on success, but the flow, and HA's own
+    config_entry_reauth repair attached to it, stayed: a notification asking
+    the user to re-pair a thermostat that was working (field report
+    2026-10-04, after HA restarts).
+    """
+    entry = _entry(hass)
+    controller = _controller()
+    controller.start = AsyncMock(
+        side_effect=PairingRequiredError(
+            MAC, [OTHER_SOURCE], reason="unbonded_path", timeout_rounds=3
+        )
+    )
+    coordinator = _coordinator(hass, entry, controller)
+    present, scanner = _patched_bluetooth()
+
+    with present, scanner:
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(_reauth_flows(hass)) == 1
+
+        _connects(controller)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    assert coordinator.last_update_success is True
+    assert _reauth_flows(hass) == []
+
+
+async def test_a_recovery_leaves_the_flow_alone_while_a_connect_runs(
+    hass: HomeAssistant, enable_bluetooth: None
+) -> None:
+    """The flow's own pairing attempt holds the connect lock while a human is
+    at the thermostat: closing the flow under it would cut them off."""
+    entry = _entry(hass)
+    result = await entry.start_reauth_flow(hass)
+    assert result["step_id"] == "reauth_confirm"
+    controller = _controller()
+    controller.connection.connection_status = ConnectionStatus.CONNECTED
+    coordinator = _coordinator(hass, entry, controller)
+    lock = _async_connect_lock(hass)
+    present, scanner = _patched_bluetooth()
+
+    await lock.acquire()
+    try:
+        with present, scanner:
+            await coordinator.async_refresh()
+            await hass.async_block_till_done()
+    finally:
+        lock.release()
+
+    assert coordinator.last_update_success is True
+    assert len(_reauth_flows(hass)) == 1

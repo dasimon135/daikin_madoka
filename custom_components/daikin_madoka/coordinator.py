@@ -14,6 +14,7 @@ from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
 from pymadoka.features.clean_filter import ResetCleanFilterTimer
 
+from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -812,6 +813,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing.last_success = monotonic()
         self._async_corroborate_other_streaks()
         self._clear_issues()
+        self._async_close_reauth()
         # Full clear only here: an unload (which also runs _clear_issues via
         # async_shutdown_extras) must NOT lift the suspension, or a simple
         # entry reload would grant a dead bond a fresh prompt salvo.
@@ -1684,6 +1686,27 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # would outlive the thing it belongs to.
             return
         entry.async_start_reauth(self.hass)
+
+    @callback
+    def _async_close_reauth(self) -> None:
+        """End an open reauth flow: the device just answered without it.
+
+        _clear_issues removes our own repairs on success, but the flow and the
+        config_entry_reauth repair HA attaches to it only go away when the flow
+        ends. Left open, they kept asking the user to re-pair a thermostat that
+        was working (field report 2026-10-04, after HA restarts).
+
+        Skipped while any connect holds the shared lock: the flow's own pairing
+        attempt runs under it, with a human at the thermostat. The next
+        successful poll closes the flow instead.
+        """
+        entry = self.config_entry
+        if entry is None or _async_connect_lock(self.hass).locked():
+            return
+        for flow in entry.async_get_active_flows(
+            self.hass, {config_entries.SOURCE_REAUTH}
+        ):
+            self.hass.config_entries.flow.async_abort(flow["flow_id"])
 
     @callback
     def _note_pairing_failure(self, err: PairingRequiredError) -> None:
