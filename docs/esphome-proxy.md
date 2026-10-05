@@ -88,7 +88,10 @@ esp32_ble:
 #   1. push the 6-digit numeric-comparison code to HA as a persistent
 #      notification (so you know which thermostat is pairing through
 #      which proxy, and can compare the code on the physical screen),
-#   2. auto-confirm the comparison on the proxy side.
+#   2. auto-confirm the comparison on the proxy side,
+#   3. dismiss the notification a minute later: the code is useless once the
+#      pairing is over (it fails after 30 s without an answer), and a
+#      leftover one reads as "this thermostat needs pairing" when it does not.
 # You still confirm the prompt once on each thermostat screen, per proxy.
 ble_client:
   - mac_address: "AA:BB:CC:DD:EE:01"   # thermostat_living_room
@@ -105,6 +108,11 @@ ble_client:
         - ble_client.numeric_comparison_reply:
             id: madoka_living_room_pairing
             accept: true
+        - delay: 60s
+        - homeassistant.action:
+            action: persistent_notification.dismiss
+            data:
+              notification_id: madoka_pairing_living_room_proxy_living_room
 
   - mac_address: "AA:BB:CC:DD:EE:02"   # thermostat_bedroom
     id: madoka_bedroom_pairing
@@ -120,6 +128,11 @@ ble_client:
         - ble_client.numeric_comparison_reply:
             id: madoka_bedroom_pairing
             accept: true
+        - delay: 60s
+        - homeassistant.action:
+            action: persistent_notification.dismiss
+            data:
+              notification_id: madoka_pairing_living_room_proxy_bedroom
 
 api:
   encryption:
