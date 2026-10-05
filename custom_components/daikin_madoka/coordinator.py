@@ -1063,6 +1063,33 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # used to record nothing at all, and on_disconnect clears
         # connected_source, so the evidence was simply lost.
         self._async_record_bonded_source()
+        self._async_note_timeouts_before_connect()
+
+    @callback
+    def _async_note_timeouts_before_connect(self) -> None:
+        """Charge the pairing timeouts of a round that another path then won.
+
+        A proxy holding a dead bond times out while pairing, with a prompt on
+        the thermostat screen, and the round then connects through another
+        proxy. Nothing is raised, so the timeout used to reach none of the
+        eviction rules. pymadoka >= 0.4.1 keeps the round's verdicts in
+        `last_round_evidence`; with an older library nothing is read.
+
+        The path that authenticated in the same round proves the air was fine,
+        so these timeouts are corroborated from the start.
+        """
+        evidence = getattr(self.controller.connection, "last_round_evidence", None)
+        if not isinstance(evidence, dict):
+            return
+        timed_out = {
+            source
+            for source, verdict in evidence.items()
+            if verdict == "timeout" and source
+        }
+        if not timed_out:
+            return
+        self._pairing.timeout_corroborated.update(timed_out)
+        self._async_note_timed_out_paths(evidence)
 
     async def async_boost(self) -> None:
         """Refresh now and once more shortly after.
@@ -1705,7 +1732,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing.timeout_rounds = 0
 
     @callback
-    def _async_note_timed_out_paths(self, err: PairingRequiredError) -> None:
+    def _async_note_timed_out_paths(self, evidence: dict[str | None, str]) -> None:
         """Charge this round's timeouts to the paths they actually happened on.
 
         Reads the same authoritative mapping the eviction bookkeeping does, and
@@ -1714,7 +1741,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         which proxy failed", and guessing there is exactly the defect the
         evidence mapping exists to prevent.
         """
-        for source, verdict in err.evidence.items():
+        for source, verdict in evidence.items():
             if verdict != "timeout" or not source:
                 continue
             # Clamped, like the refusal counter: past the threshold a bigger
@@ -1778,7 +1805,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # action. Zero here means "count three fresh rounds before saying this
         # again", not "forget that pairing is not completing".
         self._pairing.timeout_rounds = 0
-        self._async_note_timed_out_paths(err)
+        self._async_note_timed_out_paths(err.evidence)
         self._raise_pairing_slow_issue(err)
         self._async_slow_to_backoff_cadence(BACKOFF_PAIRING)
 

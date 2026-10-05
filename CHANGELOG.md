@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### A proxy with a dead bond is dropped even when another proxy connects
+
+When a proxy has lost a thermostat's pairing key but is still listed as paired,
+every attempt through it puts a pairing code on the thermostat screen and times
+out. The integration already drops such a proxy after a streak of these
+timeouts, but it only ever saw them when the whole attempt failed. If the same
+attempt then connected through another proxy, nothing reported the timeout,
+and Home Assistant kept sending the thermostat back to the dead proxy. Seen on
+the maintainer's installation on 2026-09-18.
+
+pymadoka-ng (since 0.4.1) now reports those timeouts after a successful
+connect too, and the integration counts them. Because another proxy
+authenticated in the same attempt, poor radio conditions cannot explain them,
+so two such attempts are enough to drop the proxy. A thermostat is never left with no paired proxy
+at all, and any success through the accused proxy clears its record.
+
 ## v3.14.1 - September 2026
 
 ### A negative outdoor temperature reads as negative
