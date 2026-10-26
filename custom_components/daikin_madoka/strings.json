@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "Could not connect to the thermostat. Check it is powered and in Bluetooth range of a proxy, then try again.",
-      "pairing_failed": "The thermostat refused the connection: a pairing prompt is probably waiting on its screen. Stay near the thermostat, confirm the prompt, then try again."
+      "pairing_failed": "The thermostat refused the connection: a pairing prompt is probably waiting on its screen. Stay near the thermostat, confirm the prompt, then try again.",
+      "pairing_rejected": "The thermostat refused to pair. It only accepts a pairing confirmed with its 6-digit code. If no code appeared on its screen, the Bluetooth adapter or proxy used here does not offer that confirmation: use an ESPHome Bluetooth proxy set up as described in the documentation, or pair a local adapter once from the host first. Retrying as is will not help, and repeated attempts can jam the thermostat's Bluetooth."
     },
     "step": {
       "user": {

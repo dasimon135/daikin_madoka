@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Formato dell'indirizzo MAC errato (es. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "Impossibile connettersi al termostato. Verifica che sia alimentato e a portata di un Bluetooth proxy, quindi riprova.",
-      "pairing_failed": "Il termostato ha rifiutato la connessione: probabilmente una richiesta di associazione è in attesa sul suo schermo. Resta vicino al termostato, conferma la richiesta e riprova."
+      "pairing_failed": "Il termostato ha rifiutato la connessione: probabilmente una richiesta di associazione è in attesa sul suo schermo. Resta vicino al termostato, conferma la richiesta e riprova.",
+      "pairing_rejected": "Il termostato ha rifiutato l'associazione. Accetta solo un'associazione confermata con il suo codice a 6 cifre. Se sullo schermo non è apparso alcun codice, l'adattatore Bluetooth o il proxy usato non offre questa conferma: usa un proxy Bluetooth ESPHome configurato come indicato nella documentazione, oppure associa prima un adattatore locale dall'host. Riprovare così non servirà, e tentativi ripetuti possono bloccare il Bluetooth del termostato."
     },
     "step": {
       "user": {
