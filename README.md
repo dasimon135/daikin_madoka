@@ -190,13 +190,20 @@ Remember the bond is per proxy: re-pairing restores one path, and another proxy 
 
 #### Via the HA host's own adapter (not validated)
 
-> ⚠️ **This route is not validated on hardware.** It works for some people and
-> the config flow does pair over the local adapter by itself. But every report
-> of "the BRC1H is discovered, the passkey appears, and the link drops seconds
-> later" has come from a built-in adapter or a USB dongle, and in at least one
-> case the bare `bluetoothctl` procedure below failed identically with no
-> integration involved. If pairing does not complete here, the ESPHome proxy
-> above is the supported answer — not more attempts on the local adapter.
+> ⚠️ **This route is not validated on hardware.** The config flow cannot pair
+> over the local adapter by itself: the BRC1H only accepts a pairing confirmed
+> with its 6-digit code, and Home Assistant registers no Bluetooth pairing
+> agent to offer that confirmation. On Home Assistant OS this shows up as an
+> immediate refusal with nothing on the thermostat's screen
+> ([#143](https://github.com/dasimon135/daikin_madoka/issues/143)). The device
+> has to be paired once from the host first, as below. That needs
+> a shell on the host's own Bluetooth stack, which Home Assistant OS does not
+> give you out of the box. Even then, every report of "the BRC1H is discovered,
+> the passkey appears, and the link drops seconds later" has come from a
+> built-in adapter or a USB dongle, and in at least one case the bare
+> `bluetoothctl` procedure below failed identically with no integration
+> involved. If pairing does not complete here, the ESPHome proxy above is the
+> supported answer — not more attempts on the local adapter.
 
 Pair the device once from the host:
 

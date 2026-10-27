@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### A refused pairing no longer says a prompt is waiting
+
+When the thermostat refused to pair, setup always said a pairing prompt was
+probably waiting on its screen. That is only true when pairing times out. An
+outright refusal comes back at once, often with nothing on the screen, because
+the adapter or proxy offered no 6-digit code confirmation, which the BRC1H
+requires ([#143](https://github.com/dasimon135/daikin_madoka/issues/143)). Setup
+now says so, points to an ESPHome Bluetooth proxy, and warns that retrying as
+is can jam the thermostat's Bluetooth. The log records which path refused. The
+README no longer claims that setup pairs over the host's own adapter by itself.
+
 ## v3.14.1 - September 2026
 
 ### A negative outdoor temperature reads as negative
