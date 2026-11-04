@@ -54,7 +54,7 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
-from .util import device_for_address, entry_macs
+from .util import device_for_address, entry_macs, lift_unbonded_steering
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1468,6 +1468,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _async_open_pairing_window(self) -> None:
         """Grant one user-initiated pairing attempt, with a deadline."""
         self._pairing.pairing_window = True
+        # The window lifts the bonded-proxy restriction, so the steering that
+        # enforces it must go too, or the pairing lands on a weak proxy.
+        lift_unbonded_steering(self.address)
         self._async_apply_pair_budget()
         self._async_arm_pairing_window_timer()
 

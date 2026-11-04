@@ -188,6 +188,9 @@ _FAILURE_WEIGHT = 0.51
 UNBONDED_STEER_MAX_FAILURES = 20
 
 _steering_unavailable_warned = False
+# What steer_off_unbonded_paths added, per (address, scanner), so it can be
+# taken back without touching the failures habluetooth counted itself.
+_charged: dict[tuple[str, Any], int] = {}
 
 
 def steer_off_unbonded_paths(
@@ -261,8 +264,40 @@ def steer_off_unbonded_paths(
             return charged
         extra = min(math.ceil(gap / step), UNBONDED_STEER_MAX_FAILURES)
         failures[address] = failures.get(address, 0) + extra
+        key = (address, sd.scanner)
+        _charged[key] = _charged.get(key, 0) + extra
         charged.append(source)
     return charged
+
+
+def lift_unbonded_steering(address: str) -> int:
+    """Take back every failure steer_off_unbonded_paths charged for `address`.
+
+    Called when the user opens a pairing window. The penalties exist to keep
+    unattended reconnects off proxies without a bond, and pairing such a proxy
+    is precisely what the window is for: left in place, they would send the
+    pairing to the weakest bonded proxy instead of the one by the thermostat
+    (Valentine, 2026-11-04, whose own proxy had just lost its bond).
+
+    Only what we added is removed. A counter now below that amount was reset
+    by habluetooth after a success through the proxy, so whatever it holds is
+    its own count and stays. Returns the number of failures removed.
+    """
+    lifted = 0
+    for key in [key for key in _charged if key[0] == address]:
+        ours = _charged.pop(key)
+        failures = getattr(key[1], "_connect_failures", None)
+        if not isinstance(failures, dict):
+            continue
+        current = failures.get(address, 0)
+        if current < ours:
+            continue
+        if current == ours:
+            failures.pop(address, None)
+        else:
+            failures[address] = current - ours
+        lifted += ours
+    return lifted
 
 
 def _rssi(scanner_device: Any) -> int:

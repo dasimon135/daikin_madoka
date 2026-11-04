@@ -11,6 +11,7 @@ from unittest.mock import patch
 from custom_components.daikin_madoka import util
 from custom_components.daikin_madoka.util import (
     UNBONDED_STEER_MARGIN_DB,
+    lift_unbonded_steering,
     steer_off_unbonded_paths,
 )
 
@@ -150,6 +151,42 @@ def test_a_bonded_favourite_is_not_touched() -> None:
     paths = [_path(VALENTINE, -70), _path(BUANDERIE, -90, slots=4, free=3)]
     with patch(PATCH_TARGET, return_value=paths):
         assert steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE]) == []
+
+
+def test_a_pairing_window_takes_the_charges_back() -> None:
+    """Valentine (2026-11-04): its own proxy lost its bond and was charged; a
+    user re-pairing must reach that proxy again, not the weak bonded one."""
+    paths = _manon()
+    with patch.object(util, "_charged", {}):
+        with patch(PATCH_TARGET, return_value=paths):
+            steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE])
+        assert lift_unbonded_steering(ADDRESS) > 0
+        assert paths[0].scanner._connect_failures == {}
+        assert _ranking(paths)[0] == BUANDERIE
+        assert lift_unbonded_steering(ADDRESS) == 0
+
+
+def test_lifting_leaves_habluetooths_own_failures() -> None:
+    paths = _manon()
+    with patch.object(util, "_charged", {}):
+        with patch(PATCH_TARGET, return_value=paths):
+            steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE])
+        ours = paths[0].scanner._connect_failures[ADDRESS]
+        paths[0].scanner._connect_failures[ADDRESS] += 2  # a real failed connect
+        assert lift_unbonded_steering(ADDRESS) >= ours
+        assert paths[0].scanner._connect_failures == {ADDRESS: 2}
+
+
+def test_lifting_skips_a_counter_habluetooth_reset() -> None:
+    """A success through the proxy cleared the counter: nothing of ours is
+    left, so nothing is subtracted from what came after."""
+    paths = _manon()
+    with patch.object(util, "_charged", {}):
+        with patch(PATCH_TARGET, return_value=paths):
+            steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE])
+        paths[0].scanner._connect_failures[ADDRESS] = 1
+        lift_unbonded_steering(ADDRESS)
+        assert paths[0].scanner._connect_failures == {ADDRESS: 1}
 
 
 def test_a_missing_counter_is_reported_once_and_changes_nothing(caplog) -> None:
