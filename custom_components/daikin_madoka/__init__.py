@@ -208,7 +208,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
                 state = async_get_pairing_state(hass, mac)
                 if state is not None and state.pairing_window:
                     steered = steer_off_tried_paths(hass, mac)
-                    message = "%s: pairing window, sending the next attempt past %s"
+                    message = (
+                        "%s: pairing window attempt landed on %s; if it "
+                        "fails to pair there, the next one goes elsewhere"
+                    )
                 else:
                     steered = steer_off_unbonded_paths(hass, mac, allowed)
                     message = (
