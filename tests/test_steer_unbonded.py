@@ -12,6 +12,7 @@ from custom_components.daikin_madoka import util
 from custom_components.daikin_madoka.util import (
     UNBONDED_STEER_MARGIN_DB,
     lift_unbonded_steering,
+    steer_off_tried_paths,
     steer_off_unbonded_paths,
 )
 
@@ -29,12 +30,13 @@ class _Scanner:
     def __init__(self, source: str, slots: int, free: int, failures: dict | None):
         self.source = source
         self._slots = (slots, free)
+        self.allocated: list[str] = []
         if failures is not None:
             self._connect_failures = failures
 
     def get_allocations(self):
         slots, free = self._slots
-        return SimpleNamespace(slots=slots, free=free)
+        return SimpleNamespace(slots=slots, free=free, allocated=self.allocated)
 
     def score(self, rssi: int, address: str, rssi_diff: int) -> float:
         # habluetooth base_scanner._score_connection_paths, minus the
@@ -198,3 +200,63 @@ def test_a_missing_counter_is_reported_once_and_changes_nothing(caplog) -> None:
         assert steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE]) == []
         assert steer_off_unbonded_paths(HASS, ADDRESS, [VALENTINE]) == []
     assert caplog.text.count("no longer exposes") == 1
+
+
+def _land(paths, source: str) -> None:
+    """The proxy's slot report: only `source` holds the thermostat now."""
+    for p in paths:
+        p.scanner.allocated = [ADDRESS] if p.scanner.source == source else []
+
+
+def test_a_window_attempt_does_not_land_twice_on_the_same_proxy() -> None:
+    """Manon (2026-11-04): three window attempts, three prompts, all through
+    atomebuanderie. Each attempt must go somewhere new instead."""
+    paths = _manon()
+    with patch.object(util, "_charged", {}), patch.object(util, "_window_tried", {}):
+        with patch(PATCH_TARGET, return_value=paths):
+            _land(paths, BUANDERIE)
+            assert steer_off_tried_paths(HASS, ADDRESS) == [BUANDERIE]
+            assert _ranking(paths)[0] == VALENTINE
+
+            _land(paths, VALENTINE)
+            assert set(steer_off_tried_paths(HASS, ADDRESS)) >= {VALENTINE}
+            assert _ranking(paths)[0] == SALON
+
+            _land(paths, SALON)
+            steer_off_tried_paths(HASS, ADDRESS)
+            assert _ranking(paths)[0] == PARENTS
+
+            # Every proxy tried: nothing left to steer towards.
+            _land(paths, PARENTS)
+            assert steer_off_tried_paths(HASS, ADDRESS) == []
+
+        lift_unbonded_steering(ADDRESS)
+        assert all(not p.scanner._connect_failures for p in paths)
+        assert _ranking(paths)[0] == BUANDERIE
+        assert util._window_tried == {}
+
+
+def test_a_window_charges_nothing_when_no_proxy_reports_the_link() -> None:
+    paths = _manon()
+    with (
+        patch.object(util, "_charged", {}),
+        patch.object(util, "_window_tried", {}),
+        patch(PATCH_TARGET, return_value=paths),
+    ):
+        assert steer_off_tried_paths(HASS, ADDRESS) == []
+    assert all(not p.scanner._connect_failures for p in paths)
+
+
+def test_a_proxy_full_only_because_of_this_attempt_is_still_moved() -> None:
+    """AtomeValentine has two slots: Valentine holds one, this attempt the
+    other, so the scorer sees it full. The slot frees before the next try."""
+    paths = [
+        _path(VALENTINE, -70, slots=2, free=0),
+        _path(BUANDERIE, -75, slots=4, free=3),
+    ]
+    with patch.object(util, "_charged", {}), patch.object(util, "_window_tried", {}):
+        with patch(PATCH_TARGET, return_value=paths):
+            _land(paths, VALENTINE)
+            assert steer_off_tried_paths(HASS, ADDRESS) == [VALENTINE]
+        paths[0].scanner._slots = (2, 1)  # the failed attempt let go
+        assert _ranking(paths)[0] == BUANDERIE

@@ -16,6 +16,13 @@ that thermostat, by just enough for Home Assistant to choose a bonded proxy
 on the next attempt. Nothing changes when no bonded proxy can hear the
 thermostat, or when all of them are full.
 
+Pressing Reconnect lifts that restriction, since pairing a new proxy is what it
+is for. Each attempt in that window used to land on the proxy that hears the
+thermostat best, even after it failed to pair, so the thermostat showed the
+same prompt several times through a proxy that could not complete it. Each
+attempt now goes to a proxy the window has not tried yet, and everything is
+put back when the window closes.
+
 ### A refused pairing no longer says a prompt is waiting
 
 When the thermostat refused to pair, setup always said a pairing prompt was

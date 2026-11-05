@@ -43,6 +43,7 @@ from .util import (
     entry_macs,
     normalize_mac,
     registry_devices,
+    steer_off_tried_paths,
     steer_off_unbonded_paths,
 )
 
@@ -200,20 +201,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             # to make that choice cost something if it was an unbonded proxy
             # (see steer_off_unbonded_paths). Kept apart from the answer: a
             # failure here must never turn into an unrestricted pairing.
+            # In a pairing window there is no bonded list to steer towards;
+            # what goes wrong instead is every attempt landing on the same
+            # proxy (see steer_off_tried_paths).
             try:
-                steered = steer_off_unbonded_paths(hass, mac, allowed)
+                state = async_get_pairing_state(hass, mac)
+                if state is not None and state.pairing_window:
+                    steered = steer_off_tried_paths(hass, mac)
+                    message = "%s: pairing window, sending the next attempt past %s"
+                else:
+                    steered = steer_off_unbonded_paths(hass, mac, allowed)
+                    message = (
+                        "%s: HA prefers %s, where this thermostat holds no "
+                        "bond; steering the next connect to a bonded proxy"
+                    )
             except Exception:
                 _LOGGER.debug(
-                    "%s: could not steer off unbonded proxies", mac, exc_info=True
+                    "%s: could not steer the next connect", mac, exc_info=True
                 )
             else:
                 if steered:
-                    _LOGGER.info(
-                        "%s: HA prefers %s, which holds no bond; steering the "
-                        "next connect to a bonded proxy",
-                        mac,
-                        ", ".join(steered),
-                    )
+                    _LOGGER.info(message, mac, ", ".join(steered))
             return allowed
 
         def _candidates(mac=mac):

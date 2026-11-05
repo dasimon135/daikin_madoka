@@ -1520,6 +1520,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if not self._pairing.pairing_window:
             return
         self._pairing.pairing_window = False
+        # Whatever the window charged was for its own attempts only.
+        lift_unbonded_steering(self.address)
         self._async_apply_pair_budget()
 
     @callback
