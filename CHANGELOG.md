@@ -13,8 +13,9 @@ thermostat stayed unavailable, with an "unbonded path" repair, until someone
 pressed Reconnect. One short network blip on the proxies, or a restart, was
 enough to trigger it. The integration now marks such a proxy as failing for
 that thermostat, by just enough for Home Assistant to choose a bonded proxy
-on the next attempt. Nothing changes when no bonded proxy can hear the
-thermostat, or when all of them are full.
+on the next attempt. That also covers a proxy that only looks full because the
+dropped attempt holds its last slot. Nothing changes when no bonded proxy can
+hear the thermostat, or when all of them are full.
 
 Pressing Reconnect lifts that restriction, since pairing a new proxy is what it
 is for. Each attempt in that window used to land on the proxy that hears the

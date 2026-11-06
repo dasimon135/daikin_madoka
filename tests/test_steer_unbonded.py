@@ -260,3 +260,31 @@ def test_a_proxy_full_only_because_of_this_attempt_is_still_moved() -> None:
             assert steer_off_tried_paths(HASS, ADDRESS) == [VALENTINE]
         paths[0].scanner._slots = (2, 1)  # the failed attempt let go
         assert _ranking(paths)[0] == BUANDERIE
+
+
+def test_an_unbonded_proxy_full_only_because_of_this_attempt_is_moved() -> None:
+    """Manon (2026-11-06, 18:46): bonded to AtomeParents only. AtomeValentine
+    has two slots, Valentine holds one and the vetoed attempt the other, so the
+    scorer saw it full and nothing was charged: every attempt returned there."""
+    paths = [
+        _path(BUANDERIE, -69, slots=4, free=3, failures={ADDRESS: 55}),
+        _path(VALENTINE, -75, slots=2, free=0),
+        _path(PARENTS, -88),
+    ]
+    with patch.object(util, "_charged", {}), patch(PATCH_TARGET, return_value=paths):
+        _land(paths, VALENTINE)
+        assert steer_off_unbonded_paths(HASS, ADDRESS, [PARENTS]) == [VALENTINE]
+    paths[1].scanner._slots = (2, 1)  # the vetoed link let go
+    assert _ranking(paths)[0] == PARENTS
+
+
+def test_an_unbonded_proxy_full_of_other_links_is_left_alone() -> None:
+    """Never chosen while it is full, and nothing says when it will free up."""
+    paths = [
+        _path(VALENTINE, -75, slots=2, free=0),
+        _path(PARENTS, -88),
+    ]
+    with patch.object(util, "_charged", {}), patch(PATCH_TARGET, return_value=paths):
+        _land(paths, PARENTS)
+        assert steer_off_unbonded_paths(HASS, ADDRESS, [PARENTS]) == []
+    assert not paths[0].scanner._connect_failures

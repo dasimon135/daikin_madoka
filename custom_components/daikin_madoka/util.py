@@ -176,7 +176,8 @@ def build_candidates(
 
 
 # habluetooth's score for a path with no free slot: such a path is never
-# chosen, so it can be neither a target nor something to steer away from.
+# chosen, so it can be neither a target nor something to steer away from,
+# unless the attempt being judged is what fills it.
 _NO_RSSI_VALUE = -127
 # How far below the best bonded path an unbonded one is pushed. RSSI moves
 # by a few dB between two adverts; without headroom the next connect could
@@ -248,7 +249,14 @@ def steer_off_unbonded_paths(
         source = _path_source(sd)
         if not source or source in allowed:
             continue
-        gap = sd.score_connection_path(rssi_diff) - best_bonded + UNBONDED_STEER_MARGIN_DB
+        score = sd.score_connection_path(rssi_diff)
+        # Full only because the link being vetoed holds its last slot: that
+        # slot frees as soon as the veto drops the link, so the proxy will be
+        # chosen again unless it is charged now (2026-11-06: Manon back on
+        # AtomeValentine every round, its other slot taken by Valentine).
+        if score <= _NO_RSSI_VALUE and _holds(sd.scanner, address):
+            score = _score_without_slots(sd, address, step)
+        gap = score - best_bonded + UNBONDED_STEER_MARGIN_DB
         if gap <= 0:
             continue
         if not _charge(sd, address, gap, step):
@@ -312,11 +320,8 @@ def steer_off_tried_paths(hass: HomeAssistant, address: str) -> list[str]:
         score = sd.score_connection_path(rssi_diff)
         if score <= _NO_RSSI_VALUE:
             # Full only because this very attempt holds a slot; the slot is
-            # released before the next candidate, so score it on its RSSI and
-            # the failures it already carries.
-            failures = getattr(sd.scanner, "_connect_failures", None)
-            held = failures.get(address, 0) if isinstance(failures, dict) else 0
-            score = _rssi(sd) - step * held
+            # released before the next candidate.
+            score = _score_without_slots(sd, address, step)
         gap = score - best_untried + UNBONDED_STEER_MARGIN_DB
         if gap <= 0:
             continue
@@ -324,6 +329,13 @@ def steer_off_tried_paths(hass: HomeAssistant, address: str) -> list[str]:
             return charged
         charged.append(_path_source(sd) or "?")
     return charged
+
+
+def _score_without_slots(sd: Any, address: str, step: float) -> float:
+    """A path's score on its RSSI and the failures it already carries."""
+    failures = getattr(sd.scanner, "_connect_failures", None)
+    held = failures.get(address, 0) if isinstance(failures, dict) else 0
+    return _rssi(sd) - step * held
 
 
 def _holds(scanner: Any, address: str) -> bool:
