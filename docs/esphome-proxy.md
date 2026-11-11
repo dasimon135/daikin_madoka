@@ -48,6 +48,18 @@ esphome:
 packages:
   esphome.bluetooth-proxy: github://esphome/bluetooth-proxies/m5stack/m5stack-atom-s3.yaml@main
 
+# Pin ESP-IDF 5.5.5 (merged into the package's esp32: block). ESPHome 2026.10
+# and later build with ESP-IDF 5.5.6 by default, which clears a bonded
+# device's key on every plain re-encryption: the BRC1H works once, then shows
+# a new pairing prompt at the next reconnect and stays unavailable until
+# someone confirms it (issues #145, #146). Remove the pin once an ESPHome
+# release ships an ESP-IDF with the fix (espressif/esp-idf#19303, PR #19322;
+# esphome/esphome#21880).
+esp32:
+  framework:
+    type: esp-idf
+    version: 5.5.5
+
 # --- Pairing support for the Daikin BRC1H (Madoka) ---
 # io_capability enables the MITM-capable pairing (display + yes/no
 # confirmation) the BRC1H requires, overriding the esp32_ble default
