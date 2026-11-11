@@ -644,7 +644,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 SelectSelector(
                     SelectSelectorConfig(
                         options=[
-                            {"value": source, "label": self._proxy_label(source)}
+                            SelectOptionDict(
+                                value=source, label=self._proxy_label(source)
+                            )
                             for source in bonded
                         ],
                         multiple=True,
