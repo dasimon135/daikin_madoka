@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### A thermostat no longer gets stuck on a proxy it holds no bond with
+
+With several Bluetooth proxies, Home Assistant picks the one that hears the
+thermostat best, and an integration cannot override that choice. When that
+proxy holds no bond, the integration drops the link rather than prompt the
+thermostat for a pairing nobody will confirm. Home Assistant counts that link
+as a success, so it chose the same proxy again on every attempt. The
+thermostat stayed unavailable, with an "unbonded path" repair, until someone
+pressed Reconnect. One short network blip on the proxies, or a restart, was
+enough to trigger it. The integration now marks such a proxy as failing for
+that thermostat, by just enough for Home Assistant to choose a bonded proxy
+on the next attempt. That also covers a proxy that only looks full because the
+dropped attempt holds its last slot. Nothing changes when no bonded proxy can
+hear the thermostat, or when all of them are full.
+
+Pressing Reconnect lifts that restriction, since pairing a new proxy is what it
+is for. Each attempt in that window used to land on the proxy that hears the
+thermostat best, even after it failed to pair, so the thermostat showed the
+same prompt several times through a proxy that could not complete it. Each
+attempt now goes to a proxy the window has not tried yet, and everything is
+put back when the window closes.
+
 ### A refused pairing no longer says a prompt is waiting
 
 When the thermostat refused to pair, setup always said a pairing prompt was
