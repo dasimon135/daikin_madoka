@@ -1269,20 +1269,20 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if source not in bonded:
             bonded.append(source)
         if (
-            entry.data.get(CONF_PREFERRED_SOURCE) == source
-            and entry.data.get(CONF_BONDED_SOURCES) == bonded
+            entry.data.get(CONF_PREFERRED_SOURCE) != source
+            or entry.data.get(CONF_BONDED_SOURCES) != bonded
         ):
-            return
-        # async_update_entry fires the entry's update listener; ours only
-        # re-applies the poll interval from options, so no side effects here.
-        self.hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_PREFERRED_SOURCE: source,
-                CONF_BONDED_SOURCES: bonded,
-            },
-        )
+            # async_update_entry fires the entry's update listener; ours only
+            # re-applies the poll interval from options, so no side effects.
+            self.hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_PREFERRED_SOURCE: source,
+                    CONF_BONDED_SOURCES: bonded,
+                },
+            )
+        self._async_carry_out_held_drops()
 
     @callback
     def _async_record_bonded_source(self) -> None:
@@ -1304,6 +1304,39 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self.hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_BONDED_SOURCES: bonded}
         )
+        self._async_carry_out_held_drops()
+
+    @callback
+    def _async_carry_out_held_drops(self) -> None:
+        """Act on the verdicts the last-bonded-proxy rule had to hold back.
+
+        A drop is only ever attempted when a new refusal or timeout is
+        charged. A proxy that reached its threshold while it was the only one
+        listed was kept, rightly, and its counter clamped at the threshold;
+        but once another proxy joins the list nothing charged it again, so the
+        verdict was never carried out (Salon, 2026-11-10: kept for days with
+        five timeouts and a corroborated streak).
+
+        Runs after every proven session, not only when the list grows: an
+        install already stuck that way has a list that will never grow again.
+        It costs nothing past the first pass, because a drop clears the
+        counters it acted on. A list of one is skipped here, so the "keeping
+        it" warning stays tied to fresh evidence instead of every poll.
+        """
+        entry = self._async_own_entry()
+        if entry is None or len(entry.data.get(CONF_BONDED_SOURCES, [])) < 2:
+            return
+        for source, failures in list(self._pairing.auth_failures.items()):
+            if failures >= BOND_EVICTION_FAILURES:
+                self._async_drop_bonded_source(
+                    source, f"{BOND_EVICTION_FAILURES} proven refusals"
+                )
+        for source, streak in list(self._pairing.timeout_sources.items()):
+            threshold = self._timeout_threshold(source)
+            if streak >= threshold:
+                self._async_drop_bonded_source(
+                    source, f"{threshold} pairing timeouts with no success"
+                )
 
     @callback
     def _async_evict_dead_bond(self, err: PairingRequiredError) -> None:
@@ -1759,6 +1792,12 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # user re-pairs.
         self._pairing.timeout_rounds = 0
 
+    def _timeout_threshold(self, source: str) -> int:
+        """The timeout streak that concludes against this path, as of now."""
+        if source in self._pairing.timeout_corroborated:
+            return BOND_STALE_TIMEOUTS_CORROBORATED
+        return BOND_STALE_TIMEOUTS
+
     @callback
     def _async_note_timed_out_paths(self, evidence: dict[str | None, str]) -> None:
         """Charge this round's timeouts to the paths they actually happened on.
@@ -1780,11 +1819,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # the threshold actually in force — clamping at the long one would
             # let a corroborated streak keep rewriting the config entry after
             # it had already said everything it had to say.
-            threshold = (
-                BOND_STALE_TIMEOUTS_CORROBORATED
-                if source in self._pairing.timeout_corroborated
-                else BOND_STALE_TIMEOUTS
-            )
+            threshold = self._timeout_threshold(source)
             streak = min(
                 self._pairing.timeout_sources.get(source, 0) + 1, threshold
             )

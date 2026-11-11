@@ -18,6 +18,16 @@ authenticated in the same attempt, poor radio conditions cannot explain them,
 so two such attempts are enough to drop the proxy. A thermostat is never left with no paired proxy
 at all, and any success through the accused proxy clears its record.
 
+### A proxy kept only because it was the last one is dropped later
+
+When the only proxy listed as paired with a thermostat proves it no longer
+holds the key, the integration keeps it anyway: an empty list would let any
+proxy start a pairing. Once you paired the thermostat through another proxy,
+though, nothing went back to that decision, and the dead proxy stayed listed
+for good. Seen on the maintainer's installation on 2026-11-10. It is now
+dropped at the next successful connection, including on installations already
+in that state.
+
 ### The "Re-pair" notification goes away when the thermostat comes back
 
 When the integration concluded that a thermostat needed re-pairing, it opened

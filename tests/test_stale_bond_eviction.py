@@ -37,6 +37,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
 from custom_components.daikin_madoka.const import (
+    BOND_EVICTION_FAILURES,
     BOND_STALE_TIMEOUTS,
     BOND_STALE_TIMEOUTS_CORROBORATED,
     CONF_BONDED_SOURCES,
@@ -336,6 +337,72 @@ async def test_a_library_without_the_evidence_changes_nothing(
     entry = _entry(hass)
     for _ in range(BOND_STALE_TIMEOUTS * 2):
         await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+# --------------------------------------------------------------------------
+# A verdict blocked only by "last bonded proxy" is carried out once it is not
+# --------------------------------------------------------------------------
+#
+# Field case, Salon, 2026-11-10. Its only listed proxy reached the timeout
+# threshold and the drop was refused, rightly: emptying the list switches the
+# veto off. Another proxy was then paired and joined the list, and the stale
+# one was marked corroborated, but nothing looked at the verdict again. A drop
+# is only attempted when a NEW timeout is charged, and the stale proxy's later
+# attempts ended otherwise, so it stayed listed for days with its streak
+# sitting at the threshold.
+
+
+async def test_a_blocked_drop_goes_through_once_another_bond_exists(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass, bonded=[STALE])
+    for _ in range(BOND_STALE_TIMEOUTS):
+        await _time_out(hass, entry)
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE]
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+    assert STALE not in async_pairing_state(hass, MAC).timeout_sources
+
+
+async def test_a_blocked_refusal_drop_goes_through_once_another_bond_exists(
+    hass: HomeAssistant,
+) -> None:
+    """Same gap on the proven-refusal counter, which shares the drop."""
+    entry = _entry(hass, bonded=[STALE])
+    async_pairing_state(hass, MAC).auth_failures[STALE] = BOND_EVICTION_FAILURES
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_an_install_already_stuck_is_cleaned_on_its_next_session(
+    hass: HomeAssistant,
+) -> None:
+    """The list already holds both proxies, so it will never grow again: the
+    held verdict has to be carried out on an ordinary successful poll."""
+    entry = _entry(hass, bonded=[STALE, GOOD], preferred=GOOD)
+    state = async_pairing_state(hass, MAC)
+    state.timeout_sources[STALE] = BOND_STALE_TIMEOUTS
+    state.timeout_corroborated.add(STALE)
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_a_streak_short_of_its_threshold_survives_a_new_bond(
+    hass: HomeAssistant,
+) -> None:
+    """The new bond corroborates the streak; it does not complete it."""
+    entry = _entry(hass, bonded=[STALE])
+    await _time_out(hass, entry)
+
+    await _succeed_via(hass, entry, GOOD)
 
     assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
 
