@@ -38,7 +38,14 @@ from .coordinator import (
     async_restore_pairing_state,
 )
 from .frontend import async_register_card
-from .util import build_candidates, entry_macs, normalize_mac, registry_devices
+from .util import (
+    build_candidates,
+    entry_macs,
+    normalize_mac,
+    registry_devices,
+    steer_off_tried_paths,
+    steer_off_unbonded_paths,
+)
 
 COMPONENT_TYPES = ["climate", "sensor", "binary_sensor", "button", "number"]
 
@@ -182,7 +189,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
             never pair through any proxy again.
             """
             try:
-                return _allowed_sources_for(mac)
+                allowed = _allowed_sources_for(mac)
             except Exception:
                 _LOGGER.exception(
                     "Could not determine the bonded proxies for %s; leaving "
@@ -190,6 +197,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: MadokaConfigEntry) -> bo
                     mac,
                 )
                 return None
+            # pymadoka asks right after HA chose a path, which is the moment
+            # to make that choice cost something if it was an unbonded proxy
+            # (see steer_off_unbonded_paths). Kept apart from the answer: a
+            # failure here must never turn into an unrestricted pairing.
+            # In a pairing window there is no bonded list to steer towards;
+            # what goes wrong instead is every attempt landing on the same
+            # proxy (see steer_off_tried_paths).
+            try:
+                state = async_get_pairing_state(hass, mac)
+                if state is not None and state.pairing_window:
+                    steered = steer_off_tried_paths(hass, mac)
+                    message = (
+                        "%s: pairing window attempt landed on %s; if it "
+                        "fails to pair there, the next one goes elsewhere"
+                    )
+                else:
+                    steered = steer_off_unbonded_paths(hass, mac, allowed)
+                    message = (
+                        "%s: HA prefers %s, where this thermostat holds no "
+                        "bond; steering the next connect to a bonded proxy"
+                    )
+            except Exception:
+                _LOGGER.debug(
+                    "%s: could not steer the next connect", mac, exc_info=True
+                )
+            else:
+                if steered:
+                    _LOGGER.info(message, mac, ", ".join(steered))
+            return allowed
 
         def _candidates(mac=mac):
             # TOTAL BY CONTRACT: this callback must never raise. pymadoka
