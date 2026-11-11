@@ -60,7 +60,9 @@ def _entry(hass: HomeAssistant, bonded: list[str], preferred: str = KEPT):
 
 
 def _named(_hass, source):
-    return SimpleNamespace(name={KEPT: "atomebuanderie", STALE: "atomeparents"}[source])
+    # habluetooth names an ESPHome scanner "<proxy name> (<MAC>)" itself.
+    name = {KEPT: "atomebuanderie", STALE: "atomeparents"}[source]
+    return SimpleNamespace(name=f"{name} ({source})")
 
 
 async def _submit(hass, entry, bonded):
@@ -79,6 +81,12 @@ async def test_the_form_offers_every_listed_proxy_ticked(hass: HomeAssistant) ->
         result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["data_schema"]({})[CONF_BONDED_SOURCES] == [KEPT, STALE]
+    options = result["data_schema"].schema[CONF_BONDED_SOURCES].config["options"]
+    # The MAC appears once: the scanner name already carries it.
+    assert [o["label"] for o in options] == [
+        f"atomebuanderie ({KEPT})",
+        f"atomeparents ({STALE})",
+    ]
 
 
 async def test_unticking_a_proxy_takes_it_off_the_list(hass: HomeAssistant) -> None:

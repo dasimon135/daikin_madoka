@@ -660,7 +660,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     @callback
     def _proxy_label(self, source: str) -> str:
-        """"atomebuanderie (D0:CF:13:0F:05:5A)", or the bare MAC if unknown."""
+        """The scanner name, which already reads "atomebuanderie (D0:CF:...)",
+        or the bare MAC when no scanner answers for it any more."""
         scanner = async_scanner_by_source(self.hass, source)
-        name = getattr(scanner, "name", None)
-        return f"{name} ({source})" if name else source
+        return getattr(scanner, "name", None) or source
