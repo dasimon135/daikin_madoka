@@ -61,9 +61,16 @@
         "title": "Opciones de Daikin Madoka",
         "data": {
           "scan_interval": "Intervalo de sondeo (segundos)",
-          "enable_energy_consumption": "Leer el consumo de energía (hoy cada cinco minutos, otros períodos diariamente)"
+          "enable_energy_consumption": "Leer el consumo de energía (hoy cada cinco minutos, otros períodos diariamente)",
+          "bonded_sources": "Proxies emparejados con este termostato"
+        },
+        "data_description": {
+          "bonded_sources": "Desmarque un proxy que ya no tenga la clave de emparejamiento de este termostato (BlueSight muestra las claves de cada proxy). Home Assistant ya no emparejará nunca por él por su cuenta, lo que detiene los códigos de emparejamiento repetidos en la pantalla del termostato. Para volver a emparejar un proxy, pulse Reconectar junto al termostato. Al menos un proxy debe quedar marcado."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Mantenga al menos un proxy: sin ninguno, cualquier proxy al alcance podría iniciar un emparejamiento."
     }
   },
   "exceptions": {

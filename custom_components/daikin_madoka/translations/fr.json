@@ -61,9 +61,16 @@
         "title": "Options Daikin Madoka",
         "data": {
           "scan_interval": "Intervalle d'interrogation (secondes)",
-          "enable_energy_consumption": "Lire la consommation d'énergie (aujourd'hui toutes les cinq minutes, autres périodes chaque jour)"
+          "enable_energy_consumption": "Lire la consommation d'énergie (aujourd'hui toutes les cinq minutes, autres périodes chaque jour)",
+          "bonded_sources": "Proxys appairés avec ce thermostat"
+        },
+        "data_description": {
+          "bonded_sources": "Décochez un proxy qui ne détient plus la clé d'appairage de ce thermostat (BlueSight montre les clés de chaque proxy). Home Assistant ne lancera alors plus jamais d'appairage par lui tout seul, ce qui fait cesser les codes répétés sur l'écran du thermostat. Pour appairer de nouveau un proxy, appuyez sur Reconnecter devant le thermostat. Au moins un proxy doit rester coché."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Gardez au moins un proxy : sans aucun, n'importe quel proxy à portée pourrait lancer un appairage."
     }
   },
   "exceptions": {

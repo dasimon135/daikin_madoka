@@ -61,9 +61,16 @@
         "title": "Opzioni Daikin Madoka",
         "data": {
           "scan_interval": "Intervallo di interrogazione (secondi)",
-          "enable_energy_consumption": "Leggi il consumo energetico (oggi ogni cinque minuti, gli altri periodi una volta al giorno)"
+          "enable_energy_consumption": "Leggi il consumo energetico (oggi ogni cinque minuti, gli altri periodi una volta al giorno)",
+          "bonded_sources": "Proxy associati a questo termostato"
+        },
+        "data_description": {
+          "bonded_sources": "Deseleziona un proxy che non possiede più la chiave di associazione di questo termostato (BlueSight mostra le chiavi di ogni proxy). Home Assistant non avvierà più da solo un'associazione tramite esso, il che ferma i codici di associazione ripetuti sullo schermo del termostato. Per associare di nuovo un proxy, premi Riconnetti vicino al termostato. Almeno un proxy deve restare selezionato."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Mantieni almeno un proxy: senza nessuno, qualsiasi proxy nel raggio potrebbe avviare un'associazione."
     }
   },
   "exceptions": {

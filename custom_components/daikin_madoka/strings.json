@@ -61,9 +61,16 @@
         "title": "Daikin Madoka options",
         "data": {
           "scan_interval": "Poll interval (seconds)",
-          "enable_energy_consumption": "Read energy consumption (today every five minutes, other periods daily)"
+          "enable_energy_consumption": "Read energy consumption (today every five minutes, other periods daily)",
+          "bonded_sources": "Proxies paired with this thermostat"
+        },
+        "data_description": {
+          "bonded_sources": "Untick a proxy that no longer holds this thermostat's pairing key (BlueSight shows which keys each proxy holds). Home Assistant will then never pair through it on its own, which stops repeated pairing codes on the thermostat screen. To pair a proxy again, press Reconnect at the thermostat. At least one proxy must stay ticked."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Keep at least one proxy: with none, any proxy in range could start a pairing."
     }
   },
   "exceptions": {

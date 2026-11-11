@@ -12,6 +12,7 @@ from homeassistant import config_entries
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
+    async_scanner_by_source,
 )
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 from homeassistant.const import CONF_DEVICES, CONF_SCAN_INTERVAL
@@ -587,34 +588,79 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+        """Manage the options, and the proxies the thermostat is bonded with.
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_SCAN_INTERVAL,
-                        default=self.config_entry.options.get(
-                            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-                        ),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=10,
-                            max=600,
-                            step=5,
-                            unit_of_measurement="s",
-                            mode=NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Required(
-                        CONF_ENABLE_ENERGY,
-                        default=self.config_entry.options.get(
-                            CONF_ENABLE_ENERGY, False
-                        ),
-                    ): bool,
-                }
+        The bonded list is what the pairing veto trusts, and it only ever
+        learns from sessions: a proxy that lost the key (a firmware bug, a
+        reflash) stays listed, and every unattended attempt through it shows
+        a pairing code on the thermostat until the eviction streak concludes.
+        The user can usually see which proxy holds which key; this is where
+        they say so. Removing is the only edit offered: adding a proxy needs
+        a real pairing, which is what Reconnect is for.
+        """
+        entry = self.config_entry
+        bonded = list(entry.data.get(CONF_BONDED_SOURCES, []))
+        # Legacy multi-MAC entries share one list; with a single proxy the
+        # only possible edit is the forbidden one (empty), so offer nothing.
+        editable = CONF_MAC in entry.data and len(bonded) >= 2
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            keep = user_input.pop(CONF_BONDED_SOURCES, None)
+            if editable and keep is not None:
+                keep = [source for source in bonded if source in keep]
+                if not keep:
+                    # Empty reads as "unrestricted" everywhere: it would
+                    # switch the veto off instead of tightening it.
+                    errors[CONF_BONDED_SOURCES] = "keep_one_proxy"
+                elif keep != bonded:
+                    data = {**entry.data, CONF_BONDED_SOURCES: keep}
+                    if data.get(CONF_PREFERRED_SOURCE) not in keep:
+                        data.pop(CONF_PREFERRED_SOURCE, None)
+                    self.hass.config_entries.async_update_entry(entry, data=data)
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+
+        schema: dict[Any, Any] = {
+            vol.Required(
+                CONF_SCAN_INTERVAL,
+                default=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=10,
+                    max=600,
+                    step=5,
+                    unit_of_measurement="s",
+                    mode=NumberSelectorMode.BOX,
+                )
             ),
+            vol.Required(
+                CONF_ENABLE_ENERGY,
+                default=entry.options.get(CONF_ENABLE_ENERGY, False),
+            ): bool,
+        }
+        if editable:
+            schema[vol.Required(CONF_BONDED_SOURCES, default=bonded)] = (
+                SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(
+                                value=source, label=self._proxy_label(source)
+                            )
+                            for source in bonded
+                        ],
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                )
+            )
+        return self.async_show_form(
+            step_id="init", data_schema=vol.Schema(schema), errors=errors
         )
+
+    @callback
+    def _proxy_label(self, source: str) -> str:
+        """The scanner name, which already reads "atomebuanderie (D0:CF:...)",
+        or the bare MAC when no scanner answers for it any more."""
+        scanner = async_scanner_by_source(self.hass, source)
+        return getattr(scanner, "name", None) or source
