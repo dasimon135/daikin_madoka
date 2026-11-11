@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v3.15.0 - November 2026
 
 ### You can take a proxy off a thermostat's paired list
 
