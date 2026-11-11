@@ -229,7 +229,20 @@ class FlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if controller.connection.connection_status is not ConnectionStatus.CONNECTED:
                 return "cannot_connect", None
             return None, controller.connection.connected_source
-        except PairingRequiredError:
+        except PairingRequiredError as err:
+            reason = getattr(err, "reason", "rejected")
+            _LOGGER.warning(
+                "Pairing with %s failed (%s), per path: %s",
+                mac,
+                reason,
+                getattr(err, "evidence", None) or "unknown",
+            )
+            # Only a timeout means a prompt may still be waiting on the screen.
+            # An explicit refusal comes back at once, usually with nothing
+            # shown: the adapter or proxy offered no code confirmation, which
+            # the BRC1H requires (issue #143, HAOS local adapter).
+            if reason == "rejected":
+                return "pairing_rejected", None
             return "pairing_failed", None
         except Exception:  # noqa: BLE001  (DeviceUnreachableError, TimeoutError, anything)
             return "cannot_connect", None
