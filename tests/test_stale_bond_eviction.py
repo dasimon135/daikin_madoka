@@ -261,6 +261,85 @@ async def test_an_uncorroborated_streak_still_takes_the_long_road(
     assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
 
 
+# --------------------------------------------------------------------------
+# A round another path won still says which path timed out
+# --------------------------------------------------------------------------
+#
+# Field case, Parents, 2026-09-18. HA kept routing it through a proxy whose
+# bond was dead; the pairing attempt there timed out with a prompt on the
+# screen, and the SAME round then connected through another proxy. pymadoka
+# raised nothing, so none of the rules above ever saw the timeout. Since
+# pymadoka 0.4.1 the round's verdicts survive in `last_round_evidence`.
+
+
+async def _time_out_then_connect(hass, entry, evidence, winner=GOOD) -> None:
+    """One round: the paths in `evidence` fail as stated, then `winner` connects."""
+    controller = _controller()
+
+    async def _start():
+        controller.connection.connection_status = ConnectionStatus.CONNECTED
+        controller.connection.connected_source = winner
+        controller.connection.last_round_evidence = evidence
+
+    controller.start = AsyncMock(side_effect=_start)
+    controller.refresh_status.return_value = {"set_point": {"cooling_set_point": 25}}
+    coordinator = _coordinator(hass, entry, controller)
+    present, scanner = _patched_bluetooth()
+    with present, scanner:
+        await coordinator.async_refresh()
+
+
+async def test_a_timeout_in_a_round_another_path_won_counts(
+    hass: HomeAssistant,
+) -> None:
+    """Corroborated from the start: the winner authenticated in that very round."""
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED):
+        await _time_out_then_connect(hass, entry, {STALE: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_one_won_round_is_not_enough(hass: HomeAssistant) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED - 1):
+        await _time_out_then_connect(hass, entry, {STALE: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_an_unattributable_timeout_in_a_won_round_costs_nothing(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _time_out_then_connect(hass, entry, {None: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_other_verdicts_in_a_won_round_are_not_timeouts(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _time_out_then_connect(hass, entry, {STALE: "transient"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_a_library_without_the_evidence_changes_nothing(
+    hass: HomeAssistant,
+) -> None:
+    """pymadoka 0.4.0 has no `last_round_evidence`: a MagicMock stands in for
+    whatever attribute access returns there, and nothing may be charged."""
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
 async def test_the_path_authenticating_itself_clears_the_corroboration(
     hass: HomeAssistant,
 ) -> None:
