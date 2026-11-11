@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### You can take a proxy off a thermostat's paired list
+
+The integration only lets Home Assistant pair a thermostat through the proxies
+it has seen pair with it before. When one of them loses the key, after a
+firmware bug or a reflash, it stays on that list, and every attempt through it
+puts a pairing code on the thermostat screen for nobody to confirm. The
+integration drops such a proxy on its own only after several of these
+attempts: on the maintainer's installation that meant about ten codes in ten
+minutes on 2026-11-11.
+
+The thermostat's options now list the proxies it is paired with. Untick one
+that no longer holds the key (BlueSight shows which keys each proxy holds) and
+Home Assistant stops pairing through it straight away. At least one proxy has
+to stay ticked, and the list only appears when there are two or more. To pair a
+proxy again, press Reconnect at the thermostat as before.
+
 ### A proxy with a dead bond is dropped even when another proxy connects
 
 When a proxy has lost a thermostat's pairing key but is still listed as paired,
