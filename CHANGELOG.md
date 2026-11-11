@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.15.1-beta.1 - November 2026
+
+### The filter reset button clears the filter sign
+
+Pressing Reset filter timer acknowledged the command but left the filter sign
+on, on the thermostat screen and in Home Assistant
+([#74](https://github.com/dasimon135/daikin_madoka/issues/74),
+[#148](https://github.com/dasimon135/daikin_madoka/issues/148)). The library
+sent only half of the command. pymadoka-ng 0.4.4 now sends the same frame as
+the ESPHome component of this repository, which clears the sign on the same
+thermostats.
+
+This is a beta: none of the maintainer's thermostats shows the filter sign at
+the moment, so the fix is confirmed byte for byte against the ESPHome frame but
+not yet on a thermostat through this integration.
+
 ## v3.15.0 - November 2026
 
 ### You can take a proxy off a thermostat's paired list
