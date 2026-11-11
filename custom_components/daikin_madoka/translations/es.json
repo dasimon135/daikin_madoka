@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "No se pudo conectar con el termostato. Comprueba que esté encendido y dentro del alcance Bluetooth de un proxy, y vuelve a intentarlo.",
-      "pairing_failed": "El termostato rechazó la conexión: probablemente hay una solicitud de emparejamiento esperando en su pantalla. Quédate cerca del termostato, confirma la solicitud y vuelve a intentarlo."
+      "pairing_failed": "El termostato rechazó la conexión: probablemente hay una solicitud de emparejamiento esperando en su pantalla. Quédate cerca del termostato, confirma la solicitud y vuelve a intentarlo.",
+      "pairing_rejected": "El termostato rechazó el emparejamiento. Solo acepta un emparejamiento confirmado con su código de 6 dígitos. Si no apareció ningún código en su pantalla, el adaptador Bluetooth o el proxy usado no ofrece esa confirmación: usa un proxy Bluetooth de ESPHome configurado como indica la documentación, o empareja antes un adaptador local desde el host. Reintentar tal cual no servirá, y los intentos repetidos pueden bloquear el Bluetooth del termostato."
     },
     "step": {
       "user": {

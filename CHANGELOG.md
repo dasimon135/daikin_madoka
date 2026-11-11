@@ -28,6 +28,49 @@ for good. Seen on the maintainer's installation on 2026-11-10. It is now
 dropped at the next successful connection, including on installations already
 in that state.
 
+### The "Re-pair" notification goes away when the thermostat comes back
+
+When the integration concluded that a thermostat needed re-pairing, it opened
+a "Re-pair" flow, and Home Assistant listed it under notifications and repairs.
+If the thermostat then reconnected on its own, or after a press on Reconnect,
+the integration's own repairs disappeared, but the flow stayed open and kept
+asking you to re-pair a thermostat that was working. It is now closed as soon
+as a poll succeeds. A flow that is pairing at that moment, with you standing at
+the thermostat, is left alone: the next successful poll closes it.
+
+### A thermostat no longer gets stuck on a proxy it holds no bond with
+
+With several Bluetooth proxies, Home Assistant picks the one that hears the
+thermostat best, and an integration cannot override that choice. When that
+proxy holds no bond, the integration drops the link rather than prompt the
+thermostat for a pairing nobody will confirm. Home Assistant counts that link
+as a success, so it chose the same proxy again on every attempt. The
+thermostat stayed unavailable, with an "unbonded path" repair, until someone
+pressed Reconnect. One short network blip on the proxies, or a restart, was
+enough to trigger it. The integration now marks such a proxy as failing for
+that thermostat, by just enough for Home Assistant to choose a bonded proxy
+on the next attempt. That also covers a proxy that only looks full because the
+dropped attempt holds its last slot. Nothing changes when no bonded proxy can
+hear the thermostat, or when all of them are full.
+
+Pressing Reconnect lifts that restriction, since pairing a new proxy is what it
+is for. Each attempt in that window used to land on the proxy that hears the
+thermostat best, even after it failed to pair, so the thermostat showed the
+same prompt several times through a proxy that could not complete it. Each
+attempt now goes to a proxy the window has not tried yet, and everything is
+put back when the window closes.
+
+### A refused pairing no longer says a prompt is waiting
+
+When the thermostat refused to pair, setup always said a pairing prompt was
+probably waiting on its screen. That is only true when pairing times out. An
+outright refusal comes back at once, often with nothing on the screen, because
+the adapter or proxy offered no 6-digit code confirmation, which the BRC1H
+requires ([#143](https://github.com/dasimon135/daikin_madoka/issues/143)). Setup
+now says so, points to an ESPHome Bluetooth proxy, and warns that retrying as
+is can jam the thermostat's Bluetooth. The log records which path refused. The
+README no longer claims that setup pairs over the host's own adapter by itself.
+
 ## v3.14.1 - September 2026
 
 ### A negative outdoor temperature reads as negative
