@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Card 0.10.0
+
+- The card has a visual editor. Every option that used to need YAML (layout,
+  decimals, graph times, what a tap on the tile opens, the reconnect button,
+  the entity overrides) is now a field, labelled in the dashboard's language.
+- In a sections view the card tells Home Assistant its size: the tile layout
+  is one grid row, the dial layouts take the height their content needs. The
+  default width is unchanged.
+
 ## v3.15.1-beta.1 - November 2026
 
 ### The filter reset button clears the filter sign
