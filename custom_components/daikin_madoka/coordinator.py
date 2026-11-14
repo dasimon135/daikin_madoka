@@ -637,6 +637,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
         self._unbonded_path_issue_active = False
+        # unbonded_path verdicts since the last successful poll. In memory on
+        # purpose: a restart is exactly when the first one is expected (see
+        # _async_enter_unbonded_path_backoff).
+        self._unbonded_path_verdicts = 0
         self._boost_unsub: CALLBACK_TYPE | None = None
         # Cancel handle of the pairing window's time-to-live timer, and the
         # poll interval to go back to once a timeout backoff ends.
@@ -811,6 +815,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # covers a poll over an already-open link, which never goes through the
         # connect path at all.
         self._pairing.last_success = monotonic()
+        self._unbonded_path_verdicts = 0
         self._async_corroborate_other_streaks()
         self._clear_issues()
         self._async_close_reauth()
@@ -1891,8 +1896,29 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         button is the whole point of the exercise — the prompt moves off the
         thermostat screen, where nobody was watching it, and into Home
         Assistant, where somebody is.
+
+        Except the first time since the last successful poll. Right after a
+        restart HA scores every path from scratch and routinely elects a strong
+        proxy that holds no bond, while the steering penalties that push it
+        down only build up with each landing. Field case 2026-11-14: a
+        thermostat bonded only with a weak proxy lost its three rounds in 22
+        seconds, then sat unavailable behind this brake for 15 minutes, and the
+        next attempt went straight through the bonded proxy. So the first
+        verdict only logs and keeps the normal cadence; a second one in a row
+        means the scoring is not shifting on its own, and gets the brake, the
+        repair and the Fix button.
         """
         self._pairing.last_error = err
+        self._unbonded_path_verdicts += 1
+        if self._unbonded_path_verdicts == 1:
+            _LOGGER.info(
+                "%s: Home Assistant only offered proxies it is not paired with "
+                "(%s); retrying at the normal cadence before asking for a "
+                "re-pair",
+                self.address,
+                self._proxy_names(err.tried_sources),
+            )
+            return
         self._raise_unbonded_path_issue(err)
         self._async_slow_to_backoff_cadence(BACKOFF_UNBONDED_PATH)
         self._async_start_reauth()
