@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## v3.15.1-beta.3 - November 2026
 
-### Card 0.10.0
+### The card has a visual editor
+
+Card 0.10.0. This beta also carries the fixes of v3.15.1-beta.1 (the filter
+reset clears the filter sign) and v3.15.1-beta.2 (the target temperature stays
+readable when notifications arrive several times), unchanged.
 
 - The card has a visual editor. Every option that used to need YAML (layout,
   decimals, graph times, what a tap on the tile opens, the reconnect button,
