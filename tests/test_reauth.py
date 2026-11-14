@@ -476,6 +476,8 @@ async def test_a_recovery_closes_the_reauth_flow(
     present, scanner = _patched_bluetooth()
 
     with present, scanner:
+        # Two verdicts: the first since a success only retries.
+        await coordinator.async_refresh()
         await coordinator.async_refresh()
         await hass.async_block_till_done()
         assert len(_reauth_flows(hass)) == 1
