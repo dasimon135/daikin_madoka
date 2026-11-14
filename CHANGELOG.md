@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.15.1-beta.2 - November 2026
+
+### The target temperature no longer goes unreadable when notifications arrive several times
+
+On a Raspberry Pi built-in Bluetooth adapter, one thermostat delivered every
+notification five times, and its target temperature could not be read any more
+([#149](https://github.com/dasimon135/daikin_madoka/issues/149)). Connections
+the library had replaced were still relaying notifications into the one in
+use, and a repeated piece of a long answer made the library discard the whole
+answer.
+
+pymadoka-ng 0.4.5 listens to the current connection only, and closes a
+previous connection that is still up before opening a new one. When either
+happens it says so in the log, as `a replaced connection is still relaying
+notifications` (warning) or `the previous connection is still connected`
+(info).
+
+This is a beta: the maintainer's thermostats all go through ESPHome proxies,
+where the duplicates do not occur. There the change was checked for
+regressions only. Why the replaced connections stayed subscribed on a local
+adapter is not established.
+
 ## v3.15.1-beta.1 - November 2026
 
 ### The filter reset button clears the filter sign
