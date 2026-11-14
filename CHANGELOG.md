@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### A thermostat no longer waits 15 minutes after a restart when HA picks the wrong proxy first
+
+After a restart, Home Assistant can keep routing a thermostat through stronger
+proxies it is not paired with. The integration refuses to pair there, so
+nothing appears on the thermostat screen, but after three such rounds it used
+to wait 15 minutes before the next attempt and open a re-pair request, even
+though nothing needed re-pairing. The first time this happens since the last
+successful poll, it now retries at the normal cadence instead. A second time
+in a row still gets the 15-minute wait, the repair and the re-pair request, as
+before.
+
+Covered by tests and by the logs of the case that prompted it, a thermostat
+that sat unavailable for 15 minutes on the maintainer's installation and then
+connected at the first attempt after the wait. The new path itself has not yet
+been seen running on real hardware: on the restart used to test it, the
+thermostat reached its paired proxy but the radio link failed, a different
+problem.
+
 ## v3.15.1-beta.3 - November 2026
 
 ### The card has a visual editor
