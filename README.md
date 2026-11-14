@@ -457,7 +457,8 @@ A dial-style card that mirrors the physical BRC1H — a glowing halo that follow
 the mode, a setpoint arc, fan segments, an eye-brightness slider, a 12 h
 temperature sparkline and filter/signal chips. It ships **inside the
 integration** (no separate install) and registers itself automatically; pick
-**Madoka Card** from the dashboard card picker, or add it in YAML:
+**Madoka Card** from the dashboard card picker and set it up in the visual
+editor, or add it in YAML:
 
 ```yaml
 type: custom:madoka-card
