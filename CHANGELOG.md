@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## v3.15.1-beta.4 - November 2026
+
+### The target temperature stays readable on a local Bluetooth adapter
+
+pymadoka-ng 0.4.6. v3.15.1-beta.2 did not fix
+[#149](https://github.com/dasimon135/daikin_madoka/issues/149) on a local
+adapter: two reporters still saw the target temperature go unreadable after a
+reconnect. The duplicated notifications did not come from a replaced
+connection, as beta.2 assumed, but from BlueZ itself, which delivered every
+notification once per subscription left on the thermostat. The library now
+subscribes in a way that gives each connection its own channel
+(`AcquireNotify`), so a leftover subscription can no longer repeat the answers.
+
+Validated by @ismaelibanez480 on a Raspberry Pi with a local adapter: after
+two forced reconnects in a row, every answer arrived once and the target
+temperature was read on every poll. Through an ESPHome Bluetooth proxy nothing
+changes; that side was checked on the maintainer's four thermostats.
 
 ### A thermostat no longer waits 15 minutes after a restart when HA picks the wrong proxy first
 
