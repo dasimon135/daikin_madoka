@@ -60,6 +60,8 @@ async def async_setup_entry(
         entities.append(MadokaIndoorSensor(coordinator))
         if not is_ventilation:
             entities.append(MadokaOutdoorSensor(coordinator))
+            # Not asked of a VAM by pymadoka either (see binary_sensor.py).
+            entities.append(MadokaErrorCodeSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
         if energy_enabled:
@@ -192,6 +194,24 @@ class MadokaOutdoorSensor(MadokaTemperatureSensor):
         if self.controller.temperatures.status is None:
             return None
         return self.controller.temperatures.status.outdoor
+
+
+class MadokaErrorCodeSensor(MadokaEntity, SensorEntity):
+    """The error code the thermostat shows, such as "U4-01"; empty when none."""
+
+    _attr_translation_key = "error_code"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "error_code")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current error code."""
+        if self.controller.unit_status.status is None:
+            return None
+        code: str | None = self.controller.unit_status.status.error_code
+        return code
 
 
 class MadokaRssiSensor(MadokaLinkSensor):
