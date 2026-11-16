@@ -108,6 +108,9 @@
       "outdoor_temperature": {
         "name": "Outdoor temperature"
       },
+      "error_code": {
+        "name": "Error code"
+      },
       "rssi": {
         "name": "Signal strength"
       },
@@ -149,6 +152,18 @@
     "binary_sensor": {
       "clean_filter": {
         "name": "Clean filter"
+      },
+      "defrost": {
+        "name": "Defrost"
+      },
+      "unit_error": {
+        "name": "Error"
+      },
+      "unit_warning": {
+        "name": "Warning"
+      },
+      "unit_alarm": {
+        "name": "Alarm"
       }
     },
     "button": {

@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.16.0-beta.1 - November 2026
+
+### Defrost and error sensors
+
+pymadoka-ng 0.5.0. This beta also carries everything in v3.15.1-beta.4,
+unchanged. Each thermostat gets a **Defrost** binary sensor, on while
+the indoor unit defrosts or hot-starts and holds back its fan, so an
+automation can bring in another heat source meanwhile
+([#159](https://github.com/dasimon135/daikin_madoka/issues/159)). Its device
+class is `running`, and it is enabled by default.
+
+Also new, as diagnostic entities: an **Error code** sensor, showing the code
+the thermostat displays (such as `U4-01`) and empty when there is none, and
+**Error**, **Warning** and **Alarm** binary sensors, disabled by default.
+
+The bit layout comes from the
+[isakLevinson/madoka](https://github.com/isakLevinson/madoka) integration,
+whose defrost flag the reporter of #159 uses on a ducted FBA100A. On the
+maintainer's thermostats, which were not heating, it was only checked that the
+query is answered and reads "no defrost, no error". A VAM gets none of these
+entities: it is not asked for this status.
+
+
 ## v3.15.1-beta.4 - November 2026
 
 ### The target temperature stays readable on a local Bluetooth adapter

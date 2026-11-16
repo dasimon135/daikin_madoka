@@ -7,6 +7,9 @@
       "outdoor_temperature": {
         "default": "mdi:sun-thermometer-outline"
       },
+      "error_code": {
+        "default": "mdi:alert-circle-outline"
+      },
       "rssi": {
         "default": "mdi:bluetooth-audio"
       },
@@ -51,6 +54,9 @@
         "state": {
           "on": "mdi:alert-circle"
         }
+      },
+      "defrost": {
+        "default": "mdi:snowflake-melt"
       }
     },
     "button": {
