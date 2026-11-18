@@ -109,7 +109,12 @@
         "name": "Temperatura exterior"
       },
       "error_code": {
-        "name": "Código de error"
+        "name": "Código de error",
+        "state_attributes": {
+          "last_error_code": {
+            "name": "Último código registrado"
+          }
+        }
       },
       "rssi": {
         "name": "Intensidad de señal"

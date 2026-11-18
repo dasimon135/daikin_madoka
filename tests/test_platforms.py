@@ -51,7 +51,12 @@ def _mock_controller() -> MagicMock:
         clean_filter_indicator=True
     )
     controller.unit_status.status = SimpleNamespace(
-        defrost=False, error=False, warning=False, alarm=False, error_code=None
+        defrost=False,
+        error=False,
+        warning=False,
+        alarm=False,
+        error_code=None,
+        last_error_code=None,
     )
     controller.eye_brightness.status = SimpleNamespace(brightness=10)
     controller.eye_brightness.update = AsyncMock()
@@ -380,10 +385,19 @@ async def test_the_error_code_sensor_shows_the_code(hass: HomeAssistant) -> None
 
     assert code.native_value is None
     assert code.entity_category is EntityCategory.DIAGNOSTIC
-    controller.unit_status.status = SimpleNamespace(error_code="U4-01")
+    controller.unit_status.status = SimpleNamespace(
+        error_code="U4-01", last_error_code="U4-01"
+    )
     assert code.native_value == "U4-01"
+    # A healthy BRC1H still answers its last recorded code: attribute only.
+    controller.unit_status.status = SimpleNamespace(
+        error_code=None, last_error_code="U0-00"
+    )
+    assert code.native_value is None
+    assert code.extra_state_attributes == {"last_error_code": "U0-00"}
     controller.unit_status.status = None
     assert code.native_value is None
+    assert code.extra_state_attributes is None
 
 
 # --- button ----------------------------------------------------------------

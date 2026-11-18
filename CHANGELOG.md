@@ -4,23 +4,29 @@
 
 ### Defrost and error sensors
 
-pymadoka-ng 0.5.0. This beta also carries everything in v3.15.1-beta.4,
+pymadoka-ng 0.5.1. This beta also carries everything in v3.15.1-beta.4,
 unchanged. Each thermostat gets a **Defrost** binary sensor, on while
 the indoor unit defrosts or hot-starts and holds back its fan, so an
 automation can bring in another heat source meanwhile
 ([#159](https://github.com/dasimon135/daikin_madoka/issues/159)). Its device
 class is `running`, and it is enabled by default.
 
-Also new, as diagnostic entities: an **Error code** sensor, showing the code
-the thermostat displays (such as `U4-01`) and empty when there is none, and
-**Error**, **Warning** and **Alarm** binary sensors, disabled by default.
+Also new, as diagnostic entities: an **Error code** sensor, and **Error**,
+**Warning** and **Alarm** binary sensors, disabled by default. The error code
+sensor shows a code (such as `U4-01`) only while one of those three flags is
+set. The thermostat keeps answering the last code it recorded long after the
+fault clears: four healthy thermostats here, all flags clear, still answered
+`U0-00` and `A5-00`. That recorded code is kept as the sensor's
+`last_error_code` attribute, so it is still there when diagnosing, without
+passing for a fault in progress.
 
 The bit layout comes from the
 [isakLevinson/madoka](https://github.com/isakLevinson/madoka) integration,
-whose defrost flag the reporter of #159 uses on a ducted FBA100A. On the
-maintainer's thermostats, which were not heating, it was only checked that the
-query is answered and reads "no defrost, no error". A VAM gets none of these
-entities: it is not asked for this status.
+whose defrost flag the reporter of #159 uses on a ducted FBA100A. The
+maintainer's thermostats, which were not heating, all answer the query and
+read "no defrost" with every fault flag clear; the defrost flag itself turning
+on has not been seen here. A VAM gets none of these entities: it is not asked
+for this status.
 
 
 ## v3.15.1-beta.4 - November 2026
