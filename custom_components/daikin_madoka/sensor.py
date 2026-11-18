@@ -197,7 +197,12 @@ class MadokaOutdoorSensor(MadokaTemperatureSensor):
 
 
 class MadokaErrorCodeSensor(MadokaEntity, SensorEntity):
-    """The error code the thermostat shows, such as "U4-01"; empty when none."""
+    """The code of the fault in progress, such as "U4-01"; empty when none.
+
+    The thermostat keeps answering the last recorded code after the fault
+    clears, so pymadoka only fills error_code while a fault flag is set. The
+    recorded code is kept as the last_error_code attribute.
+    """
 
     _attr_translation_key = "error_code"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -207,11 +212,19 @@ class MadokaErrorCodeSensor(MadokaEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return the current error code."""
+        """Return the code of the fault in progress."""
         if self.controller.unit_status.status is None:
             return None
         code: str | None = self.controller.unit_status.status.error_code
         return code
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None] | None:
+        """Return the last code the system recorded, even if cleared."""
+        if self.controller.unit_status.status is None:
+            return None
+        last: str | None = self.controller.unit_status.status.last_error_code
+        return {"last_error_code": last}
 
 
 class MadokaRssiSensor(MadokaLinkSensor):

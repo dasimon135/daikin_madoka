@@ -109,7 +109,12 @@
         "name": "Outdoor temperature"
       },
       "error_code": {
-        "name": "Error code"
+        "name": "Error code",
+        "state_attributes": {
+          "last_error_code": {
+            "name": "Last recorded code"
+          }
+        }
       },
       "rssi": {
         "name": "Signal strength"
