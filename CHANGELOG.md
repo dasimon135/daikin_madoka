@@ -29,6 +29,65 @@ on has not been seen here. A VAM gets none of these entities: it is not asked
 for this status.
 
 
+## v3.15.1 - November 2026
+
+The four v3.15.1 betas, as one stable release. The code is that of
+v3.15.1-beta.4, unchanged; it has run on the maintainer's four thermostats
+since 2026-11-16. The defrost and error sensors of v3.16.0-beta.1 are not part
+of it.
+
+### The target temperature stays readable on a local Bluetooth adapter
+
+On a Raspberry Pi built-in adapter, a thermostat could deliver every
+notification several times after a reconnect, and its target temperature then
+went unreadable ([#149](https://github.com/dasimon135/daikin_madoka/issues/149)).
+The duplicates came from BlueZ, which delivered every notification once per
+subscription left on the thermostat. pymadoka-ng 0.4.6 subscribes in a way
+that gives each connection its own channel (`AcquireNotify`), so a leftover
+subscription can no longer repeat the answers. It also keeps the 0.4.5 guard:
+it listens to the current connection only and closes a previous connection
+that is still up before opening a new one.
+
+Validated on local adapters by @ismaelibanez480 (two forced reconnects in a
+row, every answer arrived once) and by @bureaufx-create (a full night on a
+Raspberry Pi 4 with three thermostats: target temperature readable throughout,
+every setpoint change accepted at the first attempt, every answer processed
+once). Through ESPHome Bluetooth proxies nothing changes; that side was
+checked on the maintainer's four thermostats.
+
+### A thermostat no longer waits 15 minutes after a restart when HA picks the wrong proxy first
+
+After a restart, Home Assistant can keep routing a thermostat through stronger
+proxies it is not paired with. The integration refuses to pair there, so
+nothing appears on the thermostat screen, but after three such rounds it used
+to wait 15 minutes before the next attempt and open a re-pair request, even
+though nothing needed re-pairing. The first time this happens since the last
+successful poll, it now retries at the normal cadence instead. A second time
+in a row still gets the 15-minute wait, the repair and the re-pair request, as
+before. Covered by tests and by the logs of the case that prompted it; the new
+path itself has not yet been seen running on real hardware.
+
+### The filter reset button clears the filter sign
+
+Pressing Reset filter timer acknowledged the command but left the filter sign
+on, on the thermostat screen and in Home Assistant
+([#74](https://github.com/dasimon135/daikin_madoka/issues/74),
+[#148](https://github.com/dasimon135/daikin_madoka/issues/148)). The library
+sent only half of the command. pymadoka-ng 0.4.4 sends the same frame as the
+ESPHome component of this repository, which clears the sign on the same
+thermostats. This is confirmed byte for byte against the ESPHome frame, not
+yet on a thermostat showing the sign through this integration: none of the
+maintainer's does at the moment.
+
+### The card has a visual editor
+
+Card 0.10.0. Every option that used to need YAML (layout, decimals, graph
+times, what a tap on the tile opens, the reconnect button, the entity
+overrides) is now a field, labelled in the dashboard's language. In a sections
+view the card tells Home Assistant its size: the tile layout is one grid row,
+the dial layouts take the height their content needs. The default width is
+unchanged.
+
 ## v3.15.1-beta.4 - November 2026
 
 ### The target temperature stays readable on a local Bluetooth adapter
