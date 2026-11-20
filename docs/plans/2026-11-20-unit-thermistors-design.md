@@ -66,7 +66,9 @@ The module exports the class; the caller decides when to run it.
   of showing a frozen value. The next attempt is the next poll, not 300 s
   later.
 - A dropped link during the sequence raises `ConnectionException` like any
-  other feature query.
+  other feature query. The integration handles it the way
+  `Controller.update()` handles a failed feature: logged, poll kept; the
+  next poll reconnects as usual.
 - A value that is not 2 bytes long counts as pending. A page that answers
   empty sets its three sensors to `None`.
 
