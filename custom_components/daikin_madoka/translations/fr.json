@@ -108,6 +108,24 @@
       "outdoor_temperature": {
         "name": "Température extérieure"
       },
+      "thermistor_indoor_suction": {
+        "name": "Température air aspiré"
+      },
+      "thermistor_indoor_liquid_pipe": {
+        "name": "Température tuyau liquide"
+      },
+      "thermistor_indoor_gas_pipe": {
+        "name": "Température tuyau gaz"
+      },
+      "thermistor_outdoor_air": {
+        "name": "Température air groupe extérieur"
+      },
+      "thermistor_outdoor_heat_exchanger": {
+        "name": "Température échangeur extérieur"
+      },
+      "thermistor_outdoor_discharge": {
+        "name": "Température refoulement compresseur"
+      },
       "error_code": {
         "name": "Code d'erreur",
         "state_attributes": {

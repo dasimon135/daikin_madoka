@@ -33,6 +33,7 @@ from .const import (
     DEVICE_TYPE_VENTILATION,
     DOMAIN,
     ENERGY_PARAMETERS,
+    THERMISTOR_SENSORS,
 )
 from .coordinator import MadokaConfigEntry, MadokaCoordinator
 from .entity import MadokaEntity
@@ -62,6 +63,11 @@ async def async_setup_entry(
             entities.append(MadokaOutdoorSensor(coordinator))
             # Not asked of a VAM by pymadoka either (see binary_sensor.py).
             entities.append(MadokaErrorCodeSensor(coordinator))
+            # The "Unit status" thermistors of the indoor and outdoor units
+            # (#162); a VAM has neither.
+            entities.extend(
+                MadokaThermistorSensor(coordinator, key) for key in THERMISTOR_SENSORS
+            )
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
         if energy_enabled:
@@ -116,6 +122,31 @@ class MadokaTemperatureSensor(MadokaEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+
+class MadokaThermistorSensor(MadokaTemperatureSensor):
+    """A unit status thermistor (#162), read every 5 min while enabled.
+
+    Disabled by default: the coordinator only runs the read (about ten round
+    trips) when at least one of these entities is enabled.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: MadokaCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_translation_key = key
+        self._attribute = THERMISTOR_SENSORS[key]
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the reading, None when not fitted, not read yet or too old."""
+        status = self.coordinator.thermistor_status
+        if status is None:
+            return None
+        value: int | None = getattr(status, self._attribute)
+        return value
 
 
 @dataclass(frozen=True)

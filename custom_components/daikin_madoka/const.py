@@ -109,6 +109,23 @@ ENERGY_CONSUMPTION_COMMAND = 0x0120
 ENERGY_PRIVILEGE_COMMAND = 0x4112
 ENERGY_PRIVILEGE_PARAMETER = 0xFE
 ENERGY_SCAN_INTERVAL = 300
+# Unit status thermistors (#162): one read is about ten round trips (0x4111
+# start, 0x0111 indoor and outdoor pages re-asked while pending, 0x4111 stop),
+# so it runs at most every THERMISTOR_SCAN_INTERVAL seconds, gives up after
+# THERMISTOR_READ_TIMEOUT, and a value older than THERMISTOR_MAX_AGE (three
+# missed reads) is no longer shown.
+THERMISTOR_SCAN_INTERVAL = 300
+THERMISTOR_READ_TIMEOUT = 20
+THERMISTOR_MAX_AGE = 900
+# unique_id suffix -> UnitThermistorsStatus attribute
+THERMISTOR_SENSORS = {
+    "thermistor_indoor_suction": "indoor_suction",
+    "thermistor_indoor_liquid_pipe": "indoor_liquid_pipe",
+    "thermistor_indoor_gas_pipe": "indoor_gas_pipe",
+    "thermistor_outdoor_air": "outdoor_air",
+    "thermistor_outdoor_heat_exchanger": "outdoor_heat_exchanger",
+    "thermistor_outdoor_discharge": "outdoor_discharge",
+}
 # Real units have been observed rolling their calendar counters a few minutes
 # either side of HA's local midnight. Refresh after this grace period so a
 # slightly slow thermostat cannot leave yesterday's values cached all day.

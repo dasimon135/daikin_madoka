@@ -13,12 +13,14 @@ from pymadoka import ConnectionException, Controller, PairingRequiredError
 from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
 from pymadoka.features.clean_filter import ResetCleanFilterTimer
+from pymadoka.features.unit_thermistors import UnitThermistors, UnitThermistorsStatus
 
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
@@ -53,6 +55,10 @@ from .const import (
     POLL_TIMEOUT,
     ROUND_HEADROOM_S,
     STALE_GRACE,
+    THERMISTOR_MAX_AGE,
+    THERMISTOR_READ_TIMEOUT,
+    THERMISTOR_SCAN_INTERVAL,
+    THERMISTOR_SENSORS,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
 from .util import device_for_address, entry_macs, lift_unbonded_steering
@@ -612,8 +618,25 @@ def async_forget_pairing_state(
 type MadokaConfigEntry = ConfigEntry[dict[str, "MadokaCoordinator"]]
 
 
+def _thermistor_entity_enabled(hass: HomeAssistant, address: str) -> bool:
+    """Whether any thermistor sensor of this device is enabled in the registry."""
+    registry = er.async_get(hass)
+    for key in THERMISTOR_SENSORS:
+        entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{address}_{key}")
+        entry = registry.async_get(entity_id) if entity_id else None
+        if entry is not None and entry.disabled_by is None:
+            return True
+    return False
+
+
 class MadokaCoordinator(DataUpdateCoordinator[dict]):
     """Poll one BRC1H controller and share the result with all its entities."""
+
+    # Unit status thermistors (#162); None unless one of their entities is
+    # enabled. Home Assistant reloads the entry when one gets enabled, so the
+    # registry is only read at setup.
+    thermistors: UnitThermistors | None = None
+    _thermistors_read_at: float | None = None
 
     def __init__(
         self,
@@ -627,6 +650,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self.controller = controller
         controller.energy_consumption = None
         self.async_apply_energy_enabled(energy_enabled)
+        if _thermistor_entity_enabled(hass, controller.connection.address):
+            self.thermistors = UnitThermistors(controller.connection)
         # The BLE stack overwrites controller.connection.name with the
         # advertised local name ("Daikin"), so keep the user's chosen name here.
         self._friendly_name = friendly_name
@@ -930,11 +955,39 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if not status:
             raise UpdateFailed(f"Device {self.address} did not answer any query")
 
+        await self._async_read_thermistors()
+
         # The link is demonstrably up and the device demonstrably answers,
         # which is exactly what setup could not assume.
         await self._async_backfill_device_info()
 
         return status
+
+    async def _async_read_thermistors(self) -> None:
+        """Read the thermistors when due; a failure never fails the poll."""
+        if self.thermistors is None:
+            return
+        last = self._thermistors_read_at
+        if last is not None and monotonic() - last < THERMISTOR_SCAN_INTERVAL:
+            return
+        try:
+            async with asyncio.timeout(THERMISTOR_READ_TIMEOUT):
+                await self.thermistors.query()
+        except (TimeoutError, ConnectionAbortedError, ConnectionException) as err:
+            # Retried on the next poll, not THERMISTOR_SCAN_INTERVAL later.
+            _LOGGER.debug("Thermistor read of %s failed: %s", self.address, _describe(err))
+            return
+        self._thermistors_read_at = monotonic()
+
+    @property
+    def thermistor_status(self) -> UnitThermistorsStatus | None:
+        """The last thermistor read, or None once older than THERMISTOR_MAX_AGE."""
+        last = self._thermistors_read_at
+        if self.thermistors is None or last is None:
+            return None
+        if monotonic() - last > THERMISTOR_MAX_AGE:
+            return None
+        return self.thermistors.status
 
     def _feature_statuses(self) -> dict[str, Any]:
         """The current status object of every queryable feature that has one.
