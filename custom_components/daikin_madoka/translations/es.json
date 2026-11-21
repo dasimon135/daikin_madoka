@@ -108,6 +108,24 @@
       "outdoor_temperature": {
         "name": "Temperatura exterior"
       },
+      "thermistor_indoor_suction": {
+        "name": "Temperatura aire de aspiración"
+      },
+      "thermistor_indoor_liquid_pipe": {
+        "name": "Temperatura tubería de líquido"
+      },
+      "thermistor_indoor_gas_pipe": {
+        "name": "Temperatura tubería de gas"
+      },
+      "thermistor_outdoor_air": {
+        "name": "Temperatura aire unidad exterior"
+      },
+      "thermistor_outdoor_heat_exchanger": {
+        "name": "Temperatura intercambiador exterior"
+      },
+      "thermistor_outdoor_discharge": {
+        "name": "Temperatura descarga compresor"
+      },
       "error_code": {
         "name": "Código de error",
         "state_attributes": {

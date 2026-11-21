@@ -1,5 +1,6 @@
 """Smoke tests for the sensor, binary_sensor, button and number platforms."""
 
+from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,10 +32,11 @@ from custom_components.daikin_madoka.const import (
     CONF_PREFERRED_SOURCE,
     DEVICE_TYPE_VENTILATION,
     DOMAIN,
+    THERMISTOR_SENSORS,
 )
 from custom_components.daikin_madoka.coordinator import MadokaCoordinator
 
-MAC = "D0:CF:13:0F:11:F6"
+MAC ="D0:CF:13:0F:11:F6"
 SOURCE = "AA:BB:CC:11:22:33"
 
 BLUETOOTH = "homeassistant.components.bluetooth"
@@ -115,7 +117,63 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
         f"{MAC}_operating_time",
         f"{MAC}_connection_source",
         f"{MAC}_connection_status",
-    }
+    } | THERMISTOR_UNIQUE_IDS
+
+
+THERMISTOR_UNIQUE_IDS = {f"{MAC}_{key}" for key in THERMISTOR_SENSORS}
+
+
+async def test_thermistor_sensors_are_disabled_diagnostics_reading_the_coordinator(
+    hass: HomeAssistant,
+) -> None:
+    """Six extra BLE round trips every 5 min are opt-in, per entity (#162)."""
+    coordinator, entry = _coordinator(hass, _mock_controller())
+    entities = await _setup_platform(sensor_platform, hass, coordinator, entry)
+    by_id = {entity.unique_id: entity for entity in entities}
+    thermistors = [by_id[unique_id] for unique_id in THERMISTOR_UNIQUE_IDS]
+
+    for entity in thermistors:
+        assert entity.entity_registry_enabled_default is False
+        assert entity.entity_category is EntityCategory.DIAGNOSTIC
+
+    outdoor_air = by_id[f"{MAC}_thermistor_outdoor_air"]
+    assert outdoor_air.native_value is None
+    coordinator.thermistors = MagicMock(
+        status=SimpleNamespace(
+            indoor_suction=14,
+            indoor_liquid_pipe=14,
+            indoor_gas_pipe=13,
+            outdoor_air=10,
+            outdoor_heat_exchanger=13,
+            outdoor_discharge=None,
+        )
+    )
+    coordinator._thermistors_read_at = monotonic()
+    assert outdoor_air.native_value == 10
+    assert by_id[f"{MAC}_thermistor_outdoor_discharge"].native_value is None
+
+
+async def test_the_read_exists_only_with_an_enabled_thermistor_entity(
+    hass: HomeAssistant,
+) -> None:
+    from homeassistant.helpers import entity_registry as er
+
+    coordinator, _ = _coordinator(hass, _mock_controller())
+    assert coordinator.thermistors is None
+
+    registry = er.async_get(hass)
+    disabled = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}_thermistor_outdoor_air",
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+    coordinator, _ = _coordinator(hass, _mock_controller())
+    assert coordinator.thermistors is None
+
+    registry.async_update_entity(disabled.entity_id, disabled_by=None)
+    coordinator, _ = _coordinator(hass, _mock_controller())
+    assert coordinator.thermistors is not None
 
 
 ENERGY_UNIQUE_IDS = {
@@ -176,6 +234,7 @@ async def test_ventilation_setup_skips_the_outdoor_sensor(
     assert f"{MAC}_indoor_temperature" in unique_ids
     assert f"{MAC}_outdoor_temperature" not in unique_ids
     assert f"{MAC}_error_code" not in unique_ids
+    assert not THERMISTOR_UNIQUE_IDS & unique_ids
 
 
 async def test_temperature_sensors_report_controller_values(

@@ -108,6 +108,24 @@
       "outdoor_temperature": {
         "name": "Outdoor temperature"
       },
+      "thermistor_indoor_suction": {
+        "name": "Suction air temperature"
+      },
+      "thermistor_indoor_liquid_pipe": {
+        "name": "Liquid pipe temperature"
+      },
+      "thermistor_indoor_gas_pipe": {
+        "name": "Gas pipe temperature"
+      },
+      "thermistor_outdoor_air": {
+        "name": "Outdoor unit air temperature"
+      },
+      "thermistor_outdoor_heat_exchanger": {
+        "name": "Outdoor heat exchanger temperature"
+      },
+      "thermistor_outdoor_discharge": {
+        "name": "Compressor discharge temperature"
+      },
       "error_code": {
         "name": "Error code",
         "state_attributes": {
