@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.16.0-beta.2 - November 2026
+
+### Unit status thermistors
+
+pymadoka-ng 0.6.0. This beta also carries everything in v3.16.0-beta.1,
+unchanged. Each thermostat gets six temperature sensors, the thermistor
+readings the Madoka Assistant app shows on its "Unit status" screen
+([#162](https://github.com/dasimon135/daikin_madoka/issues/162)):
+
+- indoor unit: suction air, liquid pipe, gas pipe;
+- outdoor unit: air, heat exchanger, compressor discharge.
+
+They are diagnostic entities, **disabled by default**: reading them takes
+about ten exchanges with the thermostat, so the integration only does it when
+at least one of them is enabled, and then at most every five minutes. Enabling
+one reloads the integration, and the first values appear on the next poll. A
+sensor the unit does not have stays unavailable, and so does every sensor if
+no read has succeeded for fifteen minutes. A failed read never affects the
+rest of the poll.
+
+The sequence and its decoding come from a capture of the app by the reporter
+of #162, on a ducted FBA100A with an AZAS100M7V1B outdoor unit. Values are
+whole degrees.
+
 ## v3.16.0-beta.1 - November 2026
 
 ### Defrost and error sensors
