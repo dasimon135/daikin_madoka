@@ -16,8 +16,8 @@ They are diagnostic entities, **disabled by default**: reading them takes
 about ten exchanges with the thermostat, so the integration only does it when
 at least one of them is enabled, and then at most every five minutes. Enabling
 one reloads the integration, and the first values appear on the next poll. A
-sensor the unit does not have stays unavailable, and so does every sensor if
-no read has succeeded for fifteen minutes. A failed read never affects the
+sensor the unit does not have shows unknown, and so does every sensor if no
+read has succeeded for fifteen minutes. A failed read never affects the
 rest of the poll.
 
 The sequence and its decoding come from a capture of the app by the reporter
