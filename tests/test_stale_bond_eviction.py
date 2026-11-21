@@ -37,6 +37,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
 from custom_components.daikin_madoka.const import (
+    BOND_EVICTION_FAILURES,
     BOND_STALE_TIMEOUTS,
     BOND_STALE_TIMEOUTS_CORROBORATED,
     CONF_BONDED_SOURCES,
@@ -257,6 +258,151 @@ async def test_an_uncorroborated_streak_still_takes_the_long_road(
 
     for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED):
         await _time_out(hass, entry)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+# --------------------------------------------------------------------------
+# A round another path won still says which path timed out
+# --------------------------------------------------------------------------
+#
+# Field case, Parents, 2026-09-18. HA kept routing it through a proxy whose
+# bond was dead; the pairing attempt there timed out with a prompt on the
+# screen, and the SAME round then connected through another proxy. pymadoka
+# raised nothing, so none of the rules above ever saw the timeout. Since
+# pymadoka 0.4.1 the round's verdicts survive in `last_round_evidence`.
+
+
+async def _time_out_then_connect(hass, entry, evidence, winner=GOOD) -> None:
+    """One round: the paths in `evidence` fail as stated, then `winner` connects."""
+    controller = _controller()
+
+    async def _start():
+        controller.connection.connection_status = ConnectionStatus.CONNECTED
+        controller.connection.connected_source = winner
+        controller.connection.last_round_evidence = evidence
+
+    controller.start = AsyncMock(side_effect=_start)
+    controller.refresh_status.return_value = {"set_point": {"cooling_set_point": 25}}
+    coordinator = _coordinator(hass, entry, controller)
+    present, scanner = _patched_bluetooth()
+    with present, scanner:
+        await coordinator.async_refresh()
+
+
+async def test_a_timeout_in_a_round_another_path_won_counts(
+    hass: HomeAssistant,
+) -> None:
+    """Corroborated from the start: the winner authenticated in that very round."""
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED):
+        await _time_out_then_connect(hass, entry, {STALE: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_one_won_round_is_not_enough(hass: HomeAssistant) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS_CORROBORATED - 1):
+        await _time_out_then_connect(hass, entry, {STALE: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_an_unattributable_timeout_in_a_won_round_costs_nothing(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _time_out_then_connect(hass, entry, {None: "timeout"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_other_verdicts_in_a_won_round_are_not_timeouts(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _time_out_then_connect(hass, entry, {STALE: "transient"})
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+async def test_a_library_without_the_evidence_changes_nothing(
+    hass: HomeAssistant,
+) -> None:
+    """pymadoka 0.4.0 has no `last_round_evidence`: a MagicMock stands in for
+    whatever attribute access returns there, and nothing may be charged."""
+    entry = _entry(hass)
+    for _ in range(BOND_STALE_TIMEOUTS * 2):
+        await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
+
+
+# --------------------------------------------------------------------------
+# A verdict blocked only by "last bonded proxy" is carried out once it is not
+# --------------------------------------------------------------------------
+#
+# Field case, Salon, 2026-11-10. Its only listed proxy reached the timeout
+# threshold and the drop was refused, rightly: emptying the list switches the
+# veto off. Another proxy was then paired and joined the list, and the stale
+# one was marked corroborated, but nothing looked at the verdict again. A drop
+# is only attempted when a NEW timeout is charged, and the stale proxy's later
+# attempts ended otherwise, so it stayed listed for days with its streak
+# sitting at the threshold.
+
+
+async def test_a_blocked_drop_goes_through_once_another_bond_exists(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass, bonded=[STALE])
+    for _ in range(BOND_STALE_TIMEOUTS):
+        await _time_out(hass, entry)
+    assert entry.data[CONF_BONDED_SOURCES] == [STALE]
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+    assert STALE not in async_pairing_state(hass, MAC).timeout_sources
+
+
+async def test_a_blocked_refusal_drop_goes_through_once_another_bond_exists(
+    hass: HomeAssistant,
+) -> None:
+    """Same gap on the proven-refusal counter, which shares the drop."""
+    entry = _entry(hass, bonded=[STALE])
+    async_pairing_state(hass, MAC).auth_failures[STALE] = BOND_EVICTION_FAILURES
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_an_install_already_stuck_is_cleaned_on_its_next_session(
+    hass: HomeAssistant,
+) -> None:
+    """The list already holds both proxies, so it will never grow again: the
+    held verdict has to be carried out on an ordinary successful poll."""
+    entry = _entry(hass, bonded=[STALE, GOOD], preferred=GOOD)
+    state = async_pairing_state(hass, MAC)
+    state.timeout_sources[STALE] = BOND_STALE_TIMEOUTS
+    state.timeout_corroborated.add(STALE)
+
+    await _succeed_via(hass, entry, GOOD)
+
+    assert entry.data[CONF_BONDED_SOURCES] == [GOOD]
+
+
+async def test_a_streak_short_of_its_threshold_survives_a_new_bond(
+    hass: HomeAssistant,
+) -> None:
+    """The new bond corroborates the streak; it does not complete it."""
+    entry = _entry(hass, bonded=[STALE])
+    await _time_out(hass, entry)
+
+    await _succeed_via(hass, entry, GOOD)
 
     assert entry.data[CONF_BONDED_SOURCES] == [STALE, GOOD]
 

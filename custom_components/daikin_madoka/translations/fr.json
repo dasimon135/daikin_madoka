@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Format d'adresse MAC incorrect (ex. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "Impossible de se connecter au thermostat. Vérifiez qu'il est alimenté et à portée Bluetooth d'un proxy, puis réessayez.",
-      "pairing_failed": "Le thermostat a refusé la connexion : une invite d'appairage attend probablement sur son écran. Restez près du thermostat, confirmez l'invite, puis réessayez."
+      "pairing_failed": "Le thermostat a refusé la connexion : une invite d'appairage attend probablement sur son écran. Restez près du thermostat, confirmez l'invite, puis réessayez.",
+      "pairing_rejected": "Le thermostat a refusé l'appairage. Il n'accepte qu'un appairage confirmé par son code à 6 chiffres. Si aucun code n'est apparu sur son écran, l'adaptateur Bluetooth ou le proxy utilisé ne propose pas cette confirmation : utilisez un proxy Bluetooth ESPHome configuré comme indiqué dans la documentation, ou appairez d'abord un adaptateur local depuis l'hôte. Réessayer tel quel ne servira à rien, et des tentatives répétées peuvent bloquer le Bluetooth du thermostat."
     },
     "step": {
       "user": {
@@ -60,9 +61,16 @@
         "title": "Options Daikin Madoka",
         "data": {
           "scan_interval": "Intervalle d'interrogation (secondes)",
-          "enable_energy_consumption": "Lire la consommation d'énergie (aujourd'hui toutes les cinq minutes, autres périodes chaque jour)"
+          "enable_energy_consumption": "Lire la consommation d'énergie (aujourd'hui toutes les cinq minutes, autres périodes chaque jour)",
+          "bonded_sources": "Proxys appairés avec ce thermostat"
+        },
+        "data_description": {
+          "bonded_sources": "Décochez un proxy qui ne détient plus la clé d'appairage de ce thermostat (BlueSight montre les clés de chaque proxy). Home Assistant ne lancera alors plus jamais d'appairage par lui tout seul, ce qui fait cesser les codes répétés sur l'écran du thermostat. Pour appairer de nouveau un proxy, appuyez sur Reconnecter devant le thermostat. Au moins un proxy doit rester coché."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Gardez au moins un proxy : sans aucun, n'importe quel proxy à portée pourrait lancer un appairage."
     }
   },
   "exceptions": {
@@ -99,6 +107,14 @@
       },
       "outdoor_temperature": {
         "name": "Température extérieure"
+      },
+      "error_code": {
+        "name": "Code d'erreur",
+        "state_attributes": {
+          "last_error_code": {
+            "name": "Dernier code enregistré"
+          }
+        }
       },
       "rssi": {
         "name": "Puissance du signal"
@@ -141,6 +157,18 @@
     "binary_sensor": {
       "clean_filter": {
         "name": "Nettoyage du filtre"
+      },
+      "defrost": {
+        "name": "Dégivrage"
+      },
+      "unit_error": {
+        "name": "Erreur"
+      },
+      "unit_warning": {
+        "name": "Avertissement"
+      },
+      "unit_alarm": {
+        "name": "Alarme"
       }
     },
     "button": {

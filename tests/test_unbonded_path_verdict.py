@@ -115,8 +115,12 @@ def _patched_bluetooth():
     )
 
 
-async def _refresh(hass: HomeAssistant, entry: MockConfigEntry):
-    """One failing poll. Returns (coordinator, the patched reauth trigger).
+async def _refresh(hass: HomeAssistant, entry: MockConfigEntry, polls: int = 2):
+    """Failing polls, two by default. Returns (coordinator, the reauth trigger).
+
+    Two because the first verdict since the last success is deliberately
+    quiet (see test_the_first_verdict_only_retries); the tier proper starts
+    with the second.
 
     The trigger is patched rather than left to run: opening a real flow
     schedules a background task that outlives the test and makes teardown
@@ -132,7 +136,8 @@ async def _refresh(hass: HomeAssistant, entry: MockConfigEntry):
     with present, scanner, patch.object(
         MadokaCoordinator, "_async_start_reauth", autospec=True
     ) as start_reauth:
-        await coordinator.async_refresh()
+        for _ in range(polls):
+            await coordinator.async_refresh()
     return coordinator, start_reauth
 
 
@@ -216,3 +221,54 @@ async def test_unbonded_path_offers_a_way_out(hass: HomeAssistant) -> None:
     _, start_reauth = await _refresh(hass, entry)
 
     start_reauth.assert_called_once()
+
+
+# --------------------------------------------------------------------------
+# ...and the first verdict since a success only retries
+# --------------------------------------------------------------------------
+
+
+async def test_the_first_verdict_only_retries(hass: HomeAssistant) -> None:
+    """Right after a restart HA routinely elects a strong unbonded proxy first.
+
+    Field case 2026-11-14: Manon, bonded only with a weak proxy, lost its three
+    rounds in 22 s, waited 15 minutes behind the brake, then connected through
+    the bonded proxy at the very next attempt. One verdict keeps the normal
+    cadence and asks nobody for anything.
+    """
+    entry = _entry(hass)
+    coordinator, start_reauth = await _refresh(hass, entry, polls=1)
+
+    assert coordinator.update_interval == timedelta(seconds=60)
+    assert async_pairing_state(hass, MAC).backoff_reason is None
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"unbonded_path_{MAC}") is None
+    start_reauth.assert_not_called()
+
+
+async def test_a_success_makes_the_next_verdict_quiet_again(
+    hass: HomeAssistant,
+) -> None:
+    """The count is per outage, not per lifetime of the coordinator."""
+    entry = _entry(hass)
+    entry.mock_state(hass, config_entries.ConfigEntryState.LOADED)
+    controller = _controller()
+    coordinator = _coordinator(hass, entry, controller)
+    present, scanner = _patched_bluetooth()
+    with present, scanner, patch.object(
+        MadokaCoordinator, "_async_start_reauth", autospec=True
+    ) as start_reauth:
+        await coordinator.async_refresh()
+
+        async def _connects() -> None:
+            controller.connection.connection_status = ConnectionStatus.CONNECTED
+
+        controller.start = AsyncMock(side_effect=_connects)
+        controller.refresh_status.return_value = {"set_point": {"cooling_set_point": 25}}
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        controller.start = AsyncMock(side_effect=_error())
+        controller.connection.connection_status = ConnectionStatus.DISCONNECTED
+        await coordinator.async_refresh()
+
+    start_reauth.assert_not_called()
+    assert async_pairing_state(hass, MAC).backoff_reason is None

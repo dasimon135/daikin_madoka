@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Formato de dirección MAC incorrecto (p. ej. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "No se pudo conectar con el termostato. Comprueba que esté encendido y dentro del alcance Bluetooth de un proxy, y vuelve a intentarlo.",
-      "pairing_failed": "El termostato rechazó la conexión: probablemente hay una solicitud de emparejamiento esperando en su pantalla. Quédate cerca del termostato, confirma la solicitud y vuelve a intentarlo."
+      "pairing_failed": "El termostato rechazó la conexión: probablemente hay una solicitud de emparejamiento esperando en su pantalla. Quédate cerca del termostato, confirma la solicitud y vuelve a intentarlo.",
+      "pairing_rejected": "El termostato rechazó el emparejamiento. Solo acepta un emparejamiento confirmado con su código de 6 dígitos. Si no apareció ningún código en su pantalla, el adaptador Bluetooth o el proxy usado no ofrece esa confirmación: usa un proxy Bluetooth de ESPHome configurado como indica la documentación, o empareja antes un adaptador local desde el host. Reintentar tal cual no servirá, y los intentos repetidos pueden bloquear el Bluetooth del termostato."
     },
     "step": {
       "user": {
@@ -60,9 +61,16 @@
         "title": "Opciones de Daikin Madoka",
         "data": {
           "scan_interval": "Intervalo de sondeo (segundos)",
-          "enable_energy_consumption": "Leer el consumo de energía (hoy cada cinco minutos, otros períodos diariamente)"
+          "enable_energy_consumption": "Leer el consumo de energía (hoy cada cinco minutos, otros períodos diariamente)",
+          "bonded_sources": "Proxies emparejados con este termostato"
+        },
+        "data_description": {
+          "bonded_sources": "Desmarque un proxy que ya no tenga la clave de emparejamiento de este termostato (BlueSight muestra las claves de cada proxy). Home Assistant ya no emparejará nunca por él por su cuenta, lo que detiene los códigos de emparejamiento repetidos en la pantalla del termostato. Para volver a emparejar un proxy, pulse Reconectar junto al termostato. Al menos un proxy debe quedar marcado."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Mantenga al menos un proxy: sin ninguno, cualquier proxy al alcance podría iniciar un emparejamiento."
     }
   },
   "exceptions": {
@@ -99,6 +107,14 @@
       },
       "outdoor_temperature": {
         "name": "Temperatura exterior"
+      },
+      "error_code": {
+        "name": "Código de error",
+        "state_attributes": {
+          "last_error_code": {
+            "name": "Último código registrado"
+          }
+        }
       },
       "rssi": {
         "name": "Intensidad de señal"
@@ -141,6 +157,18 @@
     "binary_sensor": {
       "clean_filter": {
         "name": "Limpiar filtro"
+      },
+      "defrost": {
+        "name": "Desescarche"
+      },
+      "unit_error": {
+        "name": "Error"
+      },
+      "unit_warning": {
+        "name": "Advertencia"
+      },
+      "unit_alarm": {
+        "name": "Alarma"
       }
     },
     "button": {

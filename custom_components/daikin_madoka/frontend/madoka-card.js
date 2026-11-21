@@ -3,7 +3,7 @@
  * Ships with the daikin_madoka integration (auto-registered, no separate install).
  * Vanilla custom element: no external dependencies, works across HA versions.
  */
-const MADOKA_CARD_VERSION = "0.9.5";
+const MADOKA_CARD_VERSION = "0.10.0";
 const SETPOINT_MODES = ["cool", "heat", "auto", "heat_cool"]; // modes where a target is meaningful
 
 const MODES = {
@@ -34,6 +34,60 @@ const CARD_STRINGS = {
   de: { to: "auf", standby: "Standby", display: "Anzeige", fan: "Lüftung", fanMode: "Lüftung", filterOk: "OK", filterClean: "Reinigen", reconnect: "Neu verbinden", reconnecting: "Verbinde…", reconnectFailed: "Fehlgeschlagen — erneut" },
   it: { to: "a", standby: "in pausa", display: "Display", fan: "Ventola", fanMode: "Ventola", filterOk: "OK", filterClean: "Pulire", reconnect: "Riconnetti", reconnecting: "Riconnessione…", reconnectFailed: "Non riuscito — riprova" },
   nl: { to: "naar", standby: "stand-by", display: "Display", fan: "Ventilatie", fanMode: "Ventilatie", filterOk: "OK", filterClean: "Reinigen", reconnect: "Opnieuw verbinden", reconnecting: "Verbinden…", reconnectFailed: "Mislukt — opnieuw" },
+};
+// Labels of the visual editor (getConfigForm), keyed by option name; the
+// `opt_*` entries are the choices of the three dropdowns. English is the
+// fallback, as above.
+const EDITOR_STRINGS = {
+  en: { entity: "Entity", name: "Name", layout: "Layout", display: "Display", overrides: "Entity overrides",
+    show_decimals: "Ambient temperature in tenths", show_graph_times: "Clock times under the graph",
+    tile_tap: "Tapping the tile opens", reconnect: "Reconnect button",
+    temperature_entity: "Indoor temperature", outdoor_entity: "Outdoor temperature", brightness_entity: "Display brightness",
+    filter_entity: "Filter sign", rssi_entity: "Signal strength", reconnect_entity: "Reconnect button entity",
+    opt_full: "Full dial", opt_compact: "Compact dial", opt_tile: "Tile row", opt_popup: "The full card",
+    "opt_more-info": "The entity dialog", opt_auto: "Only while offline", opt_always: "Always", opt_never: "Never" },
+  fr: { entity: "Entité", name: "Nom", layout: "Disposition", display: "Affichage", overrides: "Entités à substituer",
+    show_decimals: "Température ambiante au dixième", show_graph_times: "Heures sous le graphique",
+    tile_tap: "Un appui sur la tuile ouvre", reconnect: "Bouton Reconnecter",
+    temperature_entity: "Température intérieure", outdoor_entity: "Température extérieure", brightness_entity: "Luminosité du voyant",
+    filter_entity: "Témoin de filtre", rssi_entity: "Force du signal", reconnect_entity: "Entité du bouton Reconnecter",
+    opt_full: "Cadran complet", opt_compact: "Cadran compact", opt_tile: "Tuile", opt_popup: "La carte complète",
+    "opt_more-info": "La fenêtre de l'entité", opt_auto: "Seulement hors ligne", opt_always: "Toujours", opt_never: "Jamais" },
+  es: { entity: "Entidad", name: "Nombre", layout: "Diseño", display: "Visualización", overrides: "Entidades a sustituir",
+    show_decimals: "Temperatura ambiente en décimas", show_graph_times: "Horas bajo el gráfico",
+    tile_tap: "Al tocar la fila se abre", reconnect: "Botón Reconectar",
+    temperature_entity: "Temperatura interior", outdoor_entity: "Temperatura exterior", brightness_entity: "Brillo de la pantalla",
+    filter_entity: "Aviso de filtro", rssi_entity: "Intensidad de la señal", reconnect_entity: "Entidad del botón Reconectar",
+    opt_full: "Dial completo", opt_compact: "Dial compacto", opt_tile: "Fila", opt_popup: "La tarjeta completa",
+    "opt_more-info": "El diálogo de la entidad", opt_auto: "Solo sin conexión", opt_always: "Siempre", opt_never: "Nunca" },
+  de: { entity: "Entität", name: "Name", layout: "Layout", display: "Anzeige", overrides: "Entitäten überschreiben",
+    show_decimals: "Raumtemperatur in Zehnteln", show_graph_times: "Uhrzeiten unter dem Diagramm",
+    tile_tap: "Tippen auf die Kachel öffnet", reconnect: "Schaltfläche Neu verbinden",
+    temperature_entity: "Innentemperatur", outdoor_entity: "Außentemperatur", brightness_entity: "Helligkeit der Anzeige",
+    filter_entity: "Filteranzeige", rssi_entity: "Signalstärke", reconnect_entity: "Entität der Schaltfläche Neu verbinden",
+    opt_full: "Volles Zifferblatt", opt_compact: "Kompaktes Zifferblatt", opt_tile: "Kachel", opt_popup: "Die volle Karte",
+    "opt_more-info": "Den Entitätsdialog", opt_auto: "Nur offline", opt_always: "Immer", opt_never: "Nie" },
+  it: { entity: "Entità", name: "Nome", layout: "Disposizione", display: "Visualizzazione", overrides: "Entità da sostituire",
+    show_decimals: "Temperatura ambiente in decimi", show_graph_times: "Orari sotto il grafico",
+    tile_tap: "Toccando la riga si apre", reconnect: "Pulsante Riconnetti",
+    temperature_entity: "Temperatura interna", outdoor_entity: "Temperatura esterna", brightness_entity: "Luminosità del display",
+    filter_entity: "Spia del filtro", rssi_entity: "Intensità del segnale", reconnect_entity: "Entità del pulsante Riconnetti",
+    opt_full: "Quadrante completo", opt_compact: "Quadrante compatto", opt_tile: "Riga", opt_popup: "La scheda completa",
+    "opt_more-info": "La finestra dell'entità", opt_auto: "Solo se offline", opt_always: "Sempre", opt_never: "Mai" },
+  nl: { entity: "Entiteit", name: "Naam", layout: "Indeling", display: "Weergave", overrides: "Entiteiten overschrijven",
+    show_decimals: "Kamertemperatuur in tienden", show_graph_times: "Kloktijden onder de grafiek",
+    tile_tap: "Tikken op de tegel opent", reconnect: "Knop Opnieuw verbinden",
+    temperature_entity: "Binnentemperatuur", outdoor_entity: "Buitentemperatuur", brightness_entity: "Helderheid van het display",
+    filter_entity: "Filtermelding", rssi_entity: "Signaalsterkte", reconnect_entity: "Entiteit van de knop Opnieuw verbinden",
+    opt_full: "Volledige wijzerplaat", opt_compact: "Compacte wijzerplaat", opt_tile: "Tegel", opt_popup: "De volledige kaart",
+    "opt_more-info": "Het entiteitsvenster", opt_auto: "Alleen offline", opt_always: "Altijd", opt_never: "Nooit" },
+};
+// The editor is built from a static method, which is handed no `hass`; Home
+// Assistant keeps the frontend language on the root element.
+const editorLabel = (key) => {
+  const root = typeof document !== "undefined" && document.documentElement;
+  const lang = ((root && root.lang) || "en").split("-")[0];
+  return (EDITOR_STRINGS[lang] && EDITOR_STRINGS[lang][key]) || EDITOR_STRINGS.en[key];
 };
 // How long the reconnect button stays in its "working" state before it can be
 // pressed again — a BLE reconnect through a proxy takes a few seconds.
@@ -125,6 +179,49 @@ class MadokaCard extends HTMLElement {
   }
 
   getCardSize() { return this._config && this._layout() === "tile" ? 1 : 7; }
+
+  // Sections views. The width stays the full section in every layout, which is
+  // what the card got before it declared anything; the tile is exactly one
+  // grid row, and the dial takes the height its content needs.
+  getGridOptions() {
+    return this._config && this._layout() === "tile"
+      ? { columns: 12, rows: 1, min_columns: 6, min_rows: 1 }
+      : { columns: 12, rows: "auto", min_columns: 6 };
+  }
+
+  // The visual editor, as a form Home Assistant renders itself. `compact: true`
+  // has no field: it is the old alias of `layout: compact`, which the Layout
+  // dropdown writes, and a config that still carries it keeps working.
+  static getConfigForm() {
+    const choice = (name, values) => ({
+      name,
+      selector: { select: { mode: "dropdown", options: values.map((value) => ({ value, label: editorLabel(`opt_${value}`) })) } },
+    });
+    const entity = (name, domain) => ({ name, selector: { entity: { domain } } });
+    return {
+      schema: [
+        { ...entity("entity", "climate"), required: true },
+        { name: "name", selector: { text: {} } },
+        choice("layout", ["full", "compact", "tile"]),
+        { name: "display", type: "expandable", flatten: true, schema: [
+          { name: "show_decimals", selector: { boolean: {} } },
+          { name: "show_graph_times", selector: { boolean: {} } },
+          choice("tile_tap", ["popup", "more-info"]),
+          choice("reconnect", ["auto", "always", "never"]),
+        ] },
+        // Found on the thermostat's own device when left empty (see _resolve).
+        { name: "overrides", type: "expandable", flatten: true, schema: [
+          entity("temperature_entity", "sensor"),
+          entity("outdoor_entity", "sensor"),
+          entity("brightness_entity", "number"),
+          entity("filter_entity", "binary_sensor"),
+          entity("rssi_entity", "sensor"),
+          entity("reconnect_entity", "button"),
+        ] },
+      ],
+      computeLabel: (schema) => editorLabel(schema.name),
+    };
+  }
 
   /* ------------------------------ i18n ------------------------------ */
   _lang() { return ((this._hass && this._hass.language) || "en").split("-")[0]; }

@@ -97,6 +97,11 @@ esp32:
   variant: esp32s3
   framework:
     type: esp-idf
+    # Épingler ESP-IDF 5.5.5 : la 5.5.6, par défaut depuis ESPHome 2026.10,
+    # efface la clé d'appairage du thermostat à la reconnexion suivante
+    # (issues #145, #146). À retirer quand ESPHome livrera le correctif
+    # (esphome/esphome#21880).
+    version: 5.5.5
     sdkconfig_options:
       CONFIG_BT_ENABLED: y
       CONFIG_BT_BLE_SMP_ENABLE: y
@@ -182,6 +187,11 @@ esp32:
   board: m5stack-atom
   framework:
     type: esp-idf
+    # Épingler ESP-IDF 5.5.5 : la 5.5.6, par défaut depuis ESPHome 2026.10,
+    # efface la clé d'appairage du thermostat à la reconnexion suivante
+    # (issues #145, #146). À retirer quand ESPHome livrera le correctif
+    # (esphome/esphome#21880).
+    version: 5.5.5
 
 logger:
 

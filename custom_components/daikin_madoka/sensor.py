@@ -60,6 +60,8 @@ async def async_setup_entry(
         entities.append(MadokaIndoorSensor(coordinator))
         if not is_ventilation:
             entities.append(MadokaOutdoorSensor(coordinator))
+            # Not asked of a VAM by pymadoka either (see binary_sensor.py).
+            entities.append(MadokaErrorCodeSensor(coordinator))
         entities.append(MadokaRssiSensor(coordinator))
         entities.append(MadokaRuntimeSensor(coordinator))
         if energy_enabled:
@@ -192,6 +194,37 @@ class MadokaOutdoorSensor(MadokaTemperatureSensor):
         if self.controller.temperatures.status is None:
             return None
         return self.controller.temperatures.status.outdoor
+
+
+class MadokaErrorCodeSensor(MadokaEntity, SensorEntity):
+    """The code of the fault in progress, such as "U4-01"; empty when none.
+
+    The thermostat keeps answering the last recorded code after the fault
+    clears, so pymadoka only fills error_code while a fault flag is set. The
+    recorded code is kept as the last_error_code attribute.
+    """
+
+    _attr_translation_key = "error_code"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: MadokaCoordinator) -> None:
+        super().__init__(coordinator, "error_code")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the code of the fault in progress."""
+        if self.controller.unit_status.status is None:
+            return None
+        code: str | None = self.controller.unit_status.status.error_code
+        return code
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None] | None:
+        """Return the last code the system recorded, even if cleared."""
+        if self.controller.unit_status.status is None:
+            return None
+        last: str | None = self.controller.unit_status.status.last_error_code
+        return {"last_error_code": last}
 
 
 class MadokaRssiSensor(MadokaLinkSensor):

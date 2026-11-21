@@ -157,3 +157,37 @@ def test_no_hour_mark_prints_over_the_newest_reading(results: dict) -> None:
     assert "16 h" in result["labels"], result
     # Every mark before the last stays clear of the right-aligned final label.
     assert all(left <= 80 for left in result["lefts"][:-1]), result
+
+
+def test_grid_options_follow_the_layout(results: dict) -> None:
+    """A tile is one grid row; the dial keeps the height its content needs."""
+    result = results["grid_options_follow_the_layout"]
+    assert result["tile"] == {"columns": 12, "rows": 1, "min_columns": 6, "min_rows": 1}
+    assert result["full"] == {"columns": 12, "rows": "auto", "min_columns": 6}
+    assert result["compact"] == result["full"]
+
+
+def test_the_visual_editor_covers_every_documented_option(results: dict) -> None:
+    result = results["config_form_covers_every_option"]
+    assert result["names"] == [
+        "entity",
+        "name",
+        "layout",
+        "show_decimals",
+        "show_graph_times",
+        "tile_tap",
+        "reconnect",
+        "temperature_entity",
+        "outdoor_entity",
+        "brightness_entity",
+        "filter_entity",
+        "rssi_entity",
+        "reconnect_entity",
+    ]
+    assert result["unlabelled"] == 0
+    assert result["fr_layout"] == "Disposition"
+    # An unknown dashboard language falls back to English.
+    assert result["fallback"] == "Layout"
+    assert result["entity_required"] is True
+    assert result["entity_domain"] == "climate"
+    assert result["layouts"] == ["full", "compact", "tile"]

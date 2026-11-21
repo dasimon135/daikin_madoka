@@ -531,11 +531,29 @@ async def _validate_with(controller: MagicMock) -> tuple[str | None, str | None]
 
 
 async def test_validator_maps_pairing_refusal() -> None:
-    """PairingRequiredError from start() maps to pairing_failed."""
+    """An explicit refusal maps to pairing_rejected, not "a prompt is waiting".
+
+    It comes back at once, usually with nothing on the screen (#143).
+    """
     from pymadoka import ConnectionStatus, PairingRequiredError
 
     controller = _stub_controller(ConnectionStatus.ABORTED)
-    controller.start.side_effect = PairingRequiredError("pairing refused")
+    controller.start.side_effect = PairingRequiredError(
+        MAC, reason="rejected", evidence={None: "rejected"}
+    )
+
+    assert await _validate_with(controller) == ("pairing_rejected", None)
+    assert controller.stop.await_count == 1
+
+
+async def test_validator_maps_pairing_timeout() -> None:
+    """A pairing timeout streak keeps pairing_failed: a prompt may be waiting."""
+    from pymadoka import ConnectionStatus, PairingRequiredError
+
+    controller = _stub_controller(ConnectionStatus.ABORTED)
+    controller.start.side_effect = PairingRequiredError(
+        MAC, reason="timeout_streak", timeout_rounds=3
+    )
 
     assert await _validate_with(controller) == ("pairing_failed", None)
     assert controller.stop.await_count == 1

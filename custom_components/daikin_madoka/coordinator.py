@@ -14,6 +14,7 @@ from pymadoka.connection import PAIRING_TIMEOUT_ROUNDS, ConnectionStatus
 from pymadoka.feature import Feature, FeatureStatus
 from pymadoka.features.clean_filter import ResetCleanFilterTimer
 
+from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -54,7 +55,7 @@ from .const import (
     STALE_GRACE,
     TIMEOUT_BACKOFF_INTERVAL_S,
 )
-from .util import device_for_address, entry_macs
+from .util import device_for_address, entry_macs, lift_unbonded_steering
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -636,6 +637,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self._pairing_issue_active = False
         self._pairing_slow_issue_active = False
         self._unbonded_path_issue_active = False
+        # unbonded_path verdicts since the last successful poll. In memory on
+        # purpose: a restart is exactly when the first one is expected (see
+        # _async_enter_unbonded_path_backoff).
+        self._unbonded_path_verdicts = 0
         self._boost_unsub: CALLBACK_TYPE | None = None
         # Cancel handle of the pairing window's time-to-live timer, and the
         # poll interval to go back to once a timeout backoff ends.
@@ -810,8 +815,10 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # covers a poll over an already-open link, which never goes through the
         # connect path at all.
         self._pairing.last_success = monotonic()
+        self._unbonded_path_verdicts = 0
         self._async_corroborate_other_streaks()
         self._clear_issues()
+        self._async_close_reauth()
         # Full clear only here: an unload (which also runs _clear_issues via
         # async_shutdown_extras) must NOT lift the suspension, or a simple
         # entry reload would grant a dead bond a fresh prompt salvo.
@@ -1063,6 +1070,33 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # used to record nothing at all, and on_disconnect clears
         # connected_source, so the evidence was simply lost.
         self._async_record_bonded_source()
+        self._async_note_timeouts_before_connect()
+
+    @callback
+    def _async_note_timeouts_before_connect(self) -> None:
+        """Charge the pairing timeouts of a round that another path then won.
+
+        A proxy holding a dead bond times out while pairing, with a prompt on
+        the thermostat screen, and the round then connects through another
+        proxy. Nothing is raised, so the timeout used to reach none of the
+        eviction rules. pymadoka >= 0.4.1 keeps the round's verdicts in
+        `last_round_evidence`; with an older library nothing is read.
+
+        The path that authenticated in the same round proves the air was fine,
+        so these timeouts are corroborated from the start.
+        """
+        evidence = getattr(self.controller.connection, "last_round_evidence", None)
+        if not isinstance(evidence, dict):
+            return
+        timed_out = {
+            source
+            for source, verdict in evidence.items()
+            if verdict == "timeout" and source
+        }
+        if not timed_out:
+            return
+        self._pairing.timeout_corroborated.update(timed_out)
+        self._async_note_timed_out_paths(evidence)
 
     async def async_boost(self) -> None:
         """Refresh now and once more shortly after.
@@ -1240,20 +1274,20 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if source not in bonded:
             bonded.append(source)
         if (
-            entry.data.get(CONF_PREFERRED_SOURCE) == source
-            and entry.data.get(CONF_BONDED_SOURCES) == bonded
+            entry.data.get(CONF_PREFERRED_SOURCE) != source
+            or entry.data.get(CONF_BONDED_SOURCES) != bonded
         ):
-            return
-        # async_update_entry fires the entry's update listener; ours only
-        # re-applies the poll interval from options, so no side effects here.
-        self.hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_PREFERRED_SOURCE: source,
-                CONF_BONDED_SOURCES: bonded,
-            },
-        )
+            # async_update_entry fires the entry's update listener; ours only
+            # re-applies the poll interval from options, so no side effects.
+            self.hass.config_entries.async_update_entry(
+                entry,
+                data={
+                    **entry.data,
+                    CONF_PREFERRED_SOURCE: source,
+                    CONF_BONDED_SOURCES: bonded,
+                },
+            )
+        self._async_carry_out_held_drops()
 
     @callback
     def _async_record_bonded_source(self) -> None:
@@ -1275,6 +1309,39 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         self.hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_BONDED_SOURCES: bonded}
         )
+        self._async_carry_out_held_drops()
+
+    @callback
+    def _async_carry_out_held_drops(self) -> None:
+        """Act on the verdicts the last-bonded-proxy rule had to hold back.
+
+        A drop is only ever attempted when a new refusal or timeout is
+        charged. A proxy that reached its threshold while it was the only one
+        listed was kept, rightly, and its counter clamped at the threshold;
+        but once another proxy joins the list nothing charged it again, so the
+        verdict was never carried out (Salon, 2026-11-10: kept for days with
+        five timeouts and a corroborated streak).
+
+        Runs after every proven session, not only when the list grows: an
+        install already stuck that way has a list that will never grow again.
+        It costs nothing past the first pass, because a drop clears the
+        counters it acted on. A list of one is skipped here, so the "keeping
+        it" warning stays tied to fresh evidence instead of every poll.
+        """
+        entry = self._async_own_entry()
+        if entry is None or len(entry.data.get(CONF_BONDED_SOURCES, [])) < 2:
+            return
+        for source, failures in list(self._pairing.auth_failures.items()):
+            if failures >= BOND_EVICTION_FAILURES:
+                self._async_drop_bonded_source(
+                    source, f"{BOND_EVICTION_FAILURES} proven refusals"
+                )
+        for source, streak in list(self._pairing.timeout_sources.items()):
+            threshold = self._timeout_threshold(source)
+            if streak >= threshold:
+                self._async_drop_bonded_source(
+                    source, f"{threshold} pairing timeouts with no success"
+                )
 
     @callback
     def _async_evict_dead_bond(self, err: PairingRequiredError) -> None:
@@ -1468,6 +1535,9 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
     def _async_open_pairing_window(self) -> None:
         """Grant one user-initiated pairing attempt, with a deadline."""
         self._pairing.pairing_window = True
+        # The window lifts the bonded-proxy restriction, so the steering that
+        # enforces it must go too, or the pairing lands on a weak proxy.
+        lift_unbonded_steering(self.address)
         self._async_apply_pair_budget()
         self._async_arm_pairing_window_timer()
 
@@ -1517,6 +1587,8 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         if not self._pairing.pairing_window:
             return
         self._pairing.pairing_window = False
+        # Whatever the window charged was for its own attempts only.
+        lift_unbonded_steering(self.address)
         self._async_apply_pair_budget()
 
     @callback
@@ -1686,6 +1758,27 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         entry.async_start_reauth(self.hass)
 
     @callback
+    def _async_close_reauth(self) -> None:
+        """End an open reauth flow: the device just answered without it.
+
+        _clear_issues removes our own repairs on success, but the flow and the
+        config_entry_reauth repair HA attaches to it only go away when the flow
+        ends. Left open, they kept asking the user to re-pair a thermostat that
+        was working (field report 2026-10-04, after HA restarts).
+
+        Skipped while any connect holds the shared lock: the flow's own pairing
+        attempt runs under it, with a human at the thermostat. The next
+        successful poll closes the flow instead.
+        """
+        entry = self.config_entry
+        if entry is None or _async_connect_lock(self.hass).locked():
+            return
+        for flow in entry.async_get_active_flows(
+            self.hass, {config_entries.SOURCE_REAUTH}
+        ):
+            self.hass.config_entries.flow.async_abort(flow["flow_id"])
+
+    @callback
     def _note_pairing_failure(self, err: PairingRequiredError) -> None:
         """Suspend automatic reconnects: each retry would re-prompt the screen."""
         self._pairing.last_error = err
@@ -1704,8 +1797,14 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # user re-pairs.
         self._pairing.timeout_rounds = 0
 
+    def _timeout_threshold(self, source: str) -> int:
+        """The timeout streak that concludes against this path, as of now."""
+        if source in self._pairing.timeout_corroborated:
+            return BOND_STALE_TIMEOUTS_CORROBORATED
+        return BOND_STALE_TIMEOUTS
+
     @callback
-    def _async_note_timed_out_paths(self, err: PairingRequiredError) -> None:
+    def _async_note_timed_out_paths(self, evidence: dict[str | None, str]) -> None:
         """Charge this round's timeouts to the paths they actually happened on.
 
         Reads the same authoritative mapping the eviction bookkeeping does, and
@@ -1714,7 +1813,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         which proxy failed", and guessing there is exactly the defect the
         evidence mapping exists to prevent.
         """
-        for source, verdict in err.evidence.items():
+        for source, verdict in evidence.items():
             if verdict != "timeout" or not source:
                 continue
             # Clamped, like the refusal counter: past the threshold a bigger
@@ -1725,11 +1824,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
             # the threshold actually in force — clamping at the long one would
             # let a corroborated streak keep rewriting the config entry after
             # it had already said everything it had to say.
-            threshold = (
-                BOND_STALE_TIMEOUTS_CORROBORATED
-                if source in self._pairing.timeout_corroborated
-                else BOND_STALE_TIMEOUTS
-            )
+            threshold = self._timeout_threshold(source)
             streak = min(
                 self._pairing.timeout_sources.get(source, 0) + 1, threshold
             )
@@ -1778,7 +1873,7 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         # action. Zero here means "count three fresh rounds before saying this
         # again", not "forget that pairing is not completing".
         self._pairing.timeout_rounds = 0
-        self._async_note_timed_out_paths(err)
+        self._async_note_timed_out_paths(err.evidence)
         self._raise_pairing_slow_issue(err)
         self._async_slow_to_backoff_cadence(BACKOFF_PAIRING)
 
@@ -1801,8 +1896,29 @@ class MadokaCoordinator(DataUpdateCoordinator[dict]):
         button is the whole point of the exercise — the prompt moves off the
         thermostat screen, where nobody was watching it, and into Home
         Assistant, where somebody is.
+
+        Except the first time since the last successful poll. Right after a
+        restart HA scores every path from scratch and routinely elects a strong
+        proxy that holds no bond, while the steering penalties that push it
+        down only build up with each landing. Field case 2026-11-14: a
+        thermostat bonded only with a weak proxy lost its three rounds in 22
+        seconds, then sat unavailable behind this brake for 15 minutes, and the
+        next attempt went straight through the bonded proxy. So the first
+        verdict only logs and keeps the normal cadence; a second one in a row
+        means the scoring is not shifting on its own, and gets the brake, the
+        repair and the Fix button.
         """
         self._pairing.last_error = err
+        self._unbonded_path_verdicts += 1
+        if self._unbonded_path_verdicts == 1:
+            _LOGGER.info(
+                "%s: Home Assistant only offered proxies it is not paired with "
+                "(%s); retrying at the normal cadence before asking for a "
+                "re-pair",
+                self.address,
+                self._proxy_names(err.tried_sources),
+            )
+            return
         self._raise_unbonded_path_issue(err)
         self._async_slow_to_backoff_cadence(BACKOFF_UNBONDED_PATH)
         self._async_start_reauth()

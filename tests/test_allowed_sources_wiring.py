@@ -133,3 +133,40 @@ async def test_the_allowed_sources_callback_never_raises(
         assert kwargs["allowed_sources_callback"]() is None
 
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_the_veto_steers_with_the_answer_it_returns(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """The veto is where an unbonded landing gets charged, with the very list
+    it hands back, so the two can never disagree."""
+    entry = _entry(hass)
+    kwargs = await _captured_kwargs(hass, entry)
+
+    with patch(
+        "custom_components.daikin_madoka.steer_off_unbonded_paths",
+        return_value=["11:11:11:11:11:11"],
+    ) as steer:
+        assert kwargs["allowed_sources_callback"]() == [BONDED]
+    steer.assert_called_once_with(hass, MAC, [BONDED])
+
+    await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_steering_failure_leaves_the_veto_intact(
+    hass: HomeAssistant,
+    enable_bluetooth: None,
+) -> None:
+    """Steering is a nicety on top of the veto. If it breaks, the bonded list
+    must still come back: failing open HERE would mean pairing anywhere."""
+    entry = _entry(hass)
+    kwargs = await _captured_kwargs(hass, entry)
+
+    with patch(
+        "custom_components.daikin_madoka.steer_off_unbonded_paths",
+        side_effect=RuntimeError("habluetooth changed"),
+    ):
+        assert kwargs["allowed_sources_callback"]() == [BONDED]
+
+    await hass.config_entries.async_unload(entry.entry_id)

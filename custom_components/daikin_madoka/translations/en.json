@@ -20,7 +20,8 @@
     "error": {
       "not_a_mac": "Wrong MAC address format (e.g. AA:BB:CC:DD:EE:FF)",
       "cannot_connect": "Could not connect to the thermostat. Check it is powered and in Bluetooth range of a proxy, then try again.",
-      "pairing_failed": "The thermostat refused the connection: a pairing prompt is probably waiting on its screen. Stay near the thermostat, confirm the prompt, then try again."
+      "pairing_failed": "The thermostat refused the connection: a pairing prompt is probably waiting on its screen. Stay near the thermostat, confirm the prompt, then try again.",
+      "pairing_rejected": "The thermostat refused to pair. It only accepts a pairing confirmed with its 6-digit code. If no code appeared on its screen, the Bluetooth adapter or proxy used here does not offer that confirmation: use an ESPHome Bluetooth proxy set up as described in the documentation, or pair a local adapter once from the host first. Retrying as is will not help, and repeated attempts can jam the thermostat's Bluetooth."
     },
     "step": {
       "user": {
@@ -60,9 +61,16 @@
         "title": "Daikin Madoka options",
         "data": {
           "scan_interval": "Poll interval (seconds)",
-          "enable_energy_consumption": "Read energy consumption (today every five minutes, other periods daily)"
+          "enable_energy_consumption": "Read energy consumption (today every five minutes, other periods daily)",
+          "bonded_sources": "Proxies paired with this thermostat"
+        },
+        "data_description": {
+          "bonded_sources": "Untick a proxy that no longer holds this thermostat's pairing key (BlueSight shows which keys each proxy holds). Home Assistant will then never pair through it on its own, which stops repeated pairing codes on the thermostat screen. To pair a proxy again, press Reconnect at the thermostat. At least one proxy must stay ticked."
         }
       }
+    },
+    "error": {
+      "keep_one_proxy": "Keep at least one proxy: with none, any proxy in range could start a pairing."
     }
   },
   "exceptions": {
@@ -99,6 +107,14 @@
       },
       "outdoor_temperature": {
         "name": "Outdoor temperature"
+      },
+      "error_code": {
+        "name": "Error code",
+        "state_attributes": {
+          "last_error_code": {
+            "name": "Last recorded code"
+          }
+        }
       },
       "rssi": {
         "name": "Signal strength"
@@ -141,6 +157,18 @@
     "binary_sensor": {
       "clean_filter": {
         "name": "Clean filter"
+      },
+      "defrost": {
+        "name": "Defrost"
+      },
+      "unit_error": {
+        "name": "Error"
+      },
+      "unit_warning": {
+        "name": "Warning"
+      },
+      "unit_alarm": {
+        "name": "Alarm"
       }
     },
     "button": {

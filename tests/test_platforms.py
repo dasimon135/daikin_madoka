@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant import config_entries
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 
@@ -48,6 +49,14 @@ def _mock_controller() -> MagicMock:
     controller.temperatures.status = SimpleNamespace(indoor=23.0, outdoor=30.0)
     controller.clean_filter_indicator.status = SimpleNamespace(
         clean_filter_indicator=True
+    )
+    controller.unit_status.status = SimpleNamespace(
+        defrost=False,
+        error=False,
+        warning=False,
+        alarm=False,
+        error_code=None,
+        last_error_code=None,
     )
     controller.eye_brightness.status = SimpleNamespace(brightness=10)
     controller.eye_brightness.update = AsyncMock()
@@ -101,6 +110,7 @@ async def test_sensor_setup_creates_all_sensors(hass: HomeAssistant) -> None:
     assert {entity.unique_id for entity in entities} == {
         f"{MAC}_indoor_temperature",
         f"{MAC}_outdoor_temperature",
+        f"{MAC}_error_code",
         f"{MAC}_rssi",
         f"{MAC}_operating_time",
         f"{MAC}_connection_source",
@@ -165,6 +175,7 @@ async def test_ventilation_setup_skips_the_outdoor_sensor(
     unique_ids = {entity.unique_id for entity in entities}
     assert f"{MAC}_indoor_temperature" in unique_ids
     assert f"{MAC}_outdoor_temperature" not in unique_ids
+    assert f"{MAC}_error_code" not in unique_ids
 
 
 async def test_temperature_sensors_report_controller_values(
@@ -300,7 +311,13 @@ async def test_binary_sensor_setup_and_state(hass: HomeAssistant) -> None:
         binary_sensor_platform, hass, coordinator, entry
     )
 
-    assert [entity.unique_id for entity in entities] == [f"{MAC}_clean_filter"]
+    assert [entity.unique_id for entity in entities] == [
+        f"{MAC}_clean_filter",
+        f"{MAC}_defrost",
+        f"{MAC}_unit_error",
+        f"{MAC}_unit_warning",
+        f"{MAC}_unit_alarm",
+    ]
     sensor = entities[0]
     assert sensor.is_on is True
 
@@ -311,6 +328,76 @@ async def test_binary_sensor_setup_and_state(hass: HomeAssistant) -> None:
 
     controller.clean_filter_indicator.status = None
     assert sensor.is_on is None
+
+
+async def test_unit_status_sensors_report_the_flags(hass: HomeAssistant) -> None:
+    """#159: defrost drives automations; the conditions are diagnostic."""
+    controller = _mock_controller()
+    coordinator, entry = _coordinator(hass, controller)
+    by_id = {
+        entity.unique_id: entity
+        for entity in await _setup_platform(
+            binary_sensor_platform, hass, coordinator, entry
+        )
+    }
+    defrost = by_id[f"{MAC}_defrost"]
+    error = by_id[f"{MAC}_unit_error"]
+
+    assert defrost.is_on is False
+    assert defrost.entity_category is None
+    assert defrost.entity_registry_enabled_default is True
+    assert error.entity_category is EntityCategory.DIAGNOSTIC
+    assert error.entity_registry_enabled_default is False
+
+    controller.unit_status.status = SimpleNamespace(
+        defrost=True, error=True, warning=False, alarm=None, error_code="U4-01"
+    )
+    assert defrost.is_on is True
+    assert error.is_on is True
+    assert by_id[f"{MAC}_unit_alarm"].is_on is None
+
+    controller.unit_status.status = None
+    assert defrost.is_on is None
+
+
+async def test_a_vam_gets_no_unit_status_sensors(hass: HomeAssistant) -> None:
+    """pymadoka does not ask a VAM for 0x0100's unit status."""
+    coordinator, entry = _coordinator(
+        hass,
+        _mock_controller(),
+        {CONF_MAC: MAC, CONF_DEVICE_TYPE: DEVICE_TYPE_VENTILATION},
+    )
+    entities = await _setup_platform(
+        binary_sensor_platform, hass, coordinator, entry
+    )
+
+    assert [entity.unique_id for entity in entities] == [f"{MAC}_clean_filter"]
+
+
+async def test_the_error_code_sensor_shows_the_code(hass: HomeAssistant) -> None:
+    controller = _mock_controller()
+    coordinator, entry = _coordinator(hass, controller)
+    by_id = {
+        entity.unique_id: entity
+        for entity in await _setup_platform(sensor_platform, hass, coordinator, entry)
+    }
+    code = by_id[f"{MAC}_error_code"]
+
+    assert code.native_value is None
+    assert code.entity_category is EntityCategory.DIAGNOSTIC
+    controller.unit_status.status = SimpleNamespace(
+        error_code="U4-01", last_error_code="U4-01"
+    )
+    assert code.native_value == "U4-01"
+    # A healthy BRC1H still answers its last recorded code: attribute only.
+    controller.unit_status.status = SimpleNamespace(
+        error_code=None, last_error_code="U0-00"
+    )
+    assert code.native_value is None
+    assert code.extra_state_attributes == {"last_error_code": "U0-00"}
+    controller.unit_status.status = None
+    assert code.native_value is None
+    assert code.extra_state_attributes is None
 
 
 # --- button ----------------------------------------------------------------

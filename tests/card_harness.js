@@ -363,6 +363,38 @@ const scenarios = {
   },
 };
 
+// Sections views size a card from getGridOptions; without it every layout got
+// the same default cell.
+scenarios.grid_options_follow_the_layout = () => ({
+  tile: makeCard({ layout: "tile" }, makeHass()).getGridOptions(),
+  full: makeCard({}, makeHass()).getGridOptions(),
+  compact: makeCard({ compact: true }, makeHass()).getGridOptions(),
+});
+// The visual editor: every documented option has a field, and every field a
+// label in the dashboard's language.
+scenarios.config_form_covers_every_option = () => {
+  const names = (schema) => schema.flatMap((s) => (s.schema ? names(s.schema) : [s.name]));
+  const all = (schema) => schema.flatMap((s) => (s.schema ? [s, ...all(s.schema)] : [s]));
+  const layout = (form) => form.schema.find((s) => s.name === "layout");
+  global.document.documentElement = { lang: "fr" };
+  const form = MadokaCard.getConfigForm();
+  const labels = all(form.schema).map((s) => form.computeLabel(s));
+  const frLayout = form.computeLabel(layout(form));
+  global.document.documentElement = { lang: "xx" };
+  const fallback = form.computeLabel(layout(form));
+  delete global.document.documentElement;
+  const entity = form.schema.find((s) => s.name === "entity");
+  return {
+    names: names(form.schema),
+    unlabelled: labels.filter((label) => !label).length,
+    fr_layout: frLayout,
+    fallback,
+    entity_required: entity.required === true,
+    entity_domain: entity.selector.entity.domain,
+    layouts: layout(form).selector.select.options.map((o) => o.value),
+  };
+};
+
 const only = process.argv[2];
 const out = {};
 (async () => {
