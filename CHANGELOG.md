@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.16.0-beta.3 - November 2026
+
+### A thermistor no longer reads 16384 degrees
+
+pymadoka-ng 0.6.1. This beta also carries everything in v3.16.0-beta.2,
+unchanged. Now and then a thermistor reading comes with bit 14 set, and the
+sensor showed 16384 °C or more. That bit is a flag, not part of the
+temperature: the reporter of
+[#162](https://github.com/dasimon135/daikin_madoka/issues/162) got four such
+reads in three days, on the liquid pipe and the outdoor heat exchanger, and
+each matched the reads around it once the bit was cleared. It is now cleared.
+How the unit reports a temperature below zero is not confirmed yet.
+
+The defrost sensor of beta.1 is now confirmed on a real unit: on a ducted
+FBA100A it turned on for the six minutes of a defrost cycle
+([#159](https://github.com/dasimon135/daikin_madoka/issues/159)).
+
 ## v3.16.0-beta.2 - November 2026
 
 ### Unit status thermistors
